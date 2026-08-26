@@ -1,0 +1,24 @@
+info:
+  name: Procesar Foto Horometros
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: http://localhost:3000/api/horometros/procesar-foto
+  body:
+    type: multipart-form
+    data:
+      - name: imagen
+        type: file
+        value:
+          - /home/ronald_acurio/Pictures/tractor15fisico.jpeg
+        contentType: image/jpeg
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: true

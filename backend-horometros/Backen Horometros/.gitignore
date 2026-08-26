@@ -1,0 +1,15 @@
+# Secrets
+.env*
+
+# Dependencies
+node_modules
+**/node_modules
+
+# Build / Output
+dist/
+**/dist/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.log
