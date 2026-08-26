@@ -62,25 +62,28 @@ export async function procesarReporteHorometro(req:Request, res:Response) {
         }
 
         // 3. Coincidencias flexibles de Operador y Actividad
-        let operadorBD = null;
+        let operadorBD:any = null;
         if(datosIA.nombre_operador){
+            //limpiamos espacios extras
+            const nombreLimpio = datosIA.nombre_operador.trim();
             operadorBD = await Operador.findOne({
                 where: {
                     [Op.or]:[
-                        {nombre_completo: { [Op.iLike]: `%${datosIA.nombre_operador}%`}},
-                        {nombre_hoja: { [Op.iLike]: `%${datosIA.nombre_operador}%`}}
+                        {nombre_completo: { [Op.iLike]: `%${nombreLimpio}%`}},
+                        {nombre_hoja: { [Op.iLike]: `%${nombreLimpio}%`}}
                     ]
                 }
             });
         }
 
-        let actividadBD = null;
+        let actividadBD:any = null;
         if(datosIA.codigo_labor){
+            const LaborLimpia = datosIA.codigo_labor.trim();
             actividadBD = await Actividad.findOne({
                 where:{
                     [Op.or]:[
-                        {codigo_megued: datosIA.codigo_labor},
-                        {description: { [Op.iLike]: `%${datosIA.codigo_labor}%`}}
+                        {codigo_megued: LaborLimpia},
+                        {description: { [Op.iLike]: `%${LaborLimpia}%`}}
                     ]
                 }
             });
@@ -137,5 +140,68 @@ export async function procesarReporteHorometro(req:Request, res:Response) {
     } catch(error:any){
         console.error('❌ Error en procesosReporteHorometro:',error);
         return res.status(500).json({exito: false, error: error.message || 'Error procesando el reporte'});
+    }
+}
+
+export async function confirmarIngreso(req:Request, res:Response){
+    try{
+        const{
+            equipo_id,
+            operador_id,
+            actividad_id,
+            seccion,
+            km_inicial,
+            km_final,
+            total_horas,
+            fecha
+        } = req.body;
+
+        //Validar datos minimos requeridos
+        if(!equipo_id || !operador_id || !actividad_id){
+            res.status(400).json({
+                exito: false,
+                error: 'Faltan campos obligatorios (codigo operador, codigo maquinaria y codigo actividad)'
+            });
+        }
+
+        // Calcular total_horas si no viene en el body
+        const horasCalculadas = total_horas !== undefined
+            ? Number(total_horas)
+            : Number((Number(km_final) - Number(km_inicial)).toFixed(2));
+        
+        const kmInicialNum = Number(km_inicial) || 0;
+        const kmFinalNum = km_final !== undefined ? Number(km_final) : (kmInicialNum + horasCalculadas);
+
+        // 1. Insercion en la tabla 'ingresos_semanales'
+        const nuevoIngreso = await Ingresos_Semanales.create({
+            equipo_id,
+            operador_id,
+            actividad_id,
+            seccion: seccion || 'GENERAL',
+            FECHA_INGRESO: fecha || new Date().toISOString().split('T')[0],
+            km_inicial: kmInicialNum,
+            total_horas: horasCalculadas,
+        });
+
+        // 2. Actualizar el horometro actual del equipo
+        await Equipo.update({
+            ultimo_km_inicial: kmInicialNum,
+            ultimo_real: kmFinalNum,
+        },{
+            where: {id: equipo_id}
+        });
+
+        return res.status(200).json({
+            exito:true,
+            mensaje:'Ingreso semanal registrado y estado del equipo actualizado correctamente.',
+            data: nuevoIngreso
+        });
+
+    } catch(error:any){
+        console.error('❌ Error en confirmarIngresos:',error);
+        return res.status(500).json({
+            exito:false,
+            error:error.message || 'Error al registrar la confirmacion en la base de datos.'
+        });
     }
 }
