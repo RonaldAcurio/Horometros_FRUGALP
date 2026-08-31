@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { upload } from "../middlewares/upload.middleware";
 import { analizarfotoHorometro } from "../services/gemini.service";
-import { procesarReporteHorometro, confirmarIngreso } from "../controllers/horometros.controller";
+import { procesarReporteHorometro, confirmarIngreso, procesarLoteHorometros } from "../controllers/horometros.controller";
 
 const router = Router();
 
@@ -47,5 +47,6 @@ router.post('/procesar-foto', upload.single('imagen'), async (req,res): Promise<
 
 router.post('/procesar-foto',upload.single('imagen'), procesarReporteHorometro);
 router.post('/confirmar-ingreso',confirmarIngreso);
+router.post('/procesar-lote',upload.array('imagenes',6), procesarLoteHorometros);
 
 export default router;

@@ -12,7 +12,7 @@ http:
       - name: imagen
         type: file
         value:
-          - /home/ronald_acurio/Pictures/tractor15fisico.jpeg
+          - /home/ronald_acurio/Pictures/TRACTORE16FISICO (Edited).jpeg
         contentType: image/jpeg
   auth: inherit
 

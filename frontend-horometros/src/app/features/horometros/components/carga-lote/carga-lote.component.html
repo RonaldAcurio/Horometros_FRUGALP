@@ -1,0 +1,76 @@
+<div class="carga-container">
+  <div class="carga-header">
+    <h2 class="title">Carga de Horómetros en Lote</h2>
+    <p class="subtitle">Sube hasta 6 fotografías de reportes físicos para procesamiento automático con IA</p>
+  </div>
+
+  <!-- Zona de Drop / Upload -->
+  <div 
+    class="dropzone"
+    [class.dropzone-active]="isDragging"
+    (dragover)="onDragOver($event)"
+    (dragleave)="onDragLeave($event)"
+    (drop)="onDrop($event)"
+  >
+    <input 
+      type="file" 
+      #fileInput 
+      multiple 
+      accept="image/*" 
+      class="hidden" 
+      (change)="onFilesSelected($event)"
+    />
+
+    <div class="dropzone-content">
+      <div class="icon-box">
+        <svg xmlns="http://www.w3.org/2000/svg" class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+      </div>
+      <div>
+        <p class="upload-text">
+          Arrastra tus fotos aquí o 
+          <button type="button" (click)="fileInput.click()" class="browse-btn">
+            selecciona archivos
+          </button>
+        </p>
+        <p class="upload-hint">Formatos JPG, PNG • Máximo 6 imágenes por lote</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vista previa de imágenes -->
+  @if (vistasPrevias.length > 0) {
+    <div class="preview-section">
+      <div class="preview-header">
+        <h3 class="preview-title">
+          Imágenes seleccionadas 
+          <span class="badge">{{ vistasPrevias.length }}/{{ maxArchivos }}</span>
+        </h3>
+      </div>
+
+      <div class="preview-grid">
+        @for (preview of vistasPrevias; track $index) {
+          <div class="preview-card group">
+            <img [src]="preview" [alt]="'Preview ' + ($index + 1)" class="preview-img" />
+            <button (click)="eliminarImagen($index)" class="btn-remove" title="Eliminar foto">
+              ✕
+            </button>
+            <span class="img-number">#{{ $index + 1 }}</span>
+          </div>
+        }
+      </div>
+
+      <!-- Botón Procesar -->
+      <div class="action-footer">
+        <button 
+          (click)="procesarLote()" 
+          class="btn-process"
+          [disabled]="archivosSeleccionados.length === 0"
+        >
+          ⚡ Procesar Lote con IA
+        </button>
+      </div>
+    </div>
+  }
+</div>

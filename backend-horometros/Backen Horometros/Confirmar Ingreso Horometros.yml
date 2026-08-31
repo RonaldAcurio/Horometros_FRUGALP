@@ -1,0 +1,29 @@
+info:
+  name: Confirmar Ingreso Horometros
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: http://localhost:3000/api/horometros/confirmar-ingreso
+  body:
+    type: json
+    data: |-
+      {
+        "equipo_id": 15,
+        "operador_id": 7,
+        "actividad_id": 1,
+        "seccion": "S.C.#3",
+        "km_inicial": 24112.2,
+        "km_final": 24119.5,
+        "total_horas": 7.3,
+        "fecha": "2026-03-31"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false
