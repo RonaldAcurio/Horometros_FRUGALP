@@ -1,4 +1,14 @@
-<div class="carga-container">
+<div class="carga-container relative">
+
+  <!-- Spinner / Overlay de Carga sobre la pantalla -->
+  @if (cargando) {
+    <div class="loading-overlay">
+      <div class="spinner"></div>
+      <p class="loading-text">Procesando {{ vistasPrevias.length }} imágenes con IA...</p>
+      <span class="loading-subtext">Por favor espera, esto puede tomar unos segundos</span>
+    </div>
+  }
+
   <div class="carga-header">
     <h2 class="title">Carga de Horómetros en Lote</h2>
     <p class="subtitle">Sube hasta 6 fotografías de reportes físicos para procesamiento automático con IA</p>
@@ -8,6 +18,7 @@
   <div 
     class="dropzone"
     [class.dropzone-active]="isDragging"
+    [class.disabled]="cargando"
     (dragover)="onDragOver($event)"
     (dragleave)="onDragLeave($event)"
     (drop)="onDrop($event)"
@@ -18,6 +29,7 @@
       multiple 
       accept="image/*" 
       class="hidden" 
+      [disabled]="cargando"
       (change)="onFilesSelected($event)"
     />
 
@@ -30,7 +42,7 @@
       <div>
         <p class="upload-text">
           Arrastra tus fotos aquí o 
-          <button type="button" (click)="fileInput.click()" class="browse-btn">
+          <button type="button" [disabled]="cargando" (click)="$event.stopPropagation(); fileInput.click()" class="browse-btn">
             selecciona archivos
           </button>
         </p>
@@ -53,7 +65,7 @@
         @for (preview of vistasPrevias; track $index) {
           <div class="preview-card group">
             <img [src]="preview" [alt]="'Preview ' + ($index + 1)" class="preview-img" />
-            <button (click)="eliminarImagen($index)" class="btn-remove" title="Eliminar foto">
+            <button [disabled]="cargando" (click)="eliminarImagen($index)" class="btn-remove" title="Eliminar foto">
               ✕
             </button>
             <span class="img-number">#{{ $index + 1 }}</span>
@@ -66,9 +78,13 @@
         <button 
           (click)="procesarLote()" 
           class="btn-process"
-          [disabled]="archivosSeleccionados.length === 0"
+          [disabled]="archivosSeleccionados.length === 0 || cargando"
         >
-          ⚡ Procesar Lote con IA
+          @if (cargando) {
+            <span class="btn-spinner"></span> Procesando con IA...
+          } @else {
+            ⚡ Procesar Lote con IA
+          }
         </button>
       </div>
     </div>
