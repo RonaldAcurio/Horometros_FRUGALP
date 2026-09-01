@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+/*
 export const sequelize = new Sequelize(
     process.env.DB_NAME || 'horometros_db',
     process.env.DB_USER || 'postgres',
@@ -12,6 +13,26 @@ export const sequelize = new Sequelize(
         dialect: 'postgres',
         port: Number(process.env.DB_PORT) || 5432,
         logging: false, //evita ensuciar la consola con logs de Sequelize
+    }
+);
+*/
+const isProduction = process.env.NODE_ENV === 'production' || process.env.DB_HOST?.includes('render.com') || process.env.DB_HOST?.startsWith('dpg-');
+
+export const sequelize = new Sequelize(
+    process.env.DB_NAME || 'horometros_db',
+    process.env.DB_USER || 'postgre',
+    process.env.DB_PASSWORD || process.env.DB_PASWORD || '1234',
+    {
+        host: process.env.DB_HOST || 'localhost',
+        dialect: 'postgres',
+        port: Number(process.env.DB_PORT) || 5432,
+        logging: false,
+        dialectOptions: isProduction ? {
+            ssl: {
+                require: true,
+                rejectUnauthorized: false
+            }
+        } : {}
     }
 );
 
