@@ -131,12 +131,17 @@ export class AsistenciaComponent implements OnInit {
   }
 
   // --- SELECCIÓN Y EDICIÓN ---
-  seleccionarOperador(op: Operador): void {
+  async seleccionarOperador(op: Operador): Promise<void> {
     this.operadorSeleccionado = op;
     this.cedula = op.cedula || '';
     this.telefono = op.telefono || '';
     this.direccion = op.direccion || '';
-    this.generarQR(op.id);
+
+    // Esperamos que el QR termine de generarse
+    await this.generarQR(op.id);
+
+    // Forzamos la actualización de la vista de inmediato
+    this.cdr.detectChanges();
   }
 
   async generarQR(operadorId: number): Promise<void> {
