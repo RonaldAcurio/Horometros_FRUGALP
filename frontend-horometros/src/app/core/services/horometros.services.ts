@@ -10,7 +10,7 @@ import { environment } from '../../../environments/environment';
 export class HorometrosService {
   private http = inject(HttpClient);
   //private apiUrl = 'http://localhost:3000/api/horometros'; // Ajusta según tu puerto backend
-  private apiUrl = environment.apuUrl;
+  private apiUrl = `${environment.apuUrl}/horometros`;
 
   // Subir hasta 6 imágenes en lote
   procesarLote(archivos: File[]): Observable<RespuestaLote> {

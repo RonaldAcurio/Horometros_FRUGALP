@@ -7,7 +7,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "build": "npx tsc"
+    "build": "npx tsc",
+    "db:migrate": "sequelize-cli db:migrate"
   },
   "keywords": [],
   "author": "",
@@ -29,6 +30,7 @@
     "@types/express": "^5.0.6",
     "@types/multer": "^2.2.0",
     "@types/node": "^26.2.0",
+    "sequelize-cli": "^6.6.5",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "tsx": "^4.23.12",

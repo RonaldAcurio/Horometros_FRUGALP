@@ -3,7 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 
-export interface Operador{
+export interface Operador {
     id: number;
     codigo_megued: string;
     nombre_completo: string;
@@ -12,7 +12,7 @@ export interface Operador{
     direccion?: string;
 }
 
-export interface Asistencia{
+export interface Asistencia {
     id: number;
     operador_id: number;
     fecha: string;
@@ -26,28 +26,34 @@ export interface Asistencia{
     providedIn: 'root'
 })
 export class AsistenciaService {
-    //Apunta a las rutas que acabamos de montar en Express
-    private apiUrl = environment.apuUrl.replace('/horometros','/asistencia');
+    // 1. Limpiamos '/horometros' para obtener la base limpia: 'https://horometros-frugalp.onrender.com/api'
+    // Y le pegamos directo a la base del módulo de asistencia: 'https://horometros-frugalp.onrender.com/api/asistencia'
+    private baseUrl = `${environment.apuUrl}/asistencia`;
 
-    constructor( private http: HttpClient ){}
+    constructor(private http: HttpClient) {}
 
+    // POST -> https://.../api/asistencia/operadores
     crearOperador(operador: Partial<Operador>): Observable<Operador> {
-        return this.http.post<Operador>(`${this.apiUrl}/operadores`, operador);
+        return this.http.post<Operador>(`${this.baseUrl}/operadores`, operador);
+    }
+    
+    // GET -> https://.../api/asistencia/operadores
+    obtenerOperadores(): Observable<Operador[]> {
+        return this.http.get<Operador[]>(`${this.baseUrl}/operadores`);
     }
 
-    obtenerOperadores(): Observable<Operador[]>{
-        return this.http.get<Operador[]>(`${this.apiUrl}/operadores`);
+    // PUT -> https://.../api/asistencia/operadores/:id
+    actualizarOperador(id: number, datos: Partial<Operador>): Observable<any> {
+        return this.http.put(`${this.baseUrl}/operadores/${id}`, datos);
     }
 
-    actualizarOperador(id:number, datos: Partial<Operador>): Observable<any>{
-        return this.http.put(`${this.apiUrl}/operadores/${id}`, datos);
+    // POST -> https://.../api/asistencia/marcar-qr  (¡Atención: sin /asistencia repetido!)
+    registrarMarcaQR(operadorId: number): Observable<any> {
+        return this.http.post(`${this.baseUrl}/marcar-qr`, { operador_id: operadorId });
     }
 
-    registrarMarcaQR(operadorId: number): Observable<any>{
-        return this.http.post(`${this.apiUrl}/marcar-qr`,{ operador_id: operadorId});
-    }
-
-    obtenerAsistenciasHoy(): Observable<Asistencia[]>{
-        return this.http.get<Asistencia[]>(`${this.apiUrl}/hoy`);
+    // GET -> https://.../api/asistencia/hoy  (¡Atención: sin /asistencia repetido!)
+    obtenerAsistenciasHoy(): Observable<Asistencia[]> {
+        return this.http.get<Asistencia[]>(`${this.baseUrl}/hoy`);
     }
 }
