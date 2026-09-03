@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ZXingScannerModule } from '@zxing/ngx-scanner';
@@ -49,7 +49,10 @@ export class AsistenciaComponent implements OnInit {
     direccion: ''
   };
 
-  constructor(private asistenciaService: AsistenciaService) {}
+  constructor(
+    private asistenciaService: AsistenciaService,
+    private cdr: ChangeDetectorRef
+  ) {}
 
   ngOnInit(): void {
     this.cargarOperadores();
@@ -58,34 +61,59 @@ export class AsistenciaComponent implements OnInit {
 
   cargarOperadores(): void {
     this.asistenciaService.obtenerOperadores().subscribe({
-      next: (data) => this.operadores = data,
+      next: (data: any) => {
+        console.log('--- RESPUESTA RECIBIDA DEL BACKEND ---', data);
+
+        if (Array.isArray(data)) {
+          this.operadores = data;
+        } else if (data && typeof data === 'object') {
+          this.operadores = data.data || data.operadores || [];
+        } else {
+          this.operadores = [];
+        }
+
+        console.log('--- OPERADORES CARGADOS EN MEMORIA ---', this.operadores.length);
+
+        this.paginaActual = 1;
+        this.cdr.detectChanges(); // Forzar renderizado en pantalla
+      },
       error: (err) => console.error('Error cargando operadores desde Render:', err)
     });
   }
 
   cargarAsistenciasHoy(): void {
     this.asistenciaService.obtenerAsistenciasHoy().subscribe({
-      next: (data) => this.asistenciasHoy = data,
+      next: (data) => {
+        this.asistenciasHoy = Array.isArray(data) ? data : (data as any)?.data || [];
+        this.cdr.detectChanges();
+      },
       error: (err) => console.error('Error cargando asistencias:', err)
     });
   }
 
   // --- FILTRADO Y PAGINACIÓN EN TIEMPO REAL ---
   get operadoresFiltrados(): Operador[] {
-    const termino = this.terminoBusqueda.toLowerCase().trim();
+    if (!this.operadores || !Array.isArray(this.operadores)) return [];
+
+    const termino = (this.terminoBusqueda || '').toLowerCase().trim();
     if (!termino) return this.operadores;
 
-    return this.operadores.filter(op => 
-      op.nombre_completo.toLowerCase().includes(termino) ||
-      (op.codigo_megued && op.codigo_megued.toLowerCase().includes(termino)) ||
-      (op.cedula && op.cedula.includes(termino))
-    );
+    return this.operadores.filter(op => {
+      const nombre = (op.nombre_completo || '').toString().toLowerCase();
+      const codigo = (op.codigo_megued || op.id || '').toString().toLowerCase();
+      const cedula = (op.cedula || '').toString().toLowerCase();
+
+      return nombre.includes(termino) || codigo.includes(termino) || cedula.includes(termino);
+    });
   }
 
   get operadoresPaginados(): Operador[] {
+    const filtrados = this.operadoresFiltrados;
+    if (filtrados.length === 0) return [];
+
     const inicio = (this.paginaActual - 1) * this.itemsPorPagina;
     const fin = inicio + this.itemsPorPagina;
-    return this.operadoresFiltrados.slice(inicio, fin);
+    return filtrados.slice(inicio, fin);
   }
 
   get totalPaginas(): number {
@@ -93,7 +121,7 @@ export class AsistenciaComponent implements OnInit {
   }
 
   onSearchChange(): void {
-    this.paginaActual = 1; // Reiniciar a la primera página al buscar
+    this.paginaActual = 1;
   }
 
   cambiarPagina(nuevaPagina: number): void {
