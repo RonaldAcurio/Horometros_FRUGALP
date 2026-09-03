@@ -9,17 +9,17 @@ module.exports = {
       type: Sequelize.STRING(20),
       allowNull: true,
       unique: true
-    });
+    }).catch(() => {});
 
     await queryInterface.addColumn('operadores', 'telefono', {
       type: Sequelize.STRING(20),
       allowNull: true
-    });
+    }).catch(() => {});
 
     await queryInterface.addColumn('operadores', 'direccion', {
       type: Sequelize.STRING(255),
       allowNull: true
-    });
+    }).catch(() => {});
 
     // B. Crear la nueva tabla 'asistencias'
     await queryInterface.createTable('asistencias', {
@@ -75,8 +75,8 @@ module.exports = {
     await queryInterface.dropTable('asistencias');
 
     // Remover las columnas agregadas a 'operadores'
-    await queryInterface.removeColumn('operadores', 'cedula');
-    await queryInterface.removeColumn('operadores', 'telefono');
-    await queryInterface.removeColumn('operadores', 'direccion');
+    await queryInterface.removeColumn('operadores', 'cedula').catch(() => {});
+    await queryInterface.removeColumn('operadores', 'telefono').catch(() => {});
+    await queryInterface.removeColumn('operadores', 'direccion').catch(() => {});
   }
 };
