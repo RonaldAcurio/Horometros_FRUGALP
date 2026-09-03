@@ -5,7 +5,10 @@ export class Operador extends Model <InferAttributes<Operador>, InferCreationAtt
     declare id: CreationOptional<number>;
     declare codigo_megued: string;
     declare nombre_completo: string;
-    declare nombre_hoja: string;
+    declare nombre_hoja: CreationOptional<string>;
+    declare cedula: CreationOptional<string>;
+    declare telefono: CreationOptional<string>;
+    declare direccion: CreationOptional<string>;
 }
 
 Operador.init(
@@ -26,6 +29,19 @@ Operador.init(
         },
         nombre_hoja:{
             type: DataTypes.STRING(100),
+        },
+        cedula:{
+            type: DataTypes.STRING(20),
+            unique:true,
+            allowNull:true,
+        },
+        telefono:{
+            type: DataTypes.STRING(20),
+            allowNull:true,
+        },
+        direccion:{
+            type: DataTypes.STRING(255),
+            allowNull:true,
         },
     },
     {

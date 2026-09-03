@@ -1,0 +1,356 @@
+/* ==========================================================================
+   VARIABLES DE COLOR Y PALETA CORPORATIVA
+   ========================================================================== */
+:host {
+  --green-primary: #10b981;
+  --green-neon: #34d399;
+  --green-glow: rgba(52, 211, 153, 0.4);
+  --yellow-neon: #fbbf24;
+  --yellow-glow: rgba(251, 191, 36, 0.4);
+  --bg-dark: #0f172a;
+  --bg-card: #1e293b;
+  --bg-input: #0f172a;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --border-neon: rgba(52, 211, 153, 0.2);
+}
+
+.asistencia-container {
+  background-color: var(--bg-dark);
+  min-height: 100vh;
+  color: var(--text-main);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  padding: 1.5rem;
+}
+
+/* ==========================================================================
+   DISPOSICIÓN / LAYOUT Y MAQUETACIÓN
+   ========================================================================== */
+.header-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.grid-two-columns {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+}
+
+@media (min-width: 768px) {
+  .grid-two-columns {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.card-body-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+@media (min-width: 576px) {
+  .card-body-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.form-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.qr-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  border-left: 1px solid var(--border-neon);
+  padding-left: 1rem;
+}
+
+.mt-section {
+  margin-top: 1.5rem;
+}
+
+/* ==========================================================================
+   TIPOGRAFÍA Y ENCABEZADOS
+   ========================================================================== */
+.main-title {
+  color: var(--text-main);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-shadow: 0 0 10px var(--green-glow);
+  margin: 0;
+}
+
+.title-highlight {
+  color: var(--green-neon);
+  border-bottom: 2px solid var(--green-neon);
+  padding-bottom: 2px;
+}
+
+.code-highlight {
+  color: var(--yellow-neon);
+}
+
+.text-white {
+  color: #ffffff;
+}
+
+.text-muted {
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.text-muted-status {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* ==========================================================================
+   TARJETAS NEÓN Y CONTENEDORES
+   ========================================================================== */
+.card-neon {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-neon);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  overflow: hidden;
+}
+
+.card-neon:hover {
+  border-color: var(--green-neon);
+  box-shadow: 0 0 15px var(--green-glow);
+}
+
+.card-header-neon {
+  background-color: rgba(16, 185, 129, 0.1);
+  border-bottom: 1px solid var(--border-neon);
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card-header-neon h5 {
+  color: var(--text-main);
+  margin: 0;
+  font-weight: 600;
+}
+
+.empty-state {
+  padding: 2.5rem;
+  text-align: center;
+}
+
+/* ==========================================================================
+   BOTONES
+   ========================================================================== */
+.btn-neon-green {
+  background-color: transparent;
+  color: var(--green-neon);
+  border: 1px solid var(--green-neon);
+  border-radius: 8px;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  transition: all 0.3s ease;
+  box-shadow: 0 0 8px var(--green-glow);
+}
+
+.btn-neon-green:hover {
+  background-color: var(--green-neon);
+  color: #000000;
+  box-shadow: 0 0 15px var(--green-neon);
+  cursor: pointer;
+}
+
+.btn-neon-yellow {
+  background-color: transparent;
+  color: var(--yellow-neon);
+  border: 1px solid var(--yellow-neon);
+  border-radius: 8px;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  transition: all 0.3s ease;
+  box-shadow: 0 0 8px var(--yellow-glow);
+}
+
+.btn-neon-yellow:hover {
+  background-color: var(--yellow-neon);
+  color: #000000;
+  box-shadow: 0 0 15px var(--yellow-neon);
+  cursor: pointer;
+}
+
+.btn-table {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+/* ==========================================================================
+   FORMULARIOS
+   ========================================================================== */
+.form-group {
+  margin-bottom: 0.75rem;
+}
+
+.form-label {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  display: block;
+}
+
+.input-neon {
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-neon);
+  color: #ffffff;
+  border-radius: 6px;
+  padding: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.input-neon:focus {
+  outline: none;
+  border-color: var(--green-neon);
+  box-shadow: 0 0 8px var(--green-glow);
+}
+
+/* ==========================================================================
+   TABLAS
+   ========================================================================== */
+.table-responsive {
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.table-neon {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--text-main);
+}
+
+.table-neon th {
+  background-color: rgba(15, 230, 130, 0.05);
+  color: var(--green-neon);
+  border-bottom: 2px solid var(--border-neon);
+  padding: 0.75rem;
+  text-align: left;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+}
+
+.table-neon td {
+  padding: 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.9rem;
+}
+
+.row-hover {
+  transition: background-color 0.2s ease;
+}
+
+.row-hover:hover {
+  background-color: rgba(52, 211, 153, 0.08);
+  cursor: pointer;
+}
+
+.table-empty-row {
+  text-align: center;
+  padding: 1rem;
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   BADGES Y ESTADOS
+   ========================================================================== */
+.badge-neon {
+  padding: 0.35em 0.65em;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 20px;
+  text-transform: uppercase;
+}
+
+.badge-presente {
+  background-color: rgba(52, 211, 153, 0.15);
+  color: var(--green-neon);
+  border: 1px solid var(--green-neon);
+  box-shadow: 0 0 6px var(--green-glow);
+}
+
+.badge-finalizado {
+  background-color: rgba(251, 191, 36, 0.15);
+  color: var(--yellow-neon);
+  border: 1px solid var(--yellow-neon);
+  box-shadow: 0 0 6px var(--yellow-glow);
+}
+
+/* ==========================================================================
+   ESCÁNER Y QR
+   ========================================================================== */
+.scanner-container {
+  padding: 1rem;
+  text-align: center;
+}
+
+.scanner-wrapper {
+  border: 2px dashed var(--green-neon);
+  border-radius: 12px;
+  padding: 1rem;
+  background-color: #000000;
+  box-shadow: inset 0 0 15px var(--green-glow);
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.alert-container {
+  padding: 0.75rem 1rem 1rem 1rem;
+}
+
+.qr-box {
+  background-color: #ffffff;
+  padding: 10px;
+  border-radius: 8px;
+  display: inline-block;
+  box-shadow: 0 0 12px var(--green-glow);
+  margin-bottom: 1rem;
+}
+
+.qr-image {
+  width: 160px;
+  height: auto;
+  display: block;
+}
+
+.alert-neon-success {
+  background-color: rgba(52, 211, 153, 0.1);
+  border: 1px solid var(--green-neon);
+  color: var(--green-neon);
+  padding: 0.75rem;
+  border-radius: 8px;
+  text-align: center;
+  box-shadow: 0 0 8px var(--green-glow);
+}
+
+.alert-neon-danger {
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid #ef4444;
+  color: #fca5a5;
+  padding: 0.75rem;
+  border-radius: 8px;
+  text-align: center;
+}

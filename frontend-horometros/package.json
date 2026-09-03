@@ -17,6 +17,9 @@
     "@angular/forms": "^22.1.0",
     "@angular/platform-browser": "^22.1.0",
     "@angular/router": "^22.1.0",
+    "@zxing/ngx-scanner": "^22.0.1",
+    "qcore": "^1.0.0",
+    "qrcode": "^1.5.4",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
     "zone.js": "^0.16.2"
@@ -25,11 +28,11 @@
     "@angular/build": "^22.1.6",
     "@angular/cli": "^22.1.6",
     "@angular/compiler-cli": "^22.1.0",
+    "@types/qrcode": "^1.5.6",
     "autoprefixer": "^10.5.4",
     "jsdom": "^28.0.0",
     "postcss": "^8.5.26",
     "prettier": "^3.8.1",
-    "tailwind": "^4.0.0",
     "tailwindcss": "^3.4.19",
     "typescript": "~6.0.2",
     "vitest": "^4.0.8"

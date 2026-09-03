@@ -2,6 +2,7 @@ import { Equipo } from "./equipo";
 import { Operador } from "./operador";
 import { Actividad } from "./actividad";
 import { Ingresos_Semanales } from "./ingresos_semanales";
+import { Asistencia } from "./asistencias";
 
 //Un Ingreso Semanal pertenece a un equipo
 Ingresos_Semanales.belongsTo(Equipo,{ foreignKey:'equipo_id', as:'equipo'});
@@ -15,9 +16,13 @@ Operador.hasMany(Ingresos_Semanales,{ foreignKey:'operador_id', as:'ingresos'});
 Ingresos_Semanales.belongsTo(Actividad,{ foreignKey:'actividad_id', as:'actividad'});
 Actividad.hasMany(Ingresos_Semanales,{ foreignKey:'actividad_id', as:'ingresos'});
 
+Asistencia.belongsTo(Operador,{foreignKey:'operador_id', as: "operador"}); 
+Operador.hasMany(Asistencia,{foreignKey:'operador_id', as: "asistencia"});
+
 export{
     Equipo,
     Operador,
     Actividad,
     Ingresos_Semanales,
+    Asistencia,
 };

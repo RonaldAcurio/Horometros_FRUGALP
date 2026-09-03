@@ -15,6 +15,10 @@ export const routes: Routes = [
         loadComponent: () => import('./features/horometros/horometros.component').then(m => m.HorometrosComponent)
     },
     {
+        path: 'asistencia',
+        loadComponent: () => import('./components/asistencia/asistencia').then(m => m.AsistenciaComponent)
+    },
+    {
         path: '**',
         redirectTo: 'dashboard'
     }
