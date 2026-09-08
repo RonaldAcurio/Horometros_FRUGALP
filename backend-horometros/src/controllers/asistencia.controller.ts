@@ -4,6 +4,11 @@ import { Asistencia } from '../models/asistencias';
 import { Actividad } from '../models';
 import { Op } from 'sequelize';
 
+//funcion auxiliar para obtener la decha 'YYYY-MM-DD' en la zona horario de Ecuador
+const getFetchLocalEcuador = ():string => {
+    return new Date().toLocaleDateString('sv-SE',{timeZone: 'America/Guayaquil'});
+};
+
 //Crear un Nuevo Operador
 export const crearOperador = async (req:Request, res:Response):Promise<void> => {
     try{
@@ -70,8 +75,8 @@ export const registrarMacarcoQR= async(req:Request, res:Response):Promise<void> 
             return;
         }
 
-        //formato fecha actual yyyy-mm-dd
-        const hoy = new Date().toISOString().split('T')[0]!;
+        //formato fecha actual local Ecuador yyyy-mm-dd
+        const hoy = getFetchLocalEcuador();
 
         //Buscar si ya marco ingreso el dia de hoy
         let asistencia = await Asistencia.findOne({
@@ -139,9 +144,11 @@ export const registrarMacarcoQR= async(req:Request, res:Response):Promise<void> 
 };
 
 //Obtener reporte diario de asistencia
-export const obtenerAsistenciaHoy = async(_req:Request, res:Response):Promise<void> =>{
+export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<void> =>{
     try{
-        const hoy = new Date().toISOString().split('T')[0];
+        //Si viene fecha por query la usamos de lo contrario usamos la fecha local
+        const fechaQuery = req.query['fecha'] as string;
+        const hoy = fechaQuery || getFetchLocalEcuador();
         const asistencias = await Asistencia.findAll({
             where: { fecha:hoy },
             include: [
@@ -160,7 +167,7 @@ export const obtenerAsistenciaHoy = async(_req:Request, res:Response):Promise<vo
 export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
     try{
         const { fecha } = req.body;
-        const fechaProcesar = fecha || new Date().toISOString().split('T')[0];
+        const fechaProcesar = fecha || getFetchLocalEcuador();
 
         // 1.Aprobar marcaciones en PENDIENTE_REVISION -> FINALIZADO
         const [aprobados] = await Asistencia.update(
