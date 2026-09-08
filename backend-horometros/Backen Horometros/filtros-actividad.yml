@@ -1,0 +1,16 @@
+info:
+  name: filtros-actividad
+  type: http
+  seq: 8
+
+http:
+  method: GET
+  url: http://localhost:3000/api/actividad
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

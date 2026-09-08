@@ -1,0 +1,27 @@
+info:
+  name: put-actividad
+  type: http
+  seq: 8
+
+http:
+  method: PUT
+  url: http://localhost:3000/api/actividad/15
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {
+        "codigo_megued": "101T",
+        "description": "Mantenimiento Completo, de cada 1200HRS",
+        "categoria": "TALLER"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

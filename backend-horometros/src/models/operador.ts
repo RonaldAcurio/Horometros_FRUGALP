@@ -1,5 +1,6 @@
 import { DataTypes, Model, CreationOptional, InferAttributes, InferCreationAttributes } from 'sequelize';
 import { sequelize } from '../config/database';
+import { toDefaultValue } from 'sequelize/lib/utils';
 
 export class Operador extends Model <InferAttributes<Operador>, InferCreationAttributes<Operador>>{
     declare id: CreationOptional<number>;
@@ -9,6 +10,11 @@ export class Operador extends Model <InferAttributes<Operador>, InferCreationAtt
     declare cedula: CreationOptional<string>;
     declare telefono: CreationOptional<string>;
     declare direccion: CreationOptional<string>;
+    // ------- NUEVOS CAMPOS --------------
+    declare rol: CreationOptional<'MECANICO' | 'OPERADOR' | 'SUPERVICOR' | 'ASISTENTE' | 'ADMIN'>;
+    declare area: CreationOptional<string>;
+    declare firma_url: CreationOptional<string>;
+    
 }
 
 Operador.init(
@@ -42,6 +48,20 @@ Operador.init(
         direccion:{
             type: DataTypes.STRING(255),
             allowNull:true,
+        },
+        rol:{
+            type: DataTypes.STRING(20),
+            defaultValue: 'MECANICO',
+            allowNull: true,
+        },
+        area:{
+            type: DataTypes.STRING(100),
+            defaultValue: 'TALLER',
+            allowNull: true
+        },
+        firma_url:{
+            type: DataTypes.TEXT,
+            allowNull: true
         },
     },
     {

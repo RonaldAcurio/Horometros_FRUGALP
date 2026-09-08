@@ -5,6 +5,7 @@ export class Actividad extends Model < InferAttributes<Actividad>, InferCreation
     declare id: CreationOptional<number>;
     declare codigo_megued: string;
     declare description: string;
+    declare categoria: CreationOptional<'TALLER' | 'CAMPO'>;
 }
 
 Actividad.init(
@@ -23,11 +24,16 @@ Actividad.init(
             type: DataTypes.STRING(150),
             allowNull: false,
         },
+        categoria:{
+            type: DataTypes.STRING(50),
+            defaultValue: 'TALLER',
+        },
     },
     {
         sequelize,
         modelName: 'Actividad',
         tableName: 'actividades',
-        timestamps: false,
+        timestamps: true,
+        paranoid:true,
     }
 )

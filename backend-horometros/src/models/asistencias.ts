@@ -1,7 +1,10 @@
 import { DataTypes, Model, Optional, CreationOptional, InferAttributes, InferCreationAttributes } from 'sequelize';
 import { sequelize } from '../config/database';
+import { Operador } from './operador';
+import { Actividad } from './actividad'; 
+import { CreateAuthTokenConfig } from '@google/genai';
 
-//1. Definimos la interfaz con TODOS los atributos de la tabla
+/*1. Definimos la interfaz con TODOS los atributos de la tabla
 interface AsistenciaAttributes {
   id: number;
   operador_id: number;
@@ -13,14 +16,17 @@ interface AsistenciaAttributes {
 
 // 2. Definimos cuáles son opcionales al CREAR (el 'id' es auto-incremental, 'hora_salida' es opcional)
 interface AsistenciaCreationAttributes extends Optional<AsistenciaAttributes, 'id' | 'hora_salida'> {}
-
-export class Asistencia extends Model<AsistenciaAttributes, AsistenciaCreationAttributes> implements AsistenciaAttributes{
+*/
+export class Asistencia extends Model<InferAttributes<Asistencia>, InferCreationAttributes<Asistencia>>{
     declare id: CreationOptional<number>;
     declare operador_id: number;
     declare fecha: string;
     declare hora_ingreso: Date;
-    declare hora_salida: Date;
-    declare estado: 'PRESENTE' | 'FINALIZADO'
+    declare hora_salida: CreationOptional<Date | null>;
+    declare actividad_id: CreationOptional<number | null>;
+    declare estado: CreationOptional<'EN_JORNADA' | 'PENDIENTE_REVISION' | 'FINALIZADO' | 'SALIDA_OLVIDADA' | 'OBSERVANDO'>;
+    declare foto_ingreso: CreationOptional<string | null>;
+    declare observaciones: CreationOptional<string | null>;
 }
 
 Asistencia.init(
@@ -33,7 +39,7 @@ Asistencia.init(
         operador_id:{
             type: DataTypes.INTEGER,
             references:{
-                model: 'operador',
+                model: 'operadores',
                 key: 'id',
             },
         },
@@ -49,11 +55,27 @@ Asistencia.init(
             type: DataTypes.DATE,
             allowNull: true,
         },
+        actividad_id:{
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            references:{
+                model: 'actividades',
+                key: 'id'
+            },
+        },
         estado:{
-            type: DataTypes.ENUM('PRESENTE', 'FINALIZADO'),
+            type: DataTypes.STRING(50),
             allowNull: false,
-            defaultValue: 'PRESENTE',
-        }
+            defaultValue: 'EN_JORNADA',
+        },
+        foto_ingreso:{
+            type: DataTypes.TEXT,
+            allowNull: true,
+        },
+        observaciones:{
+            type: DataTypes.TEXT,
+            allowNull: true
+        },
     },
     {
         sequelize,

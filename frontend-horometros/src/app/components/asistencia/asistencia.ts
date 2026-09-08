@@ -19,22 +19,28 @@ import * as QRCode from 'qrcode';
 export class AsistenciaComponent implements OnInit {
   operadores: Operador[] = [];
   asistenciasHoy: Asistencia[] = [];
+  actividades: any[] = [];
   
   // Búsqueda y Paginación
   terminoBusqueda: string = '';
   paginaActual: number = 1;
   itemsPorPagina: number = 5;
 
-  // Operador Seleccionado para Formulario / QR
+  // Operador Seleccionado
   operadorSeleccionado: Operador | null = null;
   qrCodeUrl: string = '';
   
-  // Escáner QR
+  // Escáner QR y Marcación
   escanearActivo: boolean = false;
   mensajeEscaneo: string = '';
   tipoMensaje: 'exito' | 'error' | 'info' = 'info';
 
-  // Formulario rápido (edición)
+  // Modal Selección de Actividad para Marcación de Salida
+  mostrarModalActividad: boolean = false;
+  operadorPendienteSalidaId: number | null = null;
+  actividadSeleccionadaId: number | null = null;
+
+  // Formulario de edición rápida
   cedula: string = '';
   telefono: string = '';
   direccion: string = '';
@@ -57,13 +63,12 @@ export class AsistenciaComponent implements OnInit {
   ngOnInit(): void {
     this.cargarOperadores();
     this.cargarAsistenciasHoy();
+    this.cargarActividades();
   }
 
   cargarOperadores(): void {
     this.asistenciaService.obtenerOperadores().subscribe({
       next: (data: any) => {
-        console.log('--- RESPUESTA RECIBIDA DEL BACKEND ---', data);
-
         if (Array.isArray(data)) {
           this.operadores = data;
         } else if (data && typeof data === 'object') {
@@ -71,13 +76,10 @@ export class AsistenciaComponent implements OnInit {
         } else {
           this.operadores = [];
         }
-
-        console.log('--- OPERADORES CARGADOS EN MEMORIA ---', this.operadores.length);
-
         this.paginaActual = 1;
-        this.cdr.detectChanges(); // Forzar renderizado en pantalla
+        this.cdr.detectChanges();
       },
-      error: (err) => console.error('Error cargando operadores desde Render:', err)
+      error: (err) => console.error('Error cargando operadores:', err)
     });
   }
 
@@ -91,10 +93,18 @@ export class AsistenciaComponent implements OnInit {
     });
   }
 
-  // --- FILTRADO Y PAGINACIÓN EN TIEMPO REAL ---
+  cargarActividades(): void {
+    this.asistenciaService.obtenerActividades().subscribe({
+      next: (data) => {
+        this.actividades = Array.isArray(data) ? data : (data as any)?.data || [];
+      },
+      error: (err) => console.error('Error cargando catálogo de actividades:', err)
+    });
+  }
+
+  // FILTRADO Y PAGINACIÓN
   get operadoresFiltrados(): Operador[] {
     if (!this.operadores || !Array.isArray(this.operadores)) return [];
-
     const termino = (this.terminoBusqueda || '').toLowerCase().trim();
     if (!termino) return this.operadores;
 
@@ -102,7 +112,6 @@ export class AsistenciaComponent implements OnInit {
       const nombre = (op.nombre_completo || '').toString().toLowerCase();
       const codigo = (op.codigo_megued || op.id || '').toString().toLowerCase();
       const cedula = (op.cedula || '').toString().toLowerCase();
-
       return nombre.includes(termino) || codigo.includes(termino) || cedula.includes(termino);
     });
   }
@@ -112,8 +121,7 @@ export class AsistenciaComponent implements OnInit {
     if (filtrados.length === 0) return [];
 
     const inicio = (this.paginaActual - 1) * this.itemsPorPagina;
-    const fin = inicio + this.itemsPorPagina;
-    return filtrados.slice(inicio, fin);
+    return filtrados.slice(inicio, inicio + this.itemsPorPagina);
   }
 
   get totalPaginas(): number {
@@ -130,26 +138,22 @@ export class AsistenciaComponent implements OnInit {
     }
   }
 
-  // --- SELECCIÓN Y EDICIÓN ---
+  // SELECCIÓN Y EDICIÓN
   async seleccionarOperador(op: Operador): Promise<void> {
     this.operadorSeleccionado = op;
     this.cedula = op.cedula || '';
     this.telefono = op.telefono || '';
     this.direccion = op.direccion || '';
-
-    // Esperamos que el QR termine de generarse
     await this.generarQR(op.id);
-
-    // Forzamos la actualización de la vista de inmediato
     this.cdr.detectChanges();
   }
 
   async generarQR(operadorId: number): Promise<void> {
     try {
       const payload = JSON.stringify({ operador_id: operadorId });
-      this.qrCodeUrl = await QRCode.toDataURL(payload, { width: 250, margin: 2 });
+      this.qrCodeUrl = await QRCode.toDataURL(payload, { width: 220, margin: 2 });
     } catch (err) {
-      console.error('Error al generar código QR:', err);
+      console.error('Error generando QR:', err);
     }
   }
 
@@ -171,7 +175,7 @@ export class AsistenciaComponent implements OnInit {
     });
   }
 
-  // --- MODAL NUEVO OPERADOR ---
+  // MODAL NUEVO OPERADOR
   abrirModalNuevoOperador(): void {
     this.nuevoOperador = { nombre_completo: '', codigo_megued: '', cedula: '', telefono: '', direccion: '' };
     this.mostrarModalOperador = true;
@@ -193,12 +197,12 @@ export class AsistenciaComponent implements OnInit {
       },
       error: (err) => {
         console.error('Error al crear operador:', err);
-        alert('Error al guardar en el servidor.');
+        alert('Error al guardar operador.');
       }
     });
   }
 
-  // --- ESCÁNER ---
+  // ESCÁNER Y MARCACIÓN
   onCodeResult(resultString: string): void {
     try {
       const data = JSON.parse(resultString);
@@ -212,18 +216,51 @@ export class AsistenciaComponent implements OnInit {
     }
   }
 
-  procesarMarca(operadorId: number): void {
-    this.asistenciaService.registrarMarcaQR(operadorId).subscribe({
+  procesarMarca(operadorId: number, actividadId?: number): void {
+    this.asistenciaService.registrarMarcaQR(operadorId, actividadId).subscribe({
       next: (res) => {
-        this.mensajeEscaneo = res.message;
+        if (res.requiere_actividad) {
+          this.operadorPendienteSalidaId = operadorId;
+          this.mostrarModalActividad = true;
+          this.cdr.detectChanges();
+          return;
+        }
+
+        this.mensajeEscaneo = res.message || 'Marcación registrada con éxito.';
         this.tipoMensaje = 'exito';
+        this.cerrarModalActividad();
         this.cargarAsistenciasHoy();
       },
       error: (err) => {
-        this.mensajeEscaneo = err.error?.message || 'Error procesando la asistencia.';
+        this.mensajeEscaneo = err.error?.message || 'Error al procesar asistencia.';
         this.tipoMensaje = 'error';
       }
     });
+  }
+
+  confirmarSalidaConActividad(): void {
+    if (this.operadorPendienteSalidaId && this.actividadSeleccionadaId) {
+      this.procesarMarca(this.operadorPendienteSalidaId, this.actividadSeleccionadaId);
+    }
+  }
+
+  cerrarModalActividad(): void {
+    this.mostrarModalActividad = false;
+    this.operadorPendienteSalidaId = null;
+    this.actividadSeleccionadaId = null;
+  }
+
+  // ACCIÓN CERRAR JORNADA
+  ejecutarCierreDiario(): void {
+    if (confirm('¿Desea realizar el cierre diario? Los registros sin salida quedarán en revisión.')) {
+      this.asistenciaService.finalizarDia().subscribe({
+        next: (res) => {
+          alert(res.message || 'Cierre de jornada completado.');
+          this.cargarAsistenciasHoy();
+        },
+        error: () => alert('Error procesando el cierre de día.')
+      });
+    }
   }
 
   imprimirQR(): void {

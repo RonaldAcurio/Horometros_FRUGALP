@@ -1,0 +1,27 @@
+info:
+  name: nuevaActividad
+  type: http
+  seq: 6
+
+http:
+  method: POST
+  url: http://localhost:3000/api/actividad/nueva
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {
+        "codigo_megued": "101T",
+        "description": "Mantenimiento Completo",
+        "categoria": "TALLER"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

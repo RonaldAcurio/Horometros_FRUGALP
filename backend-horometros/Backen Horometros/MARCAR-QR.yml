@@ -1,0 +1,26 @@
+info:
+  name: MARCAR-QR
+  type: http
+  seq: 4
+
+http:
+  method: POST
+  url: http://localhost:3000/api/asistencia/marcar-qr
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {
+        "operador_id": 62,
+        "foto_ingreso": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

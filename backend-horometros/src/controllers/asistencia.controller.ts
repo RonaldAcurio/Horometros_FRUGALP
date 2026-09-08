@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { Operador } from '../models/operador';
 import { Asistencia } from '../models/asistencias';
+import { Actividad } from '../models';
 import { Op } from 'sequelize';
 
 //Crear un Nuevo Operador
@@ -61,7 +62,8 @@ export const obtenerOperadores = async(_req: Request, res:Response):Promise<void
 //Logica de Marcacion con Escaner QR (Entrada/Salida)
 export const registrarMacarcoQR= async(req:Request, res:Response):Promise<void> => {
     try{
-        const { operador_id } = req.body;
+        const { operador_id, actividad_id, foto_ingreso, observaciones } = req.body;
+
         const operador = await Operador.findByPk(Number(operador_id));
         if(!operador){
             res.status(404).json({message:"Operador no registrado en el sistema"});
@@ -87,7 +89,8 @@ export const registrarMacarcoQR= async(req:Request, res:Response):Promise<void> 
                 operador_id: operador.id,
                 fecha: hoy,
                 hora_ingreso: ahora,
-                estado: 'PRESENTE',
+                estado: 'EN_JORNADA',
+                foto_ingreso: foto_ingreso || null,
             });
             res.json({
                 tipo:'ENTRADA',
@@ -95,11 +98,27 @@ export const registrarMacarcoQR= async(req:Request, res:Response):Promise<void> 
                 operador: operador.nombre_completo,
                 asistencia,
             });
-        } else if(asistencia.estado === 'PRESENTE'){
-            //Caso 2: Ya ingreso hoy -> Registrar Salida
+        } else if(asistencia.estado === 'EN_JORNADA'){
+            //Caso 2: Ya ingreso hoy -> Registrar Salida (Exigimos actividad)
+            if(!actividad_id){
+                res.status(400).json({
+                    message:"Es obligatorio seleccionar una actividad para registrar la salida.",
+                    require_actividad: true
+                });
+                return;
+            }
+
+            // Validar que la actividad exista y NO este eliminada(Soft Delete)
+            const actividadExistente = await Actividad.findByPk(Number(actividad_id));
+            if(!actividadExistente){
+                res.status(404).json({ message:'La actividad seleccionada no existe o esta inactiva'});
+                return;
+            }
+
             await asistencia.update({
                 hora_salida:ahora,
-                estado:'FINALIZADO',
+                actividad_id: Number(actividad_id),
+                estado:'PENDIENTE_REVISION',
             });
 
             res.json({
@@ -115,7 +134,7 @@ export const registrarMacarcoQR= async(req:Request, res:Response):Promise<void> 
             }); 
         }
     } catch(err){
-        res.status(500).json({message:'Error procesando mar QR',err});
+        res.status(500).json({message:'Error procesando marca QR',err});
     }
 };
 
@@ -125,11 +144,122 @@ export const obtenerAsistenciaHoy = async(_req:Request, res:Response):Promise<vo
         const hoy = new Date().toISOString().split('T')[0];
         const asistencias = await Asistencia.findAll({
             where: { fecha:hoy },
-            include: [{ model: Operador, as:'operador'}],
+            include: [
+                { model: Operador, as:'operador'},
+                { model: Actividad, as:'actividad'}
+            ],
             order: [['hora_ingreso','DESC']],
         });
         res.json(asistencias);
     } catch(error){
         res.status(500).json({message:'Error al obtener asustencias', error});
+    }
+};
+
+// Cierre de jornada ejecutando por el Supervisor
+export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
+    try{
+        const { fecha } = req.body;
+        const fechaProcesar = fecha || new Date().toISOString().split('T')[0];
+
+        // 1.Aprobar marcaciones en PENDIENTE_REVISION -> FINALIZADO
+        const [aprobados] = await Asistencia.update(
+            { estado: 'FINALIZADO'},
+            {
+                where:{
+                    fecha: fechaProcesar,
+                    estado: 'PENDIENTE_REVISION'
+                }
+            }
+        );
+
+        // 2. Marcar operadores olvidados (se quedaron en EN_JORNADA) -> SALIDA_OLVIDADA
+        const [olvidados] = await Asistencia.update(
+            {estado:'SALIDA_OLVIDADA'},
+            {
+                where:{
+                    fecha: fechaProcesar,
+                    estado: 'EN_JORNADA'
+                }
+            }
+        );
+
+        res.json({
+            message: `Jornada del ${fechaProcesar} cerrada con exito.`,
+            resumen: {
+                registros_finalizados: aprobados,
+                salidas_olvidadas: olvidados
+            }
+        });
+
+    }catch(err){
+        res.status(500).json({ message: 'Error al ejecutar el cierre del dia', err});
+    }
+};
+
+// Historial con filtros opcionales de fechas
+export const obtenerHistorial = async(req:Request, res:Response):Promise<void> => {
+    try{
+        const { fecha_inicio, fecha_fin, operador_id } = req.query;
+        const whereCondition:any = {};
+
+        // Filtro por rango de fecha
+        if(fecha_inicio && fecha_fin){
+            whereCondition.fecha = {
+                [Op.between]:[String(fecha_inicio), String(fecha_fin)]
+            };
+        } else if(fecha_inicio){
+            whereCondition.fecha = String(fecha_inicio);
+        }
+
+        // Filtro opcional por operador
+        if(operador_id){
+            whereCondition.operador_id = Number(operador_id);
+        }
+
+        const historial = await Asistencia.findAll({
+            where: whereCondition,
+            include:[
+                { model: Operador, as: 'operador' },
+                { model: Actividad, as: 'actividad' }
+            ],
+            order: [['fecha','DESC'],['hora_ingreso','DESC']]
+        });
+
+        res.json(historial);
+
+    } catch(err){
+        res.status(500).json({ message: 'Error al consultar el historial del asistencia', err});
+    }
+};
+
+// Edicion/Revision por parte del Supervisor(Ajustes de hora, estado u observacciones)
+export const revisarAsistencia = async(req:Request, res:Response):Promise<void> => {
+    try{
+
+        const { id } = req.params;
+        const { hora_salida, observaciones, estado, actividad_id } = req.body;
+
+        const asistencia = await Asistencia.findByPk(Number(id));
+        if(!asistencia){
+            res.status(404).json({ message: "Registro de asistencia no encontrado."});
+            return;
+        }
+
+        await asistencia.update({
+            hora_salida: hora_salida ?? asistencia.hora_salida,
+            observaciones: observaciones ?? asistencia.observaciones,
+            estado: estado ?? asistencia.estado,
+            actividad_id: actividad_id ? Number(actividad_id) : asistencia.actividad_id,
+        });
+
+        res.json({
+            message:"Asistencia actualizada por el supervisor.",
+            asistencia
+        });
+
+    }catch(err){
+        res.status(500).json({ message:"Error al revisar la asistencia.",err });
+
     }
 }

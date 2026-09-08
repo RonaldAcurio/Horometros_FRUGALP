@@ -1,0 +1,29 @@
+info:
+  name: Asistentes-operadores
+  type: http
+  seq: 3
+
+http:
+  method: POST
+  url: http://localhost:3000/api/asistencia/operadores
+  headers:
+    - name: Content-Type
+      value: application/json
+  body:
+    type: json
+    data: |-
+      {
+        "nombre_completo": "Carlos Mendoza",
+        "codigo_megued": "MEC-001",
+        "cedula": "1723456789",
+        "telefono": "0998765432",
+        "direccion": "Santo Domingo"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

@@ -1,18 +1,24 @@
 <div class="asistencia-container">
   
-  <!-- TÍTULO PRINCIPAL -->
+  <!-- CABECERA PRINCIPAL -->
   <div class="header-banner">
-    <h2 class="main-title">
-      Control de <span class="title-highlight">Asistencia QR</span>
-    </h2>
-    <span class="badge-neon badge-presente">Sistema Operativo</span>
+    <div>
+      <h2 class="main-title">Control de Asistencia y Campo</h2>
+      <p class="subtitle">Registro de personal y asignación de labores</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="badge badge-active">● Sistema Operativo</span>
+      <button class="btn btn-warning" (click)="ejecutarCierreDiario()">
+        🔒 Cerrar Jornada del Día
+      </button>
+    </div>
   </div>
 
   <!-- SECCIÓN ESCÁNER EN VIVO -->
-  <div class="card-neon">
-    <div class="card-header-neon">
-      <h5>📷 Escáner de Marcación en Tiempo Real</h5>
-      <button class="btn-neon-green" (click)="escanearActivo = !escanearActivo">
+  <div class="card shadow-sm">
+    <div class="card-header flex justify-between items-center">
+      <h5 class="card-title">📷 Escáner QR de Marcación</h5>
+      <button class="btn btn-primary" (click)="escanearActivo = !escanearActivo">
         {{ escanearActivo ? '✖ Cerrar Cámara' : '⚡ Abrir Escáner' }}
       </button>
     </div>
@@ -24,88 +30,88 @@
     </div>
 
     <div class="alert-container" *ngIf="mensajeEscaneo">
-      <div [class]="tipoMensaje === 'exito' ? 'alert-neon-success' : 'alert-neon-danger'">
+      <div [class]="tipoMensaje === 'exito' ? 'alert alert-success' : 'alert alert-danger'">
         {{ mensajeEscaneo }}
       </div>
     </div>
   </div>
 
-  <!-- GRILLA PRINCIPAL -->
+  <!-- GRILLA PRINCIPAL DE DOS COLUMNAS -->
   <div class="grid-two-columns">
     
-<!-- COLUMNA IZQUIERDA: LISTA DE OPERADORES -->
-<div class="card-neon">
-  <div class="card-header-neon flex justify-between items-center">
-    <h5>📋 Lista de Operadores</h5>
-    <button class="btn-neon-green btn-table" (click)="abrirModalNuevoOperador()">
-      ➕ Nuevo
-    </button>
-  </div>
+    <!-- COLUMNA IZQUIERDA: LISTA DE OPERADORES -->
+    <div class="card">
+      <div class="card-header flex justify-between items-center">
+        <h5 class="card-title">📋 Directorio de Operadores</h5>
+        <button class="btn btn-primary btn-sm" (click)="abrirModalNuevoOperador()">
+          ➕ Nuevo Operador
+        </button>
+      </div>
 
-  <!-- BARRA DE BÚSQUEDA -->
-  <div class="p-3">
-    <input 
-      type="text" 
-      [(ngModel)]="terminoBusqueda" 
-      (input)="onSearchChange()"
-      placeholder="🔍 Buscar por nombre, código o cédula..." 
-      class="input-neon w-full text-sm"
-    />
-  </div>
+      <!-- BÚSQUEDA -->
+      <div class="p-3">
+        <input 
+          type="text" 
+          [(ngModel)]="terminoBusqueda" 
+          (input)="onSearchChange()"
+          placeholder="🔍 Buscar por nombre, código Megued o cédula..." 
+          class="input-control w-full"
+        />
+      </div>
 
-  <div class="table-responsive">
-    <table class="table-neon">
-      <thead>
-        <tr>
-          <th>Código</th>
-          <th>Operador</th>
-          <th>Acción</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let op of operadoresPaginados" (click)="seleccionarOperador(op)" class="row-hover">
-          <td><strong class="code-highlight">{{ op.codigo_megued || op.id }}</strong></td>
-          <td>{{ op.nombre_completo }}</td>
-          <td>
-            <button class="btn-neon-green btn-table">
-              Seleccionar
-            </button>
-          </td>
-        </tr>
-        <tr *ngIf="operadoresFiltrados.length === 0">
-          <td colspan="3" class="table-empty-row">
-            No se encontraron operadores.
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Operador</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let op of operadoresPaginados" (click)="seleccionarOperador(op)" class="row-hover">
+              <td><strong class="code-badge">{{ op.codigo_megued || op.id }}</strong></td>
+              <td class="font-medium text-slate-100">{{ op.nombre_completo }}</td>
+              <td>
+                <button class="btn btn-secondary btn-sm">
+                  Seleccionar
+                </button>
+              </td>
+            </tr>
+            <tr *ngIf="operadoresFiltrados.length === 0">
+              <td colspan="3" class="table-empty">
+                No se encontraron operadores registrados.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
-  <!-- CONTROLES DE PAGINACIÓN -->
-  <div class="flex items-center justify-between p-3 border-t border-slate-800 text-xs text-slate-400">
-    <span>Página {{ paginaActual }} de {{ totalPaginas }}</span>
-    <div class="flex gap-1">
-      <button 
-        [disabled]="paginaActual === 1" 
-        (click)="cambiarPagina(paginaActual - 1)" 
-        class="px-2 py-1 bg-slate-800 rounded disabled:opacity-30 hover:bg-slate-700">
-        ◀
-      </button>
-      <button 
-        [disabled]="paginaActual === totalPaginas" 
-        (click)="cambiarPagina(paginaActual + 1)" 
-        class="px-2 py-1 bg-slate-800 rounded disabled:opacity-30 hover:bg-slate-700">
-        ▶
-      </button>
+      <!-- PAGINACIÓN -->
+      <div class="pagination-bar">
+        <span>Página {{ paginaActual }} de {{ totalPaginas }}</span>
+        <div class="flex gap-1">
+          <button 
+            [disabled]="paginaActual === 1" 
+            (click)="cambiarPagina(paginaActual - 1)" 
+            class="btn btn-secondary btn-sm">
+            ◀
+          </button>
+          <button 
+            [disabled]="paginaActual === totalPaginas" 
+            (click)="cambiarPagina(paginaActual + 1)" 
+            class="btn btn-secondary btn-sm">
+            ▶
+          </button>
+        </div>
+      </div>
     </div>
-  </div>
-</div>
 
-    <!-- COLUMNA DERECHA: FICHA Y CARNET QR -->
+    <!-- COLUMNA DERECHA: FICHA Y GENERACIÓN DE CARNET -->
     <div>
-      <div class="card-neon" *ngIf="operadorSeleccionado; else sinSeleccion">
-        <div class="card-header-neon">
-          <h5>👤 Ficha: {{ operadorSeleccionado.nombre_completo }}</h5>
+      <div class="card" *ngIf="operadorSeleccionado; else sinSeleccion">
+        <div class="card-header">
+          <h5 class="card-title">👤 Ficha: {{ operadorSeleccionado.nombre_completo }}</h5>
         </div>
         <div class="card-body-grid">
           
@@ -113,29 +119,29 @@
           <div class="form-section">
             <div class="form-group">
               <label class="form-label">Cédula de Identidad</label>
-              <input type="text" class="input-neon" [(ngModel)]="cedula" placeholder="Ej: 1712345678">
+              <input type="text" class="input-control" [(ngModel)]="cedula" placeholder="Ej: 1712345678">
             </div>
             <div class="form-group">
               <label class="form-label">Teléfono</label>
-              <input type="text" class="input-neon" [(ngModel)]="telefono" placeholder="Ej: 0991234567">
+              <input type="text" class="input-control" [(ngModel)]="telefono" placeholder="Ej: 0991234567">
             </div>
             <div class="form-group">
               <label class="form-label">Dirección</label>
-              <input type="text" class="input-neon" [(ngModel)]="direccion" placeholder="Ej: Av. Principal">
+              <input type="text" class="input-control" [(ngModel)]="direccion" placeholder="Ej: Santo Domingo">
             </div>
-            <button class="btn-neon-green btn-block" (click)="guardarDatosOperador()">
-              💾 Guardar Cambios
+            <button class="btn btn-primary w-full mt-2" (click)="guardarDatosOperador()">
+              💾 Actualizar Ficha
             </button>
           </div>
 
           <!-- CARNET QR -->
           <div class="qr-section">
-            <label class="form-label">Carnet QR Generado</label>
+            <label class="form-label mb-2">Carnet QR de Marcación</label>
             <div class="qr-box" *ngIf="qrCodeUrl">
-              <img [src]="qrCodeUrl" class="qr-image" alt="Código QR Operador" />
+              <img [src]="qrCodeUrl" class="qr-image" alt="QR Operador" />
             </div>
-            <button class="btn-neon-yellow btn-block" (click)="imprimirQR()">
-              🖨️ Imprimir Carnet QR
+            <button class="btn btn-secondary w-full mt-2" (click)="imprimirQR()">
+              🖨️ Imprimir Carnet
             </button>
           </div>
 
@@ -143,124 +149,167 @@
       </div>
 
       <ng-template #sinSeleccion>
-        <div class="card-neon empty-state">
-          <p class="text-muted">Seleccione un operador de la lista para gestionar sus datos y generar su carnet QR.</p>
+        <div class="card empty-state">
+          <p class="text-muted">Seleccione un operador de la lista para ver su información y generar el carnet de asistencia.</p>
         </div>
       </ng-template>
     </div>
 
   </div>
 
-  <!-- SECCIÓN INFERIOR: TABLA DE REPORTES DEL DÍA -->
-  <div class="card-neon mt-section">
-    <div class="card-header-neon">
-      <h5>📊 Reporte de Asistencias del Día de Hoy</h5>
+  <!-- REPORTE DE ASISTENCIAS DEL DÍA -->
+  <div class="card mt-section">
+    <div class="card-header flex justify-between items-center">
+      <h5 class="card-title">📊 Registro de Asistencia del Día de Hoy</h5>
     </div>
-    <table class="table-neon">
-      <thead>
-        <tr>
-          <th>Operador</th>
-          <th>Fecha</th>
-          <th>Ingreso</th>
-          <th>Salida</th>
-          <th>Estado</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let asis of asistenciasHoy">
-          <td><strong class="text-white">{{ asis.operador?.nombre_completo }}</strong></td>
-          <td>{{ asis.fecha }}</td>
-          <td><span class="badge-neon badge-presente">{{ asis.hora_ingreso | date:'HH:mm:ss' }}</span></td>
-          <td>
-            <span *ngIf="asis.hora_salida" class="badge-neon badge-finalizado">{{ asis.hora_salida | date:'HH:mm:ss' }}</span>
-            <span *ngIf="!asis.hora_salida" class="text-muted-status">En Trabajo</span>
-          </td>
-          <td>
-            <span [class]="asis.estado === 'PRESENTE' ? 'badge-neon badge-presente' : 'badge-neon badge-finalizado'">
-              {{ asis.estado }}
-            </span>
-          </td>
-        </tr>
-        <tr *ngIf="asistenciasHoy.length === 0">
-          <td colspan="5" class="table-empty-row">
-            Aún no hay marcaciones registradas para el día de hoy.
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Operador</th>
+            <th>Fecha</th>
+            <th>Ingreso</th>
+            <th>Salida</th>
+            <th>Actividad Asignada</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let asis of asistenciasHoy">
+            <td><strong class="text-slate-100">{{ asis.operador?.nombre_completo || 'N/A' }}</strong></td>
+            <td>{{ asis.fecha }}</td>
+            <td><span class="time-badge">{{ asis.hora_ingreso }}</span></td>
+            <td>
+              <span *ngIf="asis.hora_salida" class="time-badge">{{ asis.hora_salida }}</span>
+              <span *ngIf="!asis.hora_salida" class="text-muted-sm">En Turno</span>
+            </td>
+            <td>
+              <span *ngIf="asis.actividad" class="text-emerald-400 font-medium">
+                {{ asis.actividad.codigo_megued }} - {{ asis.actividad.description }}
+              </span>
+              <span *ngIf="!asis.actividad" class="text-muted-sm">Sin registrar</span>
+            </td>
+            <td>
+              <span [ngClass]="{
+                'badge-status status-jornada': asis.estado === 'EN_JORNADA',
+                'badge-status status-finalizado': asis.estado === 'FINALIZADO',
+                'badge-status status-revision': asis.estado === 'PENDIENTE_REVISION',
+                'badge-status status-olvidada': asis.estado === 'SALIDA_OLVIDADA'
+              }">
+                {{ asis.estado }}
+              </span>
+            </td>
+          </tr>
+          <tr *ngIf="asistenciasHoy.length === 0">
+            <td colspan="6" class="table-empty">
+              No hay marcaciones registradas el día de hoy.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
-  <!-- MODAL CREAR NUEVO OPERADOR (CON TODOS LOS CAMPOS) -->
-  <div class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" *ngIf="mostrarModalOperador">
-    <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 max-w-md w-full shadow-2xl space-y-4">
-      <h3 class="text-lg font-bold text-slate-100 flex items-center gap-2">
-        👤 Registrar Nuevo Operador
-      </h3>
+  <!-- MODAL: REGISTRAR ACTIVIDAD AL MARCAR SALIDA -->
+  <div class="modal-backdrop" *ngIf="mostrarModalActividad">
+    <div class="modal-card">
+      <h3 class="modal-title">🌾 Registrar Actividad de Salida</h3>
+      <p class="text-slate-300 text-sm mb-4">Seleccione la labor realizada durante la jornada antes de registrar la salida:</p>
+
+      <div class="form-group mb-4">
+        <label class="form-label">Labor / Actividad Realizada *</label>
+        <select [(ngModel)]="actividadSeleccionadaId" class="input-control w-full">
+          <option [ngValue]="null" disabled selected>-- Seleccione una Actividad --</option>
+          <option *ngFor="let act of actividades" [value]="act.id">
+            [{{ act.codigo_megued }}] {{ act.description }}
+          </option>
+        </select>
+      </div>
+
+      <div class="flex justify-end gap-2">
+        <button type="button" (click)="cerrarModalActividad()" class="btn btn-secondary">
+          Cancelar
+        </button>
+        <button 
+          type="button" 
+          [disabled]="!actividadSeleccionadaId" 
+          (click)="confirmarSalidaConActividad()" 
+          class="btn btn-primary">
+          Confirmar Salida
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: NUEVO OPERADOR -->
+  <div class="modal-backdrop" *ngIf="mostrarModalOperador">
+    <div class="modal-card">
+      <h3 class="modal-title">👤 Registrar Nuevo Operador</h3>
       
-      <form (ngSubmit)="guardarNuevoOperador()" #formOperador="ngForm" class="space-y-3">
+      <form (ngSubmit)="guardarNuevoOperador()" #formOperador="ngForm" class="space-y-3 mt-3">
         <div>
-          <label class="block text-xs font-medium text-slate-300 mb-1">Nombre Completo *</label>
+          <label class="form-label">Nombre Completo *</label>
           <input 
             type="text" 
             [(ngModel)]="nuevoOperador.nombre_completo" 
             name="nombre_completo" 
             required 
             placeholder="Ej: Juan Pérez"
-            class="input-neon w-full">
+            class="input-control w-full">
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-slate-300 mb-1">Código Megued / ID *</label>
+          <label class="form-label">Código Megued / ID *</label>
           <input 
             type="text" 
             [(ngModel)]="nuevoOperador.codigo_megued" 
             name="codigo_megued" 
             required 
             placeholder="Ej: OP-1020"
-            class="input-neon w-full">
+            class="input-control w-full">
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-slate-300 mb-1">Cédula</label>
+          <label class="form-label">Cédula</label>
           <input 
             type="text" 
             [(ngModel)]="nuevoOperador.cedula" 
             name="cedula" 
             placeholder="Ej: 1712345678"
-            class="input-neon w-full">
+            class="input-control w-full">
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-slate-300 mb-1">Teléfono</label>
+          <label class="form-label">Teléfono</label>
           <input 
             type="text" 
             [(ngModel)]="nuevoOperador.telefono" 
             name="telefono" 
             placeholder="Ej: 0991234567"
-            class="input-neon w-full">
+            class="input-control w-full">
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-slate-300 mb-1">Dirección</label>
+          <label class="form-label">Dirección</label>
           <input 
             type="text" 
             [(ngModel)]="nuevoOperador.direccion" 
             name="direccion" 
             placeholder="Ej: Santo Domingo"
-            class="input-neon w-full">
+            class="input-control w-full">
         </div>
 
         <div class="flex justify-end gap-2 pt-3">
           <button 
             type="button" 
             (click)="cerrarModalNuevoOperador()"
-            class="btn-neon-yellow">
+            class="btn btn-secondary">
             Cancelar
           </button>
           <button 
             type="submit" 
             [disabled]="!formOperador.form.valid"
-            class="btn-neon-green">
+            class="btn btn-primary">
             Guardar
           </button>
         </div>
