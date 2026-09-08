@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, of, catchError } from 'rxjs';
 import { environment } from '../../environments/environment';
 
 export interface Operador {
@@ -76,7 +76,12 @@ export class AsistenciaService {
     // Nota: como está en la raíz de /api, construimos la URL reemplazando la ruta base
     obtenerActividades(): Observable<any[]> {
         const urlActividades = this.baseUrl.replace('/asistencia', '/actividades');
-        return this.http.get<any[]>(urlActividades);
+        return this.http.get<any[]>(urlActividades).pipe(
+            catchError(err => {
+                console.warn('Ruta de actividades no disponible (404), retornando arreglo vacio: ',err);
+                return of([]);//Retorna [] para que NO rompa las demas llamadas
+            })
+        );
     }
 
     // GET -> https://.../api/asistencia/hoy  (¡Atención: sin /asistencia repetido!)

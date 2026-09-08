@@ -85,11 +85,21 @@ export class AsistenciaComponent implements OnInit {
 
   cargarAsistenciasHoy(): void {
     this.asistenciaService.obtenerAsistenciasHoy().subscribe({
-      next: (data) => {
-        this.asistenciasHoy = Array.isArray(data) ? data : (data as any)?.data || [];
+      next: (data:any) => {
+        console.log('Datos de asistencias recibidos del backend:',data);
+
+        // Si el backend responde { success:true, data:[...]} o directamente [...]
+        if(Array.isArray(data)){
+          this.asistenciasHoy=data;
+        } else if(data && Array.isArray(data.data)){
+          this.asistenciasHoy = data.data;
+        } else{
+          this.asistenciasHoy = [];
+        }
+
         this.cdr.detectChanges();
       },
-      error: (err) => console.error('Error cargando asistencias:', err)
+      error: (err) => console.error('Error cargando asistencias de hoy:', err)
     });
   }
 
