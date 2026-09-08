@@ -75,10 +75,10 @@ export class AsistenciaService {
     // GET -> /api/actividades (Catálogo de actividades para la salida)
     // Nota: como está en la raíz de /api, construimos la URL reemplazando la ruta base
     obtenerActividades(): Observable<any[]> {
-        const urlActividades = this.baseUrl.replace('/asistencia', '/actividades');
+        const urlActividades = `${environment.apuUrl}/actividad`;
         return this.http.get<any[]>(urlActividades).pipe(
             catchError(err => {
-                console.warn('Ruta de actividades no disponible (404), retornando arreglo vacio: ',err);
+                console.warn('Error al obtener actividades de /api/actividad: ',err);
                 return of([]);//Retorna [] para que NO rompa las demas llamadas
             })
         );
