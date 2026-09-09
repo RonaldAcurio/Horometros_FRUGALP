@@ -1,0 +1,158 @@
+.asistente-container {
+  padding: 1.5rem;
+  max-width: 80rem;
+  margin: 0 auto;
+}
+
+.panel-header {
+  margin-bottom: 1.5rem;
+}
+
+.panel-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.panel-subtitle {
+  color: #94a3b8;
+  font-size: 0.875rem;
+}
+
+/* Tabs */
+.tabs-bar {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid #334155;
+  margin-bottom: 1.5rem;
+}
+
+.tab-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  padding: 0.75rem 1.25rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover {
+  color: #ffffff;
+}
+
+.tab-btn.active {
+  color: #10b981;
+  border-bottom-color: #10b981;
+}
+
+/* Filtro por fecha */
+.filter-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #1e293b;
+  border: 1px solid #334155;
+  padding: 1rem 1.5rem;
+  border-radius: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.filter-label {
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.date-input {
+  background-color: #0f172a;
+  border: 1px solid #334155;
+  color: #ffffff;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  outline: none;
+}
+
+/* Badges de Estado */
+.status-badge {
+  padding: 0.35rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.status-badge.cerrado {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+.status-badge.pendiente {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+/* Tabla */
+.table-card {
+  background-color: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.data-table th {
+  background-color: #0f172a;
+  color: #94a3b8;
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  border-bottom: 1px solid #334155;
+}
+
+.data-table td {
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid #1e293b;
+  color: #e2e8f0;
+}
+
+.code-badge {
+  background-color: #0f172a;
+  color: #38bdf8;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.25rem;
+  font-weight: 600;
+}
+
+.btn-subtle, .btn-icon {
+  background-color: #334155;
+  color: #ffffff;
+  border: none;
+  padding: 0.35rem 0.65rem;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: background-color 0.2s;
+}
+
+.btn-subtle:hover, .btn-icon:hover {
+  background-color: #475569;
+}
+
+.obs-tag {
+  color: #fbbf24;
+  font-size: 0.8rem;
+  cursor: help;
+}

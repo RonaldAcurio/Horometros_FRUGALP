@@ -1,131 +1,91 @@
-<div class="asistencia-container">
-  <div class="header-banner">
+<div class="asistente-container">
+
+  <!-- CABECERA DE LA VISTA -->
+  <div class="panel-header">
     <div>
-      <h2 class="main-title">Panel de Asistente - Gestión de Personal</h2>
-      <p class="subtitle">Administración de operadores y emisión de carnets QR</p>
+      <h1 class="panel-title">Panel de Asistente - Gestión de Personal</h1>
+      <p class="panel-subtitle">Administración de operadores, emisión de carnets y consulta de horas trabajadas</p>
     </div>
   </div>
 
-  <div class="grid-two-columns">
-    <!-- DIRECTORIO DE OPERADORES -->
-    <div class="card">
-      <div class="card-header flex justify-between items-center">
-        <h5 class="card-title">📋 Directorio de Operadores</h5>
-        <button class="btn btn-primary btn-sm" (click)="abrirModalNuevoOperador()">
-          ➕ Nuevo Operador
-        </button>
-      </div>
-
-      <div class="p-3">
-        <input 
-          type="text" 
-          [(ngModel)]="terminoBusqueda" 
-          (input)="onSearchChange()"
-          placeholder="🔍 Buscar por nombre, código o cédula..." 
-          class="input-control w-full"
-        />
-      </div>
-
-      <div class="table-responsive">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Operador</th>
-              <th>Acción</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let op of operadoresPaginados" (click)="seleccionarOperador(op)" class="row-hover">
-              <td><strong class="code-badge">{{ op.codigo_megued || op.id }}</strong></td>
-              <td class="font-medium text-slate-100">{{ op.nombre_completo }}</td>
-              <td>
-                <button class="btn btn-secondary btn-sm">Seleccionar</button>
-              </td>
-            </tr>
-            <tr *ngIf="operadoresFiltrados.length === 0">
-              <td colspan="3" class="table-empty">No hay operadores registrados.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="pagination-bar">
-        <span>Página {{ paginaActual }} de {{ totalPaginas }}</span>
-        <div class="flex gap-1">
-          <button [disabled]="paginaActual === 1" (click)="cambiarPagina(paginaActual - 1)" class="btn btn-secondary btn-sm">◀</button>
-          <button [disabled]="paginaActual === totalPaginas" (click)="cambiarPagina(paginaActual + 1)" class="btn btn-secondary btn-sm">▶</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- FICHA Y CARNET -->
-    <div>
-      <div class="card" *ngIf="operadorSeleccionado; else sinSeleccion">
-        <div class="card-header">
-          <h5 class="card-title">👤 Ficha: {{ operadorSeleccionado.nombre_completo }}</h5>
-        </div>
-        <div class="card-body-grid">
-          <div class="form-section">
-            <div class="form-group">
-              <label class="form-label">Cédula</label>
-              <input type="text" class="input-control" [(ngModel)]="cedula">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Teléfono</label>
-              <input type="text" class="input-control" [(ngModel)]="telefono">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Dirección</label>
-              <input type="text" class="input-control" [(ngModel)]="direccion">
-            </div>
-            <button class="btn btn-primary w-full mt-2" (click)="guardarDatosOperador()">
-              💾 Actualizar Ficha
-            </button>
-          </div>
-
-          <div class="qr-section">
-            <label class="form-label mb-2">Carnet QR</label>
-            <div class="qr-box" *ngIf="qrCodeUrl">
-              <img [src]="qrCodeUrl" class="qr-image" alt="QR" />
-            </div>
-            <button class="btn btn-secondary w-full mt-2" (click)="imprimirQR()">
-              🖨️ Imprimir Carnet
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <ng-template #sinSeleccion>
-        <div class="card empty-state">
-          <p class="text-muted">Seleccione un operador para ver su carnet QR.</p>
-        </div>
-      </ng-template>
-    </div>
+  <!-- NAVEGACIÓN POR PESTAÑAS (TABS) -->
+  <div class="tabs-bar">
+    <button class="tab-btn" [class.active]="tabActual === 'directorio'" (click)="tabActual = 'directorio'">
+      📋 Directorio de Operadores
+    </button>
+    <button class="tab-btn" [class.active]="tabActual === 'historial'" (click)="tabActual = 'historial'">
+      📅 Historial de Asistencia & Horas
+    </button>
   </div>
 
-  <!-- MODAL NUEVO OPERADOR -->
-  <div class="modal-backdrop" *ngIf="mostrarModalOperador">
-    <div class="modal-card">
-      <h3 class="modal-title">👤 Registrar Nuevo Operador</h3>
-      <form (ngSubmit)="guardarNuevoOperador()" #formOp="ngForm" class="space-y-3 mt-3">
-        <div>
-          <label class="form-label">Nombre Completo *</label>
-          <input type="text" [(ngModel)]="nuevoOperador.nombre_completo" name="nombre_completo" required class="input-control w-full">
-        </div>
-        <div>
-          <label class="form-label">Código Megued / ID *</label>
-          <input type="text" [(ngModel)]="nuevoOperador.codigo_megued" name="codigo_megued" required class="input-control w-full">
-        </div>
-        <div>
-          <label class="form-label">Cédula</label>
-          <input type="text" [(ngModel)]="nuevoOperador.cedula" name="cedula" class="input-control w-full">
-        </div>
-        <div class="flex justify-end gap-2 pt-3">
-          <button type="button" (click)="cerrarModalNuevoOperador()" class="btn btn-secondary">Cancelar</button>
-          <button type="submit" [disabled]="!formOp.form.valid" class="btn btn-primary">Guardar</button>
-        </div>
-      </form>
-    </div>
+  <!-- PESTAÑA 1: DIRECTORIO (Tu pantalla actual) -->
+  <div *ngIf="tabActual === 'directorio'" class="tab-content">
+    <!-- Aquí va el grid actual: Tabla de Operadores a la izquierda + Carnet QR a la derecha -->
   </div>
+
+  <!-- PESTAÑA 2: HISTORIAL DE ASISTENCIA Y HORAS -->
+  <div *ngIf="tabActual === 'historial'" class="tab-content">
+    
+    <!-- BARRA DE FILTROS -->
+    <div class="filter-card">
+      <div class="filter-group">
+        <label for="fechaConsulta" class="filter-label">Seleccionar Fecha:</label>
+        <input type="date" id="fechaConsulta" class="date-input" [(ngModel)]="fechaFiltro" (change)="cargarAsistenciaPorFecha()">
+      </div>
+      
+      <div class="status-badge-container">
+        <span class="status-badge" [class.cerrado]="diaFinalizado" [class.pendiente]="!diaFinalizado">
+          {{ diaFinalizado ? '🔒 Día Finalizado por Supervisor' : '⏳ Día Pendiente de Cierre' }}
+        </span>
+      </div>
+    </div>
+
+    <!-- TABLA DE HISTORIAL DIARIO -->
+    <div class="table-card">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Operador / Mecánico</th>
+            <th>Entrada</th>
+            <th>Salida</th>
+            <th>Total Horas</th>
+            <th>Actividades</th>
+            <th>Evidencia QR</th>
+            <th>Obs. Supervisor</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Ejemplo de Fila -->
+          <tr *ngFor="let registro of registrosAsistencia">
+            <td><span class="code-badge">{{ registro.codigo }}</span></td>
+            <td class="font-bold">{{ registro.nombre }}</td>
+            <td>{{ registro.horaEntrada }}</td>
+            <td>{{ registro.horaSalida }}</td>
+            <td class="text-emerald-400 font-bold">{{ registro.totalHoras }} hrs</td>
+            <td>
+              <!-- Desglose de Múltiples Actividades -->
+              <button class="btn-subtle" (click)="verActividades(registro)">
+                📋 {{ registro.actividades.length }} actividad(es)
+              </button>
+            </td>
+            <td>
+              <!-- Ver Captura de Foto en la Marcación -->
+              <button class="btn-icon" (click)="verFotoEvidencia(registro)">
+                📷 Ver Foto
+              </button>
+            </td>
+            <td>
+              <span *ngIf="registro.observacionSupervisor" class="obs-tag" [title]="registro.observacionSupervisor">
+                ⚠️ {{ registro.observacionSupervisor }}
+              </span>
+              <span *ngIf="!registro.observacionSupervisor" class="text-slate-500">-</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
 </div>
