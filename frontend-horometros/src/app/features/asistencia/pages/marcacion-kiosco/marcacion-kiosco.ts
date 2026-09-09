@@ -1,4 +1,4 @@
-import { Component, ChangeDetectorRef } from '@angular/core';
+import { Component, ChangeDetectorRef, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ZXingScannerModule } from '@zxing/ngx-scanner';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
@@ -21,7 +21,8 @@ export class MarcacionKiosco {
 
   constructor(
     private asistenciaService: AsistenciaService,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private elementRef: ElementRef<HTMLElement>
   ) {}
 
   onCodeResult(resultString: string): void {
@@ -29,7 +30,8 @@ export class MarcacionKiosco {
       const data = JSON.parse(resultString);
       if (data && data.operador_id) {
         this.escanearActivo = false;
-        this.procesarMarca(data.operador_id);
+        const fotoEvidencia = this.capturarFotoEvidencia();
+        this.procesarMarca(data.operador_id, undefined, fotoEvidencia);
       }
     } catch (e) {
       this.mensajeEscaneo = 'Código QR no válido.';
@@ -37,8 +39,30 @@ export class MarcacionKiosco {
     }
   }
 
-  procesarMarca(operadorId: number, actividadesIds?: number[]): void {
-    this.asistenciaService.registrarMarcaQR(operadorId, actividadesIds).subscribe({
+  //Toma una "foto" del frame actual del video del escaner QR (si pedir un segundo de permiso de camara)
+  private capturarFotoEvidencia():string | null {
+    const videoElement = this.elementRef.nativeElement.querySelector('video') as HTMLVideoElement | null;
+
+    // readyState >= 2 (HAVE_CURRENT_DATA) significa que el video ya tiene un fame real para dibujar
+    if(!videoElement || videoElement.readyState < 2){
+      return null;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = videoElement.videoWidth;
+    canvas.height = videoElement.videoHeight;
+
+    const contexto = canvas.getContext('2d');
+    if(!contexto) return null;
+
+    contexto.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+
+    // JPEG con calidad 70% en vez de PNG: pesa mucho menos para viajar en el JSON
+    return canvas.toDataURL('image/jpeg', 0.7);
+  }
+
+  procesarMarca(operadorId: number, actividadesIds?: number[], fotoIngreso?: string | null): void {
+    this.asistenciaService.registrarMarcaQR(operadorId, actividadesIds, fotoIngreso).subscribe({
       next: (res) => {
         this.mensajeEscaneo = res.message || 'Marcación registrada.';
         this.tipoMensaje = 'exito';
@@ -52,7 +76,7 @@ export class MarcacionKiosco {
       },
       error: (err) => {
         // Caso especial: el backend responde 400 pidiendo actividades -> abrimos el modal
-        if (err.status === 400 && err.error?.requiere_actividad) {
+        if (err.status === 400 && err.error?.require_actividad) {
           this.operadorPendienteSalidaId = operadorId;
           this.mostrarModalActividad = true;
           this.cdr.detectChanges();

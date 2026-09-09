@@ -68,7 +68,7 @@ export const obtenerOperadores = async(_req: Request, res:Response):Promise<void
 //Logica de Marcacion con Escaner QR (Entrada/Salida)
 export const registrarMacarcoQR= async(req:Request, res:Response):Promise<void> => {
     try{
-        const { operador_id, actividades_id, foto_ingreso, observaciones } = req.body;
+        const { operador_id, actividades_ids, foto_ingreso, observaciones } = req.body;
 
         const operador = await Operador.findByPk(Number(operador_id));
         if(!operador){
@@ -106,7 +106,7 @@ export const registrarMacarcoQR= async(req:Request, res:Response):Promise<void> 
             });
         } else if(asistencia.estado === 'EN_JORNADA'){
             //Caso 2: Ya ingreso hoy -> Registrar Salida (Exigimos actividad)
-            const actividadesIds:number[] = Array.isArray(actividades_id) ? actividades_id.map(Number) : [];
+            const actividadesIds:number[] = Array.isArray(actividades_ids) ? actividades_ids.map(Number) : [];
 
             if(actividadesIds.length === 0){
                 res.status(400).json({
@@ -239,7 +239,8 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
             where: whereCondition,
             include:[
                 { model: Operador, as: 'operador' },
-                { model: Actividad, as: 'actividad' }
+                { model: Actividad, as: 'actividad' },
+                { model: Actividad, as: 'actividades'},
             ],
             order: [['fecha','DESC'],['hora_ingreso','DESC']]
         });
