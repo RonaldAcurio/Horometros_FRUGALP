@@ -7,6 +7,12 @@ export interface Operador {
     direccion?: string;
 }
 
+export interface Actividad{
+    id: number;
+    codigo_megued: string;
+    description: string;
+}
+
 export interface Asistencia {
     id: number;
     operador_id: number;
@@ -17,9 +23,5 @@ export interface Asistencia {
     estado: 'EN_JORNADA' | 'PENDIENTE_REVISION' | 'FINALIZADO' | 'SALIDA_OLVIDADA';
     observaciones?: string;
     operador?: Operador;
-    actividad?: {
-        id: number;
-        codigo_megued: string;
-        description: string;
-    };
+    actividad?: Actividad[];
 }

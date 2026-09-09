@@ -4,14 +4,24 @@
       <h2 class="main-title">Panel de Control de Supervisor</h2>
       <p class="subtitle">Revisión de actividades diarias y cierre de jornada</p>
     </div>
-    <button class="btn btn-warning" (click)="ejecutarCierreDiario()">
-      🔒 Cerrar Jornada del Día
-    </button>
+    <div class="flex items-center gap-2">
+      <input
+        type="date"
+        class="input-control"
+        [(ngModel)]="fechaSeleccionada"
+        (change)="onCambioFecha()"
+      />
+      <button class="btn btn-warning" (click)="ejecutarCierreDiario()">
+        🔒 Cerrar Jornada
+      </button>
+    </div>
   </div>
 
   <div class="card mt-section">
     <div class="card-header flex justify-between items-center">
-      <h5 class="card-title">📊 Registro de Asistencia del Día</h5>
+      <h5 class="card-title">
+        📊 Registro de Asistencia {{ fechaSeleccionada ? 'del ' + fechaSeleccionada : 'de Hoy' }}
+      </h5>
     </div>
     <div class="table-responsive">
       <table class="data-table">
@@ -21,8 +31,9 @@
             <th>Fecha</th>
             <th>Ingreso</th>
             <th>Salida</th>
-            <th>Actividad Asignada</th>
+            <th>Actividades</th>
             <th>Estado</th>
+            <th>Observación</th>
           </tr>
         </thead>
         <tbody>
@@ -35,10 +46,12 @@
               <span *ngIf="!asis.hora_salida" class="text-muted-sm">En Turno</span>
             </td>
             <td>
-              <span *ngIf="asis.actividad" class="text-emerald-400 font-medium">
-                {{ asis.actividad.codigo_megued }} - {{ asis.actividad.description }}
+              <span *ngIf="asis.actividades && asis.actividades.length > 0" class="text-emerald-400 font-medium">
+                <span *ngFor="let act of asis.actividades; let last = last">
+                  {{ act.codigo_megued }}{{ last ? '' : ', ' }}
+                </span>
               </span>
-              <span *ngIf="!asis.actividad" class="text-muted-sm">Sin registrar</span>
+              <span *ngIf="!asis.actividades || asis.actividades.length === 0" class="text-muted-sm">Sin registrar</span>
             </td>
             <td>
               <span [ngClass]="{
@@ -50,12 +63,34 @@
                 {{ asis.estado }}
               </span>
             </td>
+            <td>
+              <button class="btn btn-secondary btn-sm" (click)="abrirObservacion(asis)">
+                {{ asis.observaciones ? '📝 Ver/Editar' : '➕ Agregar' }}
+              </button>
+            </td>
           </tr>
           <tr *ngIf="asistenciasHoy.length === 0">
-            <td colspan="6" class="table-empty">No hay marcaciones registradas hoy.</td>
+            <td colspan="7" class="table-empty">No hay marcaciones registradas.</td>
           </tr>
         </tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- MODAL DE OBSERVACION -->
+  <div class="modal-backdrop" *ngIf="observacionEditandoId !== null">
+    <div class="modal-card">
+      <h3 class="modal-title">📝 Observación del Supervisor</h3>
+      <textarea
+        class="input-control w-full"
+        rows="4"
+        [(ngModel)]="observacionTexto"
+        placeholder="Escribe aquí cualquier irregularidad detectada..."
+      ></textarea>
+      <div class="flex justify-end gap-2 mt-3">
+        <button class="btn btn-secondary" (click)="cerrarObservacion()">Cancelar</button>
+        <button class="btn btn-primary" (click)="guardarObservacion()">Guardar</button>
+      </div>
     </div>
   </div>
 </div>

@@ -60,8 +60,9 @@ export class AsistenciaService {
         );
     }
 
-    // GET -> https://.../api/asistencia/hoy  (¡Atención: sin /asistencia repetido!)
-    obtenerAsistenciasHoy(): Observable<Asistencia[]> {
-        return this.http.get<Asistencia[]>(`${this.baseUrl}/hoy`);
+    // GET -> https://.../api/asistencia/hoy?fecha=YYYY-MM-DD (fecha opcional)
+    obtenerAsistenciasHoy(fecha?: string): Observable<Asistencia[]> {
+        const params = fecha ? `?fecha=${fecha}` : '';
+        return this.http.get<Asistencia[]>(`${this.baseUrl}/hoy${params}`);
     }
 }
