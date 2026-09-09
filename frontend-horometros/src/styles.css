@@ -3,29 +3,38 @@
 @tailwind utilities;
 
 body {
-  background-color: #0f172a;
-  color: #f8fafc;
+  background-color: #fbfdf8;
+  color: #1c2620;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 /* ==========================================================================
-   PALETA Y ESTILOS DE DISEÑO INDUSTRIAL / CORPORATIVO (SLATE & EMERALD)
+   PALETA E IDENTIDAD VISUAL — FRUGALP (Blanco / Verde / Amarillo / Concho de Vino)
    ========================================================================== */
 :root {
-  --bg-dark: #0f172a;
-  --bg-card: #1e293b;
-  --bg-input: #0f172a;
-  --border-card: #334155;
-  --primary-emerald: #10b981;
-  --primary-emerald-hover: #059669;
-  --accent-amber: #f59e0b;
-  --accent-amber-hover: #d97706;
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
+  --bg-page: #fbfdf8;
+  --bg-card: #ffffff;
+  --bg-input: #ffffff;
+  --border-card: #dbe6d3;
+
+  --verde: #16a34a;
+  --verde-hover: #128a3e;
+  --verde-glow: rgba(22, 163, 74, 0.45);
+
+  --amarillo: #f2b705;
+  --amarillo-hover: #d4a017;
+  --amarillo-glow: rgba(242, 183, 5, 0.5);
+
+  --vino: #7a1f3d;
+  --vino-hover: #5c1730;
+  --vino-glow: rgba(122, 31, 61, 0.45);
+
+  --text-main: #1c2620;
+  --text-muted: #6b7768;
 }
 
 .asistencia-container {
-  background-color: var(--bg-dark);
+  background-color: var(--bg-page);
   min-height: 100vh;
   color: var(--text-main);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -43,7 +52,7 @@ body {
 .main-title {
   font-size: 1.5rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--text-main);
   margin: 0;
 }
 
@@ -71,11 +80,11 @@ body {
   border: 1px solid var(--border-card);
   border-radius: 0.5rem;
   overflow: hidden;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .card-header {
-  background-color: rgba(15, 23, 42, 0.5);
+  background-color: rgba(22, 163, 74, 0.04);
   border-bottom: 1px solid var(--border-card);
   padding: 0.875rem 1.25rem;
 }
@@ -84,7 +93,7 @@ body {
   margin: 0;
   font-size: 1rem;
   font-weight: 600;
-  color: #f1f5f9;
+  color: var(--text-main);
 }
 
 .card-body-grid {
@@ -123,14 +132,14 @@ body {
   text-align: center;
 }
 
-/* BOTONES */
+/* BOTONES (con glow neón al hacer hover) */
 .btn {
   font-weight: 600;
   padding: 0.5rem 1rem;
   border-radius: 0.375rem;
   border: none;
   cursor: pointer;
-  transition: background-color 0.2s ease, transform 0.1s ease;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -138,30 +147,32 @@ body {
 }
 
 .btn-primary {
-  background-color: var(--primary-emerald);
+  background-color: var(--verde);
   color: #ffffff;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background-color: var(--primary-emerald-hover);
+  background-color: var(--verde-hover);
+  box-shadow: 0 0 14px var(--verde-glow);
 }
 
 .btn-secondary {
-  background-color: #334155;
-  color: #f1f5f9;
+  background-color: #eef3ea;
+  color: var(--text-main);
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background-color: #475569;
+  background-color: #dbe6d3;
 }
 
 .btn-warning {
-  background-color: var(--accent-amber);
-  color: #ffffff;
+  background-color: var(--amarillo);
+  color: #1c2620;
 }
 
 .btn-warning:hover:not(:disabled) {
-  background-color: var(--accent-amber-hover);
+  background-color: var(--amarillo-hover);
+  box-shadow: 0 0 14px var(--amarillo-glow);
 }
 
 .btn:disabled {
@@ -190,7 +201,7 @@ body {
 .input-control {
   background-color: var(--bg-input);
   border: 1px solid var(--border-card);
-  color: #ffffff;
+  color: var(--text-main);
   border-radius: 0.375rem;
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
@@ -199,7 +210,8 @@ body {
 
 .input-control:focus {
   outline: none;
-  border-color: var(--primary-emerald);
+  border-color: var(--verde);
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
 }
 
 /* TABLAS */
@@ -215,7 +227,7 @@ body {
 }
 
 .data-table th {
-  background-color: #0f172a;
+  background-color: #f7faf5;
   color: var(--text-muted);
   font-size: 0.75rem;
   text-transform: uppercase;
@@ -225,13 +237,13 @@ body {
 
 .data-table td {
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid #1e293b;
+  border-bottom: 1px solid #ecf1e8;
   font-size: 0.875rem;
-  color: #cbd5e1;
+  color: #33402f;
 }
 
 .row-hover:hover {
-  background-color: rgba(51, 65, 85, 0.4);
+  background-color: rgba(22, 163, 74, 0.06);
   cursor: pointer;
 }
 
@@ -242,9 +254,9 @@ body {
 }
 
 .code-badge {
-  background-color: #0f172a;
+  background-color: #f7faf5;
   border: 1px solid var(--border-card);
-  color: #38bdf8;
+  color: var(--vino);
   padding: 0.125rem 0.375rem;
   border-radius: 0.25rem;
   font-size: 0.8rem;
@@ -270,31 +282,32 @@ body {
 }
 
 .status-jornada {
-  background-color: rgba(16, 185, 129, 0.15);
-  color: #34d399;
-  border: 1px solid #10b981;
+  background-color: rgba(22, 163, 74, 0.12);
+  color: #16a34a;
+  border: 1px solid #16a34a;
 }
 
 .status-finalizado {
-  background-color: rgba(56, 189, 248, 0.15);
-  color: #38bdf8;
-  border: 1px solid #0284c7;
+  background-color: rgba(21, 128, 61, 0.15);
+  color: #15803d;
+  border: 1px solid #15803d;
 }
 
 .status-revision {
-  background-color: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
-  border: 1px solid #d97706;
+  background-color: rgba(242, 183, 5, 0.18);
+  color: #a67c00;
+  border: 1px solid #d4a017;
 }
 
 .status-olvidada {
-  background-color: rgba(239, 68, 68, 0.15);
-  color: #f87171;
-  border: 1px solid #dc2626;
+  background-color: rgba(122, 31, 61, 0.12);
+  color: #7a1f3d;
+  border: 1px solid #7a1f3d;
 }
 
 .time-badge {
-  background-color: #0f172a;
+  background-color: #2b1a1f;
+  color: #ffffff;
   padding: 0.2rem 0.4rem;
   border-radius: 0.25rem;
   font-family: monospace;
@@ -312,7 +325,7 @@ body {
 }
 
 .scanner-wrapper {
-  border: 2px dashed var(--border-card);
+  border: 2px dashed var(--amarillo);
   border-radius: 0.5rem;
   padding: 0.5rem;
   background-color: #000000;
@@ -332,19 +345,20 @@ body {
 }
 
 .alert-success {
-  background-color: rgba(16, 185, 129, 0.1);
-  border: 1px solid var(--primary-emerald);
-  color: #34d399;
+  background-color: rgba(22, 163, 74, 0.08);
+  border: 1px solid var(--verde);
+  color: #128a3e;
 }
 
 .alert-danger {
-  background-color: rgba(239, 68, 68, 0.1);
-  border: 1px solid #ef4444;
-  color: #fca5a5;
+  background-color: rgba(122, 31, 61, 0.08);
+  border: 1px solid var(--vino);
+  color: var(--vino);
 }
 
 .qr-box {
   background-color: #ffffff;
+  border: 1px solid var(--border-card);
   padding: 8px;
   border-radius: 0.375rem;
   display: inline-block;
@@ -361,7 +375,7 @@ body {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background-color: rgba(0, 0, 0, 0.75);
+  background-color: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
@@ -377,12 +391,12 @@ body {
   padding: 1.5rem;
   max-width: 28rem;
   width: 100%;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15);
 }
 
 .modal-title {
   font-size: 1.125rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--text-main);
   margin: 0 0 0.5rem 0;
 }

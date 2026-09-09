@@ -16,12 +16,12 @@
   font-size: 1.875rem;
   line-height: 2.25rem;
   font-weight: 700;
-  color: #ffffff;
+  color: #1c2620;
   margin-bottom: 0.5rem;
 }
 
 .menu-subtitle {
-  color: #94a3b8;
+  color: #6b7768;
   font-size: 0.95rem;
 }
 
@@ -48,16 +48,18 @@
   flex-direction: column;
   justify-content: space-between;
   padding: 1.5rem;
-  background-color: #1e293b; /* Ajustado al tono oscuro del dashboard */
-  border: 1px solid #334155;
+  background-color: #ffffff;
+  border: 1px solid #dbe6d3;
   border-radius: 0.75rem;
   text-decoration: none;
   transition: all 0.2s ease-in-out;
   cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .menu-card:hover {
-  border-color: #10b981; /* Borde verde esmeralda al pasar el mouse */
+  border-color: #16a34a;
+  box-shadow: 0 0 18px rgba(22, 163, 74, 0.35);
   transform: translateY(-2px);
 }
 
@@ -72,8 +74,8 @@
   width: 3rem;
   height: 3rem;
   border-radius: 0.5rem;
-  background-color: rgba(16, 185, 129, 0.1);
-  color: #34d399;
+  background-color: rgba(22, 163, 74, 0.1);
+  color: #16a34a;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -83,7 +85,7 @@
 
 .card-action {
   font-size: 0.75rem;
-  color: #34d399;
+  color: #16a34a;
   font-weight: 600;
   transition: transform 0.2s ease;
 }
@@ -95,12 +97,12 @@
 .card-title {
   font-size: 1.125rem;
   font-weight: 700;
-  color: #ffffff;
+  color: #1c2620;
   margin-bottom: 0.5rem;
 }
 
 .card-description {
   font-size: 0.875rem;
-  color: #94a3b8;
+  color: #6b7768;
   line-height: 1.4;
 }
