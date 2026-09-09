@@ -1,0 +1,61 @@
+<div class="asistencia-container">
+  <div class="header-banner">
+    <div>
+      <h2 class="main-title">Panel de Control de Supervisor</h2>
+      <p class="subtitle">Revisión de actividades diarias y cierre de jornada</p>
+    </div>
+    <button class="btn btn-warning" (click)="ejecutarCierreDiario()">
+      🔒 Cerrar Jornada del Día
+    </button>
+  </div>
+
+  <div class="card mt-section">
+    <div class="card-header flex justify-between items-center">
+      <h5 class="card-title">📊 Registro de Asistencia del Día</h5>
+    </div>
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Operador</th>
+            <th>Fecha</th>
+            <th>Ingreso</th>
+            <th>Salida</th>
+            <th>Actividad Asignada</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let asis of asistenciasHoy">
+            <td><strong class="text-slate-100">{{ asis.operador?.nombre_completo || 'N/A' }}</strong></td>
+            <td>{{ asis.fecha }}</td>
+            <td><span class="time-badge">{{ asis.hora_ingreso }}</span></td>
+            <td>
+              <span *ngIf="asis.hora_salida" class="time-badge">{{ asis.hora_salida }}</span>
+              <span *ngIf="!asis.hora_salida" class="text-muted-sm">En Turno</span>
+            </td>
+            <td>
+              <span *ngIf="asis.actividad" class="text-emerald-400 font-medium">
+                {{ asis.actividad.codigo_megued }} - {{ asis.actividad.description }}
+              </span>
+              <span *ngIf="!asis.actividad" class="text-muted-sm">Sin registrar</span>
+            </td>
+            <td>
+              <span [ngClass]="{
+                'badge-status status-jornada': asis.estado === 'EN_JORNADA',
+                'badge-status status-finalizado': asis.estado === 'FINALIZADO',
+                'badge-status status-revision': asis.estado === 'PENDIENTE_REVISION',
+                'badge-status status-olvidada': asis.estado === 'SALIDA_OLVIDADA'
+              }">
+                {{ asis.estado }}
+              </span>
+            </td>
+          </tr>
+          <tr *ngIf="asistenciasHoy.length === 0">
+            <td colspan="6" class="table-empty">No hay marcaciones registradas hoy.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

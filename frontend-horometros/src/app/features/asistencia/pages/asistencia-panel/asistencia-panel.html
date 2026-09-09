@@ -1,0 +1,131 @@
+<div class="asistencia-container">
+  <div class="header-banner">
+    <div>
+      <h2 class="main-title">Panel de Asistente - Gestión de Personal</h2>
+      <p class="subtitle">Administración de operadores y emisión de carnets QR</p>
+    </div>
+  </div>
+
+  <div class="grid-two-columns">
+    <!-- DIRECTORIO DE OPERADORES -->
+    <div class="card">
+      <div class="card-header flex justify-between items-center">
+        <h5 class="card-title">📋 Directorio de Operadores</h5>
+        <button class="btn btn-primary btn-sm" (click)="abrirModalNuevoOperador()">
+          ➕ Nuevo Operador
+        </button>
+      </div>
+
+      <div class="p-3">
+        <input 
+          type="text" 
+          [(ngModel)]="terminoBusqueda" 
+          (input)="onSearchChange()"
+          placeholder="🔍 Buscar por nombre, código o cédula..." 
+          class="input-control w-full"
+        />
+      </div>
+
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Operador</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let op of operadoresPaginados" (click)="seleccionarOperador(op)" class="row-hover">
+              <td><strong class="code-badge">{{ op.codigo_megued || op.id }}</strong></td>
+              <td class="font-medium text-slate-100">{{ op.nombre_completo }}</td>
+              <td>
+                <button class="btn btn-secondary btn-sm">Seleccionar</button>
+              </td>
+            </tr>
+            <tr *ngIf="operadoresFiltrados.length === 0">
+              <td colspan="3" class="table-empty">No hay operadores registrados.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pagination-bar">
+        <span>Página {{ paginaActual }} de {{ totalPaginas }}</span>
+        <div class="flex gap-1">
+          <button [disabled]="paginaActual === 1" (click)="cambiarPagina(paginaActual - 1)" class="btn btn-secondary btn-sm">◀</button>
+          <button [disabled]="paginaActual === totalPaginas" (click)="cambiarPagina(paginaActual + 1)" class="btn btn-secondary btn-sm">▶</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- FICHA Y CARNET -->
+    <div>
+      <div class="card" *ngIf="operadorSeleccionado; else sinSeleccion">
+        <div class="card-header">
+          <h5 class="card-title">👤 Ficha: {{ operadorSeleccionado.nombre_completo }}</h5>
+        </div>
+        <div class="card-body-grid">
+          <div class="form-section">
+            <div class="form-group">
+              <label class="form-label">Cédula</label>
+              <input type="text" class="input-control" [(ngModel)]="cedula">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Teléfono</label>
+              <input type="text" class="input-control" [(ngModel)]="telefono">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Dirección</label>
+              <input type="text" class="input-control" [(ngModel)]="direccion">
+            </div>
+            <button class="btn btn-primary w-full mt-2" (click)="guardarDatosOperador()">
+              💾 Actualizar Ficha
+            </button>
+          </div>
+
+          <div class="qr-section">
+            <label class="form-label mb-2">Carnet QR</label>
+            <div class="qr-box" *ngIf="qrCodeUrl">
+              <img [src]="qrCodeUrl" class="qr-image" alt="QR" />
+            </div>
+            <button class="btn btn-secondary w-full mt-2" (click)="imprimirQR()">
+              🖨️ Imprimir Carnet
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <ng-template #sinSeleccion>
+        <div class="card empty-state">
+          <p class="text-muted">Seleccione un operador para ver su carnet QR.</p>
+        </div>
+      </ng-template>
+    </div>
+  </div>
+
+  <!-- MODAL NUEVO OPERADOR -->
+  <div class="modal-backdrop" *ngIf="mostrarModalOperador">
+    <div class="modal-card">
+      <h3 class="modal-title">👤 Registrar Nuevo Operador</h3>
+      <form (ngSubmit)="guardarNuevoOperador()" #formOp="ngForm" class="space-y-3 mt-3">
+        <div>
+          <label class="form-label">Nombre Completo *</label>
+          <input type="text" [(ngModel)]="nuevoOperador.nombre_completo" name="nombre_completo" required class="input-control w-full">
+        </div>
+        <div>
+          <label class="form-label">Código Megued / ID *</label>
+          <input type="text" [(ngModel)]="nuevoOperador.codigo_megued" name="codigo_megued" required class="input-control w-full">
+        </div>
+        <div>
+          <label class="form-label">Cédula</label>
+          <input type="text" [(ngModel)]="nuevoOperador.cedula" name="cedula" class="input-control w-full">
+        </div>
+        <div class="flex justify-end gap-2 pt-3">
+          <button type="button" (click)="cerrarModalNuevoOperador()" class="btn btn-secondary">Cancelar</button>
+          <button type="submit" [disabled]="!formOp.form.valid" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

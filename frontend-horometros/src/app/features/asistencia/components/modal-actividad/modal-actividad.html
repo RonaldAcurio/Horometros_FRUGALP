@@ -1,0 +1,29 @@
+<div class="modal-backdrop" *ngIf="mostrar">
+  <div class="modal-card">
+    <h3 class="modal-title">🌾 Registrar Actividad de Salida</h3>
+    <p class="text-slate-300 text-sm mb-4">Seleccione la labor realizada durante la jornada antes de registrar la salida:</p>
+
+    <div class="form-group mb-4">
+      <label class="form-label">Labor / Actividad Realizada *</label>
+      <select [(ngModel)]="actividadSeleccionadaId" class="input-control w-full">
+        <option [ngValue]="null" disabled selected>-- Seleccione una Actividad --</option>
+        <option *ngFor="let act of actividades" [value]="act.id">
+          [{{ act.codigo_megued }}] {{ act.description }}
+        </option>
+      </select>
+    </div>
+
+    <div class="flex justify-end gap-2">
+      <button type="button" (click)="cerrar()" class="btn btn-secondary">
+        Cancelar
+      </button>
+      <button 
+        type="button" 
+        [disabled]="!actividadSeleccionadaId" 
+        (click)="confirmar()" 
+        class="btn btn-primary">
+        Confirmar Salida
+      </button>
+    </div>
+  </div>
+</div>

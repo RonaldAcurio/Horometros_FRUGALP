@@ -1,0 +1,28 @@
+<div class="asistencia-container">
+  <div class="header-banner">
+    <div>
+      <h2 class="main-title">Estación de Marcación</h2>
+      <p class="subtitle">Aacerque su código QR al escáner</p>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="scanner-container" *ngIf="escanearActivo">
+      <div class="scanner-wrapper">
+        <zxing-scanner (scanSuccess)="onCodeResult($event)"></zxing-scanner>
+      </div>
+    </div>
+
+    <div class="alert-container" *ngIf="mensajeEscaneo">
+      <div [class]="tipoMensaje === 'exito' ? 'alert alert-success' : 'alert alert-danger'">
+        {{ mensajeEscaneo }}
+      </div>
+    </div>
+  </div>
+
+  <app-modal-actividad
+    [mostrar]="mostrarModalActividad"
+    (seleccionar)="confirmarSalidaConActividad($event)"
+    (cancelar)="cerrarModalActividad()">
+  </app-modal-actividad>
+</div>

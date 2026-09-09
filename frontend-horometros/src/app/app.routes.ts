@@ -2,9 +2,9 @@ import { Routes } from '@angular/router';
 
 export const routes: Routes = [
     {
-    path: '',
-    redirectTo: 'dashboard',
-    pathMatch: 'full'
+        path: '',
+        redirectTo: 'dashboard',
+        pathMatch: 'full'
     },
     {
         path: 'dashboard',
@@ -14,9 +14,24 @@ export const routes: Routes = [
         path: 'horometros',
         loadComponent: () => import('./features/horometros/horometros.component').then(m => m.HorometrosComponent)
     },
+    // Rutas del Módulo de Asistencia
+    {
+        path: 'asistencia/asistente',
+        loadComponent: () => import('./features/asistencia/pages/asistencia-panel/asistencia-panel').then(m => m.AsistenciaPanel)
+    },
+    {
+        path: 'asistencia/marcacion',
+        loadComponent: () => import('./features/asistencia/pages/marcacion-kiosco/marcacion-kiosco').then(m => m.MarcacionKiosco)
+    },
+    {
+        path: 'asistencia/supervisor',
+        loadComponent: () => import('./features/asistencia/pages/supervisor-panel/supervisor-panel').then(m => m.SupervisorPanel)
+    },
+    // Redirección por defecto si entran a /asistencia
     {
         path: 'asistencia',
-        loadComponent: () => import('./components/asistencia/asistencia').then(m => m.AsistenciaComponent)
+        redirectTo: 'asistencia/asistente',
+        pathMatch: 'full'
     },
     {
         path: '**',
