@@ -3,6 +3,7 @@ import { Operador } from '../models/operador';
 import { Asistencia } from '../models/asistencias';
 import { Actividad } from '../models';
 import { Op } from 'sequelize';
+import { AsistenciaActividad } from '../models';
 
 //funcion auxiliar para obtener la decha 'YYYY-MM-DD' en la zona horario de Ecuador
 const getFetchLocalEcuador = ():string => {
@@ -67,7 +68,7 @@ export const obtenerOperadores = async(_req: Request, res:Response):Promise<void
 //Logica de Marcacion con Escaner QR (Entrada/Salida)
 export const registrarMacarcoQR= async(req:Request, res:Response):Promise<void> => {
     try{
-        const { operador_id, actividad_id, foto_ingreso, observaciones } = req.body;
+        const { operador_id, actividades_id, foto_ingreso, observaciones } = req.body;
 
         const operador = await Operador.findByPk(Number(operador_id));
         if(!operador){
@@ -105,26 +106,35 @@ export const registrarMacarcoQR= async(req:Request, res:Response):Promise<void> 
             });
         } else if(asistencia.estado === 'EN_JORNADA'){
             //Caso 2: Ya ingreso hoy -> Registrar Salida (Exigimos actividad)
-            if(!actividad_id){
+            const actividadesIds:number[] = Array.isArray(actividades_id) ? actividades_id.map(Number) : [];
+
+            if(actividadesIds.length === 0){
                 res.status(400).json({
-                    message:"Es obligatorio seleccionar una actividad para registrar la salida.",
+                    message:"Es obligatorio seleccionar al menos una actividad para registrar la salida.",
                     require_actividad: true
                 });
                 return;
             }
 
             // Validar que la actividad exista y NO este eliminada(Soft Delete)
-            const actividadExistente = await Actividad.findByPk(Number(actividad_id));
-            if(!actividadExistente){
-                res.status(404).json({ message:'La actividad seleccionada no existe o esta inactiva'});
+            const actividadExistente = await Actividad.findAll({where: { id: actividadesIds}});
+            if(actividadExistente.length !== actividadesIds.length){
+                res.status(404).json({ message:'Una o mas actividades seleccionadas no existen o estan inactivas'});
                 return;
             }
 
             await asistencia.update({
                 hora_salida:ahora,
-                actividad_id: Number(actividad_id),
                 estado:'PENDIENTE_REVISION',
             });
+
+            //Insertamos el detalle de actividades en la tabla pivote (relacion muchos a muchos)
+            await AsistenciaActividad.bulkCreate(
+                actividadesIds.map((actividad_id) => ({
+                    asistencia_id: asistencia!.id,
+                    actividad_id,
+                }))
+            );
 
             res.json({
                 tipo: 'SALIDA',
@@ -153,7 +163,8 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
             where: { fecha:hoy },
             include: [
                 { model: Operador, as:'operador'},
-                { model: Actividad, as:'actividad'}
+                { model: Actividad, as:'actividad'},
+                { model: Actividad, as:'actividades'},
             ],
             order: [['hora_ingreso','DESC']],
         });

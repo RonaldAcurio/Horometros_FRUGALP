@@ -12,11 +12,11 @@ import { AsistenciaService } from  '../../../../core/services/asistencia.service
 })
 export class ModalActividad {
   @Input() mostrar: boolean = false;
-  @Output() seleccionar = new EventEmitter<number>();
+  @Output() seleccionar = new EventEmitter<number[]>();
   @Output() cancelar = new EventEmitter<void>();
 
   actividades: any[] = [];
-  actividadSeleccionadaId: number | null = null;
+  actividadSeleccionadaIds: number[] = [];
 
   constructor(private asistenciaService: AsistenciaService) {}
 
@@ -29,15 +29,26 @@ export class ModalActividad {
     });
   }
 
+  //Marca o desmarca una actividad dentro de la seleccion multiple
+  toggleActividad(id:number, marcada:boolean): void {
+    if(marcada){
+      if(!this.actividadSeleccionadaIds.includes(id)){
+        this.actividadSeleccionadaIds.push(id);
+      }
+    } else{
+      this.actividadSeleccionadaIds = this.actividadSeleccionadaIds.filter(actId => actId !== id);
+    }
+  }
+
   confirmar(): void {
-    if (this.actividadSeleccionadaId) {
-      this.seleccionar.emit(this.actividadSeleccionadaId);
-      this.actividadSeleccionadaId = null;
+    if (this.actividadSeleccionadaIds.length > 0) {
+      this.seleccionar.emit(this.actividadSeleccionadaIds);
+      this.actividadSeleccionadaIds = [];
     }
   }
 
   cerrar(): void {
-    this.actividadSeleccionadaId = null;
+    this.actividadSeleccionadaIds = [];
     this.cancelar.emit();
   }
 }

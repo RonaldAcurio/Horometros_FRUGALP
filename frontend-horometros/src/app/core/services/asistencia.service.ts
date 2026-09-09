@@ -30,10 +30,10 @@ export class AsistenciaService {
     }
 
     // POST -> /api/asistencia/marcar (soportando actividad_id para la salida)
-    registrarMarcaQR(operadorId: number, actividadId?: number): Observable<any> {
-        return this.http.post(`${this.baseUrl}/marcar`, { 
+    registrarMarcaQR(operadorId: number, actividadIds?: number[]): Observable<any> {
+        return this.http.post(`${this.baseUrl}/marcar-qr`, { 
             operador_id: operadorId, 
-            actividad_id: actividadId 
+            actividades_ids: actividadIds
         });
     }
 

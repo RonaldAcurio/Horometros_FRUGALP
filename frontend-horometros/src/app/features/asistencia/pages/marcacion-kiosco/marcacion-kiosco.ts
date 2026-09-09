@@ -37,16 +37,9 @@ export class MarcacionKiosco {
     }
   }
 
-  procesarMarca(operadorId: number, actividadId?: number): void {
-    this.asistenciaService.registrarMarcaQR(operadorId, actividadId).subscribe({
+  procesarMarca(operadorId: number, actividadesIds?: number[]): void {
+    this.asistenciaService.registrarMarcaQR(operadorId, actividadesIds).subscribe({
       next: (res) => {
-        if (res.requiere_actividad) {
-          this.operadorPendienteSalidaId = operadorId;
-          this.mostrarModalActividad = true;
-          this.cdr.detectChanges();
-          return;
-        }
-
         this.mensajeEscaneo = res.message || 'Marcación registrada.';
         this.tipoMensaje = 'exito';
         this.cerrarModalActividad();
@@ -58,6 +51,14 @@ export class MarcacionKiosco {
         }, 3000);
       },
       error: (err) => {
+        // Caso especial: el backend responde 400 pidiendo actividades -> abrimos el modal
+        if (err.status === 400 && err.error?.requiere_actividad) {
+          this.operadorPendienteSalidaId = operadorId;
+          this.mostrarModalActividad = true;
+          this.cdr.detectChanges();
+          return;
+        }
+
         this.mensajeEscaneo = err.error?.message || 'Error al procesar marca.';
         this.tipoMensaje = 'error';
         setTimeout(() => { this.escanearActivo = true; }, 3000);
@@ -65,9 +66,9 @@ export class MarcacionKiosco {
     });
   }
 
-  confirmarSalidaConActividad(actividadId: number): void {
+  confirmarSalidaConActividad(actividadesIds: number[]): void {
     if (this.operadorPendienteSalidaId) {
-      this.procesarMarca(this.operadorPendienteSalidaId, actividadId);
+      this.procesarMarca(this.operadorPendienteSalidaId, actividadesIds);
     }
   }
 

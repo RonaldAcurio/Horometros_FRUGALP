@@ -1,16 +1,20 @@
 <div class="modal-backdrop" *ngIf="mostrar">
   <div class="modal-card">
-    <h3 class="modal-title">🌾 Registrar Actividad de Salida</h3>
-    <p class="text-slate-300 text-sm mb-4">Seleccione la labor realizada durante la jornada antes de registrar la salida:</p>
+    <h3 class="modal-title">🌾 Registrar Actividades de Salida</h3>
+    <p class="text-slate-300 text-sm mb-4">Seleccione una o más labores realizadas durante la jornada antes de registrar la salida:</p>
 
     <div class="form-group mb-4">
-      <label class="form-label">Labor / Actividad Realizada *</label>
-      <select [(ngModel)]="actividadSeleccionadaId" class="input-control w-full">
-        <option [ngValue]="null" disabled selected>-- Seleccione una Actividad --</option>
-        <option *ngFor="let act of actividades" [value]="act.id">
+      <label class="form-label">Labores / Actividades Realizadas *</label>
+      <div class="flex flex-col gap-2 max-h-56 overflow-y-auto">
+        <label class="flex items-center gap-2" *ngFor="let act of actividades">
+          <input
+            type="checkbox"
+            [checked]="actividadesSeleccionadasIds.includes(act.id)"
+            (change)="toggleActividad(act.id, $any($event.target).checked)"
+          />
           [{{ act.codigo_megued }}] {{ act.description }}
-        </option>
-      </select>
+        </label>
+      </div>
     </div>
 
     <div class="flex justify-end gap-2">
@@ -19,7 +23,7 @@
       </button>
       <button 
         type="button" 
-        [disabled]="!actividadSeleccionadaId" 
+        [disabled]="actividadesSeleccionadasIds.length === 0" 
         (click)="confirmar()" 
         class="btn btn-primary">
         Confirmar Salida
