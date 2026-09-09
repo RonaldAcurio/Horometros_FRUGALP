@@ -1,0 +1,30 @@
+.visor-foto-card {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+.visor-foto-imagen {
+  max-width: 100%;
+  max-height: 80vh;
+  border-radius: 0.5rem;
+  display: block;
+}
+
+.visor-foto-cerrar {
+  position: absolute;
+  top: -0.75rem;
+  right: -0.75rem;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: none;
+  background-color: #ef4444;
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+}

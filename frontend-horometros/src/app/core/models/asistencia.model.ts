@@ -23,6 +23,7 @@ export interface Asistencia {
     estado: 'EN_JORNADA' | 'PENDIENTE_REVISION' | 'FINALIZADO' | 'SALIDA_OLVIDADA';
     observaciones?: string;
     total_horas?: number | null;
+    foto_ingreso?: string | null;
     operador?: Operador;
     actividad?: Actividad;
     actividades?: Actividad[];

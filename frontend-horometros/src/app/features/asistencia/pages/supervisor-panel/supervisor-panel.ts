@@ -3,10 +3,11 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 import { Asistencia } from '../../../../core/models/asistencia.model';
+import { VisorFoto } from '../../components/visor-foto/visor-foto';
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, VisorFoto],
   selector: 'app-supervisor-panel',
   styleUrl: './supervisor-panel.css',
   templateUrl: './supervisor-panel.html',

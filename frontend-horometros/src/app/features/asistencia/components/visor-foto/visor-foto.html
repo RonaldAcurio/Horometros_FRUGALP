@@ -1,0 +1,18 @@
+<button
+  *ngIf="fotoUrl; else sinFoto"
+  type="button"
+  class="btn btn-secondary btn-sm"
+  (click)="abrir()"
+>
+  📷 Ver Evidencia
+</button>
+<ng-template #sinFoto>
+  <span class="text-muted-sm">Sin foto</span>
+</ng-template>
+
+<div class="modal-backdrop" *ngIf="mostrarModal" (click)="cerrar()">
+  <div class="visor-foto-card" (click)="$event.stopPropagation()">
+    <button type="button" class="visor-foto-cerrar" (click)="cerrar()">✕</button>
+    <img [src]="fotoUrl" alt="Evidencia de asistencia" class="visor-foto-imagen" />
+  </div>
+</div>

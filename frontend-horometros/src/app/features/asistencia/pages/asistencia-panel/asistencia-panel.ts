@@ -4,10 +4,11 @@ import * as QRCode from 'qrcode';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
+import { VisorFoto } from '../../components/visor-foto/visor-foto';
 
 @Component({
   standalone:true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, VisorFoto],
   selector: 'app-asistencia-panel',
   styleUrl: './asistencia-panel.css',
   templateUrl: './asistencia-panel.html',

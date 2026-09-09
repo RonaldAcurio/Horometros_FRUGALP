@@ -136,6 +136,7 @@
               <th>Salida</th>
               <th>Horas Trabajadas</th>
               <th>Actividades</th>
+              <th>Evidencia</th>
               <th>Observación</th>
             </tr>
           </thead>
@@ -157,10 +158,13 @@
                 </span>
                 <span *ngIf="!reg.actividades || reg.actividades.length === 0" class="text-muted-sm">Sin registrar</span>
               </td>
+              <td>
+                <app-visor-foto [fotoUrl]="reg.foto_ingreso"></app-visor-foto>
+              </td>
               <td>{{ reg.observaciones || '—' }}</td>
             </tr>
             <tr *ngIf="historial.length === 0">
-              <td colspan="7" class="table-empty">No hay registros para el rango seleccionado.</td>
+              <td colspan="8" class="table-empty">No hay registros para el rango seleccionado.</td>
             </tr>
           </tbody>
         </table>
