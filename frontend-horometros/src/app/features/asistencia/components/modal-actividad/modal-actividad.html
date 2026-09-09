@@ -9,7 +9,7 @@
         <label class="flex items-center gap-2" *ngFor="let act of actividades">
           <input
             type="checkbox"
-            [checked]="actividadesSeleccionadasIds.includes(act.id)"
+            [checked]="actividadSeleccionadaIds.includes(act.id)"
             (change)="toggleActividad(act.id, $any($event.target).checked)"
           />
           [{{ act.codigo_megued }}] {{ act.description }}
@@ -23,7 +23,7 @@
       </button>
       <button 
         type="button" 
-        [disabled]="actividadesSeleccionadasIds.length === 0" 
+        [disabled]="actividadSeleccionadaIds.length === 0" 
         (click)="confirmar()" 
         class="btn btn-primary">
         Confirmar Salida

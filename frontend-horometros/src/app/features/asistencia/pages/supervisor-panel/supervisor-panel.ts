@@ -39,7 +39,7 @@ export class SupervisorPanel implements OnInit {
     });
   }
 
-  onCambioFEcha():void{
+  onCambioFecha():void{
     this.cargarAsistencias();
   }
 
