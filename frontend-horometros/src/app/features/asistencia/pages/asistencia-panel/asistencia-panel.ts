@@ -1,5 +1,5 @@
 import { Component, ChangeDetectorRef, OnInit } from '@angular/core';
-import { Operador } from '../../../../core/models/asistencia.model';
+import { Operador, Asistencia } from '../../../../core/models/asistencia.model';
 import * as QRCode from 'qrcode';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 import { FormsModule } from '@angular/forms';
@@ -38,6 +38,12 @@ export class AsistenciaPanel implements OnInit{
     telefono: '',
     direccion: ''
   };
+
+  //Historial de ASISTENCIA
+  tabActual: 'directorio' | 'historial' = 'directorio';
+  historial: Asistencia[] = [];
+  fechaInicioFiltro: string= '';
+  fechaFinFiltro:string = '';
 
   constructor(
     private asistenciaService: AsistenciaService,
@@ -176,6 +182,24 @@ export class AsistenciaPanel implements OnInit{
       `);
       ventanaImpresion.document.close();
     }
+  }
+
+  cambiarTab(tab:'directorio' | 'historial'):void{
+    this.tabActual = tab;
+
+    if(tab === 'historial' && this.historial.length === 0){
+      this.buscarHistorial();
+    }
+  }
+
+  buscarHistorial():void{
+    this.asistenciaService.obtenerHistorial(this.fechaInicioFiltro || undefined, this.fechaFinFiltro || undefined).subscribe({
+      next:(data:any) => {
+        this.historial = Array.isArray(data) ? data : data?.data || [];
+        this.cdr.detectChanges();
+      },
+      error:(err) => console.error('Error cargando historial:', err)
+    });
   }
   
 }

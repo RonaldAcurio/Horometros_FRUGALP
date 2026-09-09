@@ -65,4 +65,17 @@ export class AsistenciaService {
         const params = fecha ? `?fecha=${fecha}` : '';
         return this.http.get<Asistencia[]>(`${this.baseUrl}/hoy${params}`);
     }
+
+    //GET -> /api/asistencia/historial?fecha_inicio=YYYY-MM-DD&fecha_fin=YYYY-MM-DD
+    obtenerHistorial(fechaInicio?: string, fechaFin?: string): Observable<Asistencia[]>{
+
+        let params = '';
+        if(fechaInicio && fechaFin){
+            params = `?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`;
+        } else if(fechaInicio){
+            params = `?fecha_inicio=${fechaInicio}`;
+        }
+
+        return this.http.get<Asistencia[]>(`${this.baseUrl}/historial${params}`);
+    }
 }

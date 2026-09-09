@@ -245,7 +245,21 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
             order: [['fecha','DESC'],['hora_ingreso','DESC']]
         });
 
-        res.json(historial);
+        //Calculamos las horas trabajadas de cada registro(campo derivado, no vive en la BD)
+        const historialConHoras = historial.map((registro) => {
+            const datos = registro.toJSON() as any;
+            let total_horas: number | null = null;
+
+            if(datos.hora_ingreso && datos.hora_salida){
+                const milisegundos = new Date(datos.hora_salida).getTime() - new Date(datos.hora_ingreso).getTime();
+
+                total_horas = Math.round((milisegundos / (1000 *60 * 60)) * 100) / 100;
+            }
+
+            return {...datos, total_horas};
+        });
+
+        res.json(historialConHoras);
 
     } catch(err){
         res.status(500).json({ message: 'Error al consultar el historial del asistencia', err});

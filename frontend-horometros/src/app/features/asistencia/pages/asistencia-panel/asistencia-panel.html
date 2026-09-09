@@ -2,12 +2,22 @@
   <div class="header-banner">
     <div>
       <h2 class="main-title">Panel de Asistente - Gestión de Personal</h2>
-      <p class="subtitle">Administración de operadores y emisión de carnets QR</p>
+      <p class="subtitle">Administración de operadores, carnets QR e historial de asistencia</p>
     </div>
   </div>
 
-  <div class="grid-two-columns">
-    <!-- DIRECTORIO DE OPERADORES -->
+  <!-- NAVEGACION POR PESTAÑAS -->
+  <div class="tabs-bar">
+    <button class="tab-btn" [class.active]="tabActual === 'directorio'" (click)="cambiarTab('directorio')">
+      📋 Directorio de Operadores
+    </button>
+    <button class="tab-btn" [class.active]="tabActual === 'historial'" (click)="cambiarTab('historial')">
+      📅 Historial de Asistencia
+    </button>
+  </div>
+
+  <!-- PESTAÑA: DIRECTORIO (tu contenido de siempre, sin cambios) -->
+  <div *ngIf="tabActual === 'directorio'" class="grid-two-columns">
     <div class="card">
       <div class="card-header flex justify-between items-center">
         <h5 class="card-title">📋 Directorio de Operadores</h5>
@@ -59,7 +69,6 @@
       </div>
     </div>
 
-    <!-- FICHA Y CARNET -->
     <div>
       <div class="card" *ngIf="operadorSeleccionado; else sinSeleccion">
         <div class="card-header">
@@ -104,7 +113,62 @@
     </div>
   </div>
 
-  <!-- MODAL NUEVO OPERADOR -->
+  <!-- PESTAÑA: HISTORIAL -->
+  <div *ngIf="tabActual === 'historial'">
+    <div class="filter-card">
+      <div class="filter-group">
+        <label class="filter-label">Desde:</label>
+        <input type="date" class="date-input" [(ngModel)]="fechaInicioFiltro">
+        <label class="filter-label">Hasta:</label>
+        <input type="date" class="date-input" [(ngModel)]="fechaFinFiltro">
+      </div>
+      <button class="btn btn-primary btn-sm" (click)="buscarHistorial()">🔍 Buscar</button>
+    </div>
+
+    <div class="card">
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Operador</th>
+              <th>Fecha</th>
+              <th>Ingreso</th>
+              <th>Salida</th>
+              <th>Horas Trabajadas</th>
+              <th>Actividades</th>
+              <th>Observación</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let reg of historial">
+              <td><strong class="text-slate-100">{{ reg.operador?.nombre_completo || 'N/A' }}</strong></td>
+              <td>{{ reg.fecha }}</td>
+              <td><span class="time-badge">{{ reg.hora_ingreso }}</span></td>
+              <td>
+                <span *ngIf="reg.hora_salida" class="time-badge">{{ reg.hora_salida }}</span>
+                <span *ngIf="!reg.hora_salida" class="text-muted-sm">Sin salida</span>
+              </td>
+              <td>{{ reg.total_horas != null ? (reg.total_horas + ' h') : '—' }}</td>
+              <td>
+                <span *ngIf="reg.actividades && reg.actividades.length > 0" class="text-emerald-400 font-medium">
+                  <span *ngFor="let act of reg.actividades; let last = last">
+                    {{ act.codigo_megued }}{{ last ? '' : ', ' }}
+                  </span>
+                </span>
+                <span *ngIf="!reg.actividades || reg.actividades.length === 0" class="text-muted-sm">Sin registrar</span>
+              </td>
+              <td>{{ reg.observaciones || '—' }}</td>
+            </tr>
+            <tr *ngIf="historial.length === 0">
+              <td colspan="7" class="table-empty">No hay registros para el rango seleccionado.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL NUEVO OPERADOR (sin cambios, sigue fuera de las pestañas) -->
   <div class="modal-backdrop" *ngIf="mostrarModalOperador">
     <div class="modal-card">
       <h3 class="modal-title">👤 Registrar Nuevo Operador</h3>

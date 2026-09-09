@@ -22,6 +22,8 @@ export interface Asistencia {
     hora_salida?: string;
     estado: 'EN_JORNADA' | 'PENDIENTE_REVISION' | 'FINALIZADO' | 'SALIDA_OLVIDADA';
     observaciones?: string;
+    total_horas?: number | null;
     operador?: Operador;
-    actividad?: Actividad[];
+    actividad?: Actividad;
+    actividades?: Actividad[];
 }
