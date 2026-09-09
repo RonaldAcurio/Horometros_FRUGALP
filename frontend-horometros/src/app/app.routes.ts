@@ -14,6 +14,10 @@ export const routes: Routes = [
         path: 'horometros',
         loadComponent: () => import('./features/horometros/horometros.component').then(m => m.HorometrosComponent)
     },
+    {
+        path: 'asistencia',
+        loadComponent: () => import('./features/asistencia/pages/asistencia-menu/asistencia-menu').then(m => m.AsistenciaMenu)
+    },
     // Rutas del Módulo de Asistencia
     {
         path: 'asistencia/asistente',

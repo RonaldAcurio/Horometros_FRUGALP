@@ -1,0 +1,106 @@
+.asistencia-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 3rem;
+  padding-bottom: 3rem;
+}
+
+.menu-header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.menu-title {
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 0.5rem;
+}
+
+.menu-subtitle {
+  color: #94a3b8;
+  font-size: 0.95rem;
+}
+
+/* Grilla responsive para las tarjetas */
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: 1.5rem;
+  max-width: 72rem;
+  width: 100%;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+@media (min-width: 768px) {
+  .cards-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Estilos de la Tarjeta */
+.menu-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1.5rem;
+  background-color: #1e293b; /* Ajustado al tono oscuro del dashboard */
+  border: 1px solid #334155;
+  border-radius: 0.75rem;
+  text-decoration: none;
+  transition: all 0.2s ease-in-out;
+  cursor: pointer;
+}
+
+.menu-card:hover {
+  border-color: #10b981; /* Borde verde esmeralda al pasar el mouse */
+  transform: translateY(-2px);
+}
+
+.card-header-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.card-icon {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.5rem;
+  background-color: rgba(16, 185, 129, 0.1);
+  color: #34d399;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.25rem;
+}
+
+.card-action {
+  font-size: 0.75rem;
+  color: #34d399;
+  font-weight: 600;
+  transition: transform 0.2s ease;
+}
+
+.menu-card:hover .card-action {
+  transform: translateX(4px);
+}
+
+.card-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 0.5rem;
+}
+
+.card-description {
+  font-size: 0.875rem;
+  color: #94a3b8;
+  line-height: 1.4;
+}

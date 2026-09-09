@@ -1,0 +1,53 @@
+<div class="asistencia-container">
+  
+  <div class="menu-header">
+    <h1 class="menu-title">Módulo de Asistencia</h1>
+    <p class="menu-subtitle">Selecciona una opción según el rol o la acción a realizar</p>
+  </div>
+
+  <div class="cards-grid">
+    
+    <!-- Opción 1: Asistente -->
+    <a [routerLink]="['/asistencia/asistente']" class="menu-card">
+      <div class="card-content">
+        <div class="card-header-box">
+          <div class="card-icon">📋</div>
+          <span class="card-action">Ingresar &rarr;</span>
+        </div>
+        <h3 class="card-title">Gestión de Personal</h3>
+        <p class="card-description">
+          Administración de operadores, registro de datos y emisión de carnets con código QR.
+        </p>
+      </div>
+    </a>
+
+    <!-- Opción 2: Marcación -->
+    <a [routerLink]="['/asistencia/marcacion']" class="menu-card">
+      <div class="card-content">
+        <div class="card-header-box">
+          <div class="card-icon">📷</div>
+          <span class="card-action">Ingresar &rarr;</span>
+        </div>
+        <h3 class="card-title">Punto de Marcación</h3>
+        <p class="card-description">
+          Escáner de código QR en tiempo real para registro de entrada y salida de personal.
+        </p>
+      </div>
+    </a>
+
+    <!-- Opción 3: Supervisor -->
+    <a [routerLink]="['/asistencia/supervisor']" class="menu-card">
+      <div class="card-content">
+        <div class="card-header-box">
+          <div class="card-icon">📊</div>
+          <span class="card-action">Ingresar &rarr;</span>
+        </div>
+        <h3 class="card-title">Panel de Supervisor</h3>
+        <p class="card-description">
+          Control de asistencia diaria, cierre de jornadas, alertas de ausentismo y reportes.
+        </p>
+      </div>
+    </a>
+
+  </div>
+</div>

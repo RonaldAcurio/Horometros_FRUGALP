@@ -1,5 +1,5 @@
 <div class="layout-container">
-  <!-- Header Principal -->
+  <!-- Header Principal Global -->
   <header class="main-header">
     <div class="header-content">
       <div class="brand-box">
@@ -13,8 +13,10 @@
           <p class="brand-subtitle">Control Agrícola & Horómetros</p>
         </div>
       </div>
-      <a routerLink="/dashboard" class="btn-menu">
-        Menú Principal
+
+      <!-- BOTÓN DINÁMICO -->
+      <a [routerLink]="menuButtonLink" class="btn-menu">
+        {{ menuButtonText }}
       </a>
     </div>
   </header>
