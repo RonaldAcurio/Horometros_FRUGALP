@@ -144,9 +144,9 @@
             <tr *ngFor="let reg of historial">
               <td><strong class="text-slate-100">{{ reg.operador?.nombre_completo || 'N/A' }}</strong></td>
               <td>{{ reg.fecha }}</td>
-              <td><span class="time-badge">{{ reg.hora_ingreso }}</span></td>
+              <td><span class="time-badge">{{ reg.hora_ingreso | date:'HH:mm:ss':'-0500' }}</span></td>
               <td>
-                <span *ngIf="reg.hora_salida" class="time-badge">{{ reg.hora_salida }}</span>
+                <span *ngIf="reg.hora_salida" class="time-badge">{{ reg.hora_salida | date:'HH:mm:ss':'-0500' }}</span>
                 <span *ngIf="!reg.hora_salida" class="text-muted-sm">Sin salida</span>
               </td>
               <td>{{ reg.total_horas != null ? (reg.total_horas + ' h') : '—' }}</td>

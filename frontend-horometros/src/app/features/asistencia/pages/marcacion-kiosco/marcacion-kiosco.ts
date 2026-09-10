@@ -13,6 +13,7 @@ import { ModalActividad } from '../../components/modal-actividad/modal-actividad
 })
 export class MarcacionKiosco {
   escanearActivo: boolean = true;
+  procesando: boolean = false;
   mensajeEscaneo: string = '';
   tipoMensaje: 'exito' | 'error' | 'info' = 'info';
 
@@ -26,6 +27,12 @@ export class MarcacionKiosco {
   ) {}
 
   onCodeResult(resultString: string): void {
+
+    //Guarda de re-entrada: si ya estamos procesando un escaneo, ignoramos cualquier otro disparo
+    if(this.procesando || this.escanearActivo){
+      return;
+    }
+
     try {
       const data = JSON.parse(resultString);
       if (data && data.operador_id) {
@@ -44,7 +51,7 @@ export class MarcacionKiosco {
     const videoElement = this.elementRef.nativeElement.querySelector('video') as HTMLVideoElement | null;
 
     // readyState >= 2 (HAVE_CURRENT_DATA) significa que el video ya tiene un fame real para dibujar
-    if(!videoElement || videoElement.readyState < 2){
+    if(!videoElement || videoElement.readyState < 2 || videoElement.videoWidth === 0 || videoElement.videoHeight === 0){
       return null;
     }
 
@@ -71,6 +78,7 @@ export class MarcacionKiosco {
         setTimeout(() => {
           this.mensajeEscaneo = '';
           this.escanearActivo = true;
+          this.procesando = false;
           this.cdr.detectChanges();
         }, 3000);
       },
@@ -79,12 +87,14 @@ export class MarcacionKiosco {
         if (err.status === 400 && err.error?.require_actividad) {
           this.operadorPendienteSalidaId = operadorId;
           this.mostrarModalActividad = true;
+          this.procesando = false; //liberamos la guarda: ahora esperamos al usuario, no al escaner
           this.cdr.detectChanges();
           return;
         }
 
         this.mensajeEscaneo = err.error?.message || 'Error al procesar marca.';
         this.tipoMensaje = 'error';
+        this.procesando = false;
         setTimeout(() => { this.escanearActivo = true; }, 3000);
       }
     });
@@ -92,6 +102,7 @@ export class MarcacionKiosco {
 
   confirmarSalidaConActividad(actividadesIds: number[]): void {
     if (this.operadorPendienteSalidaId) {
+      this.procesando = true;
       this.procesarMarca(this.operadorPendienteSalidaId, actividadesIds);
     }
   }
@@ -100,5 +111,6 @@ export class MarcacionKiosco {
     this.mostrarModalActividad = false;
     this.operadorPendienteSalidaId = null;
     this.escanearActivo = true;
+    this.procesando = false;
   }
 }

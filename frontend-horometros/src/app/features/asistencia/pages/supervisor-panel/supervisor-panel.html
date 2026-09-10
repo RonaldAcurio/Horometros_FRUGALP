@@ -41,9 +41,9 @@
           <tr *ngFor="let asis of asistenciasHoy">
             <td><strong class="text-slate-100">{{ asis.operador?.nombre_completo || 'N/A' }}</strong></td>
             <td>{{ asis.fecha }}</td>
-            <td><span class="time-badge">{{ asis.hora_ingreso }}</span></td>
+            <td><span class="time-badge">{{ asis.hora_ingreso | date:'HH:mm:ss':'-0500' }}</span></td>
             <td>
-              <span *ngIf="asis.hora_salida" class="time-badge">{{ asis.hora_salida }}</span>
+              <span *ngIf="asis.hora_salida" class="time-badge">{{ asis.hora_salida | date:'HH:mm:ss':'-0500' }}</span>
               <span *ngIf="!asis.hora_salida" class="text-muted-sm">En Turno</span>
             </td>
             <td>
