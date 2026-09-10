@@ -338,7 +338,8 @@ html, body {
   border-radius: 0.5rem;
   padding: 0.5rem;
   background-color: #000000;
-  max-width: 50%;
+  max-width: 600px;
+  width: 100%;
   margin: 0 auto;
 }
 
