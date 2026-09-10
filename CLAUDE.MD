@@ -29,3 +29,5 @@ En esta parte cuando hace la capture solo necesito que muestre la pantalla del e
 -Muestra la lista de mecánicos que trabajaron ese día con su total de horas, el desglose de sus múltiples actividades, las fotos de evidencia y las observaciones del supervisor.
 
 Tambien necesito de alguna manera poder guardar las captures que se realizan en cada registro hacerlas de alguna manera no pesen tanto podriamos guardar la URL en la BD y en el backend hacer fotograma base 64 en una carpeta ir guardando o incluso en un servidor de almacenamiento como AWS S3 / Cloudinary y de ahi agregar una columna que diga evidencia en cada usuario y cuadno demos click en una opcion de la evidencia nos abra una ventana flotante con la imagen
+
+El diseno tambien tiene que ser compatible con toda clase de dispositvos
