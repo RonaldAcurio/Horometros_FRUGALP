@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AsistenciaService } from  '../../../../core/services/asistencia.service';
@@ -18,7 +18,10 @@ export class ModalActividad {
   actividades: any[] = [];
   actividadSeleccionadaIds: number[] = [];
 
-  constructor(private asistenciaService: AsistenciaService) {}
+  constructor(
+    private asistenciaService: AsistenciaService,
+    private cdr: ChangeDetectorRef
+  ) {}
 
   ngOnInit(): void {
     this.asistenciaService.obtenerActividades().subscribe({
@@ -38,6 +41,7 @@ export class ModalActividad {
     } else{
       this.actividadSeleccionadaIds = this.actividadSeleccionadaIds.filter(actId => actId !== id);
     }
+    this.cdr.detectChanges();
   }
 
   confirmar(): void {

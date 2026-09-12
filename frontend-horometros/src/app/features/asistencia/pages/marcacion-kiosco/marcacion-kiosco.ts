@@ -1,4 +1,4 @@
-import { Component, ChangeDetectorRef, ElementRef, OnDestroy } from '@angular/core';
+import { Component, ChangeDetectorRef, ElementRef, OnDestroy, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ZXingScannerModule } from '@zxing/ngx-scanner';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
@@ -23,7 +23,8 @@ export class MarcacionKiosco implements OnDestroy {
   constructor(
     private asistenciaService: AsistenciaService,
     private cdr: ChangeDetectorRef,
-    private elementRef: ElementRef<HTMLElement>
+    private elementRef: ElementRef<HTMLElement>,
+    private ngZone : NgZone,
   ) {}
 
   /*
@@ -41,18 +42,27 @@ export class MarcacionKiosco implements OnDestroy {
       return;
     }
 
-    try {
-      const data = JSON.parse(resultString);
-      if (data && data.operador_id) {
-        this.procesando = true;
-        this.escanearActivo = false;
-        const fotoEvidencia = this.capturarFotoEvidencia();
-        this.procesarMarca(data.operador_id, undefined, fotoEvidencia);
+    /*
+    @zxing/ngx-scanner decodifica fuera de la zona de Angular por rendimiento.
+    Forzamos el reingreso para que todo lo que pase despues(abrir el modal y sus controles)
+    quede correctamente "vigilado" por Angular.
+    */
+   this.ngZone.run(() => {
+      try {
+        const data = JSON.parse(resultString);
+        if (data && data.operador_id) {
+          this.procesando = true;
+          this.escanearActivo = false;
+          const fotoEvidencia = this.capturarFotoEvidencia();
+          this.procesarMarca(data.operador_id, undefined, fotoEvidencia);
+        }
+      } catch (e) {
+        this.mensajeEscaneo = 'Código QR no válido.';
+        this.tipoMensaje = 'error';
       }
-    } catch (e) {
-      this.mensajeEscaneo = 'Código QR no válido.';
-      this.tipoMensaje = 'error';
-    }
+   });
+
+    
   }
 
   /*
@@ -134,5 +144,6 @@ export class MarcacionKiosco implements OnDestroy {
     this.operadorPendienteSalidaId = null;
     this.escanearActivo = true;
     this.procesando = false;
+    this.cdr.detectChanges;
   }
 }
