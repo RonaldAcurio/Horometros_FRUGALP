@@ -29,13 +29,14 @@ export class MarcacionKiosco {
   onCodeResult(resultString: string): void {
 
     //Guarda de re-entrada: si ya estamos procesando un escaneo, ignoramos cualquier otro disparo
-    if(this.procesando || this.escanearActivo){
+    if(this.procesando || !this.escanearActivo){
       return;
     }
 
     try {
       const data = JSON.parse(resultString);
       if (data && data.operador_id) {
+        this.procesando = true;
         this.escanearActivo = false;
         const fotoEvidencia = this.capturarFotoEvidencia();
         this.procesarMarca(data.operador_id, undefined, fotoEvidencia);
