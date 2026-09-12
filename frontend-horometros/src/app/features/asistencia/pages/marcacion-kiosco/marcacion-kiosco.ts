@@ -1,4 +1,4 @@
-import { Component, ChangeDetectorRef, ElementRef } from '@angular/core';
+import { Component, ChangeDetectorRef, ElementRef, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ZXingScannerModule } from '@zxing/ngx-scanner';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
@@ -11,7 +11,7 @@ import { ModalActividad } from '../../components/modal-actividad/modal-actividad
   styleUrl: './marcacion-kiosco.css',
   templateUrl: './marcacion-kiosco.html',
 })
-export class MarcacionKiosco {
+export class MarcacionKiosco implements OnDestroy {
   escanearActivo: boolean = true;
   procesando: boolean = false;
   mensajeEscaneo: string = '';
@@ -25,6 +25,14 @@ export class MarcacionKiosco {
     private cdr: ChangeDetectorRef,
     private elementRef: ElementRef<HTMLElement>
   ) {}
+
+  /*
+  Red de seguridad: si el usuario navega a otra pantalla mientras la camara esta activa, nos aseguramos
+  de apagarla igual, sin depender de que la libreria lo haga por su cuenta
+  */
+ ngOnDestroy(): void {
+   this.detenerCamara();
+ }
 
   onCodeResult(resultString: string): void {
 
@@ -44,6 +52,19 @@ export class MarcacionKiosco {
     } catch (e) {
       this.mensajeEscaneo = 'Código QR no válido.';
       this.tipoMensaje = 'error';
+    }
+  }
+
+  /*
+  Toma el stream real de la camara desde el <video> y detiene cada pista (track).
+  ESto apaga la camara a nivel de navegador, sin depender de la limpieza interna de zxing
+  */
+  private detenerCamara():void{
+    const videoElemento = this.elementRef.nativeElement.querySelector('video') as HTMLVideoElement | null;
+    const stream = videoElemento?.srcObject as MediaStream | null;
+
+    if(stream){
+      stream.getTracks().forEach(track => track.stop());
     }
   }
 
