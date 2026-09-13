@@ -62,6 +62,7 @@ export class SupervisorPanel implements OnInit {
   abrirObservacion(asis:Asistencia):void{
     this.observacionEditandoId = asis.id;
     this.observacionTexto = asis.observaciones || '';
+    this.cdr.detectChanges();
   }
 
   guardarObservacion():void{
@@ -81,5 +82,6 @@ export class SupervisorPanel implements OnInit {
   cerrarObservacion():void{
     this.observacionEditandoId = null;
     this.observacionTexto = '';
+    this.cdr.detectChanges();
   }
 }

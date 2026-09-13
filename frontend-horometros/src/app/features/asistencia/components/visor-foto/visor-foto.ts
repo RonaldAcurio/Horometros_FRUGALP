@@ -1,4 +1,4 @@
-import { Component, Input } from '@angular/core';
+import { Component, Input, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 @Component({
@@ -13,13 +13,19 @@ export class VisorFoto {
 
   mostrarModal: boolean = false;
 
+  constructor(
+    private cdr : ChangeDetectorRef
+  ) {}
+
   abrir(): void {
     if(this.fotoUrl){
       this.mostrarModal = true;
+      this.cdr.detectChanges();
     }
   }
 
   cerrar():void{
     this.mostrarModal = false;
+    this.cdr.detectChanges();
   }
 }
