@@ -269,6 +269,11 @@ html, body {
   font-size: 0.8rem;
 }
 
+.nombre-operador {
+  color: var(--text-main);
+  font-weight: 600;
+}
+
 .pagination-bar {
   display: flex;
   justify-content: space-between;

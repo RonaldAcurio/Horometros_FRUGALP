@@ -48,7 +48,7 @@
           <tbody>
             <tr *ngFor="let op of operadoresPaginados" (click)="seleccionarOperador(op)" class="row-hover">
               <td><strong class="code-badge">{{ op.codigo_megued || op.id }}</strong></td>
-              <td class="font-medium text-slate-100">{{ op.nombre_completo }}</td>
+              <td class="font-medium nombre-operador">{{ op.nombre_completo }}</td>
               <td>
                 <button class="btn btn-secondary btn-sm">Seleccionar</button>
               </td>
@@ -142,7 +142,7 @@
           </thead>
           <tbody>
             <tr *ngFor="let reg of historial">
-              <td><strong class="text-slate-100">{{ reg.operador?.nombre_completo || 'N/A' }}</strong></td>
+              <td><strong class="nombre-operador">{{ reg.operador?.nombre_completo || 'N/A' }}</strong></td>
               <td>{{ reg.fecha }}</td>
               <td><span class="time-badge">{{ reg.hora_ingreso | date:'HH:mm:ss':'-0500' }}</span></td>
               <td>

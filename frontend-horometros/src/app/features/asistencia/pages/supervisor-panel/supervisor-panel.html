@@ -39,7 +39,7 @@
         </thead>
         <tbody>
           <tr *ngFor="let asis of asistenciasHoy">
-            <td><strong class="text-slate-100">{{ asis.operador?.nombre_completo || 'N/A' }}</strong></td>
+            <td><strong class="nombre-operador">{{ asis.operador?.nombre_completo || 'N/A' }}</strong></td>
             <td>{{ asis.fecha }}</td>
             <td><span class="time-badge">{{ asis.hora_ingreso | date:'HH:mm:ss':'-0500' }}</span></td>
             <td>
