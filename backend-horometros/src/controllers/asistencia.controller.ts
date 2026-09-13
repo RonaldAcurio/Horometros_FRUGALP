@@ -76,36 +76,23 @@ export const registrarMacarcoQR= async(req:Request, res:Response):Promise<void> 
             return;
         }
 
-        //formato fecha actual local Ecuador yyyy-mm-dd
-        const hoy = getFetchLocalEcuador();
+        const ahora = new Date();
 
-        //Buscar si ya marco ingreso el dia de hoy
+        /*
+        Pasa 1= tienes una jornada ABIERTA(EN_JORNADA), sin importar la fecha en que empezo?
+        ESto es lo que permite cerrar correctamente turnos que cruzan la medianoche (entra 10pm, sale 6am del dia sigueiente):
+        la salida cierra ESA marca puntual, no depende de que la fecha calendario siga siendo la misma
+        */
+
         let asistencia = await Asistencia.findOne({
             where:{
                 operador_id: operador.id,
-                fecha:hoy
+                estado: 'EN_JORNADA'
             },
         });
 
-        const ahora = new Date();
-
-        if(!asistencia){
-            //Casi:1 No existe marca hoy
-            asistencia = await Asistencia.create({
-                operador_id: operador.id,
-                fecha: hoy,
-                hora_ingreso: ahora,
-                estado: 'EN_JORNADA',
-                foto_ingreso: foto_ingreso || null,
-            });
-            res.json({
-                tipo:'ENTRADA',
-                message: `Bienvenido! Entrada registrada a las ${ahora.toLocaleTimeString('es-EC')}`,
-                operador: operador.nombre_completo,
-                asistencia,
-            });
-        } else if(asistencia.estado === 'EN_JORNADA'){
-            //Caso 2: Ya ingreso hoy -> Registrar Salida (Exigimos actividad)
+        if(asistencia){
+            //Tiene una jornada abierta -> este escaneo es una SALIDA (exigimos actividad)
             const actividadesIds:number[] = Array.isArray(actividades_ids) ? actividades_ids.map(Number) : [];
 
             if(actividadesIds.length === 0){
@@ -142,12 +129,44 @@ export const registrarMacarcoQR= async(req:Request, res:Response):Promise<void> 
                 operador: operador.nombre_completo,
                 asistencia,
             });
-        } else {
-            //Caso 3: Ya registro ENTRADA y FINALIZADA, en la jornada
-            res.status(400).json({
-                message:`El operador ${operador.nombre_completo} ya completo su jornada laboral hoy.`,
-            }); 
+
+            return;
+
         }
+        /*
+        Paso 2: no tiene ninguna jornada abierta. Antes de crear una ENTRADA nueva, verificamos si HOY (decha calendario)
+        ya completo un turno completo, para mantener la regla de "una jornada por dia" (evita reingresos multiples el mismo dia).
+        */
+        const hoy = getFetchLocalEcuador();
+        const asistenciaHoy = await Asistencia.findOne({
+            where: {operador_id: operador.id, fecha: hoy},
+        });
+        if(asistenciaHoy){
+            /*
+            ya tiene creado un registro de hoy y no esta EN_JORNADA (ya lo descartamos en el paso 1)
+            ya completo su jornada laboral de hoy.
+            */
+           res.status(400).json({
+            message: `El operador ${operador.nombre_completo} ya completo su jornada laboral de hoy.`,
+           });
+           return;
+        }
+
+        //Paso 3: Entrada Nueva
+        asistencia = await Asistencia.create({
+                operador_id: operador.id,
+                fecha: hoy,
+                hora_ingreso: ahora,
+                estado: 'EN_JORNADA',
+                foto_ingreso: foto_ingreso || null,
+            });
+            res.json({
+                tipo:'ENTRADA',
+                message: `Bienvenido! Entrada registrada a las ${ahora.toLocaleTimeString('es-EC')}`,
+                operador: operador.nombre_completo,
+                asistencia,
+            });
+
     } catch(err){
         res.status(500).json({message:'Error procesando marca QR',err});
     }
@@ -179,6 +198,29 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
     try{
         const { fecha } = req.body;
         const fechaProcesar = fecha || getFetchLocalEcuador();
+
+        /*
+        Verificamos el estado actual de la jornada antes de tocar nada: si ya queda ningun registro pendiente
+        de revision, es por que el dia ya fue cerrado antes.
+        */
+       const registroDelDia = await Asistencia.findAll({ where: {fecha: fechaProcesar}});
+        if(registroDelDia.length === 0 ){
+            res.status(404).json({
+                menddage:`No hay marcaciones registradas para el ${fechaProcesar}.`
+            });
+            return;
+        }
+
+        const quedanPendientes = registroDelDia.some(
+            (r) => r.estado == 'EN_JORNADA' || r.estado === 'PENDIENTE_REVISION'
+        );
+        if(!quedanPendientes){
+            res.status(400).json({
+                menssage:`La jornada del ${fechaProcesar} ya fue cerrada anteriormente.`,
+                ya_cerrado : true
+            });
+            return;
+        }
 
         // 1.Aprobar marcaciones en PENDIENTE_REVISION -> FINALIZADO
         const [aprobados] = await Asistencia.update(
@@ -235,6 +277,12 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
             whereCondition.operador_id = Number(operador_id);
         }
 
+        /*
+        El Historial de Asistencia es la auditoria OFICIAL: solo debe mostrar jornadas que el supervisor ya reviso y cerro(FINALIZADO/SALIDA_OLVIDADA),
+        nunca marcaciones todavia en curso (EN_JORNADA) o pendiente de revision (PENDIENTE_REVISION).
+        */
+        whereCondition.estado = { [Op.in] : ['FINALIZADO','SALIDA_OLVIDADA']};
+
         const historial = await Asistencia.findAll({
             where: whereCondition,
             include:[
@@ -278,6 +326,17 @@ export const revisarAsistencia = async(req:Request, res:Response):Promise<void> 
             res.status(404).json({ message: "Registro de asistencia no encontrado."});
             return;
         }
+
+        /*
+        Datos congelados: una vez que el Supervisor cerro la jornada (FINALIZADO/SALIDA_OLVUDADA) este registro
+        ya no se puede modificar, ni siquiera la observacion.
+        */
+       if(asistencia.estado === 'FINALIZADO' || asistencia.estado === 'SALIDA_OLVIDADA'){
+        res.status(400).json({
+            menssage:'Este registro ya fue cerrado y no se puede modificar.'
+        });
+        return;
+       }
 
         await asistencia.update({
             hora_salida: hora_salida ?? asistencia.hora_salida,

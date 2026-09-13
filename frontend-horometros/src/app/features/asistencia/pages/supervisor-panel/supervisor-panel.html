@@ -11,8 +11,8 @@
         [(ngModel)]="fechaSeleccionada"
         (change)="onCambioFecha()"
       />
-      <button class="btn btn-warning" (click)="ejecutarCierreDiario()">
-        🔒 Cerrar Jornada
+      <button class="btn btn-warning" (click)="ejecutarCierreDiario()" [disabled]="diaCerrado">
+        {{ diaCerrado ? '🔒 Jornada Cerrada' : '🔒 Cerrar Jornada' }}
       </button>
     </div>
   </div>
@@ -68,8 +68,9 @@
               </span>
             </td>
             <td>
-              <button class="btn btn-secondary btn-sm" (click)="abrirObservacion(asis)">
-                {{ asis.observaciones ? '📝 Ver/Editar' : '➕ Agregar' }}
+              <button class="btn btn-secondary btn-sm" (click)="abrirObservacion(asis)"
+              [disabled]="asis.estado === 'FINALIZADO' || asis.estado === 'SALIDA_OLVIDADA'">
+                {{ (asis.estado === 'FINALIZADO' || asis.estado === 'SALIDA_OLVIDADA') ? '🔒 Cerrado' : (asis.observaciones ? '📝 Ver/Editar' : '➕ Agregar') }}
               </button>
             </td>
           </tr>
