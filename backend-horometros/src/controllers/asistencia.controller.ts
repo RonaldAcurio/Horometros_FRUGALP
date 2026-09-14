@@ -189,7 +189,12 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
         //Si viene fecha por query la usamos de lo contrario usamos la fecha local
         const fechaQuery = req.query['fecha'] as string;
         const hoy = fechaQuery || getFetchLocalEcuador();
-        const asistencias = await Asistencia.findAll({
+        //Paginacion: misma logica que el Historial, para que el Supervisor tampoco le llegue de golpe toda la lista del dia
+        const paginaActual = Math.max(1, Number(req.query['pagina']) || 1);
+        const limitePagina = Math.min(100, Math.max(1, Number(req.query['limite']) || 30));
+        const offset = (paginaActual - 1) * limitePagina;
+
+        const { rows:asistencias, count:total } = await Asistencia.findAndCountAll({
             where: { fecha:hoy },
             attributes: ATRIBUTOS_SIN_FOTO,
             include: [
@@ -198,8 +203,33 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
                 { model: Actividad, as:'actividades'},
             ],
             order: [['hora_ingreso','DESC']],
+            limit: limitePagina,
+            offset,
+            /*
+            El include de 'actividades' es un JOIN muchos-a-muchos: sin 'distrinct el count quedaria inflaso (una vez por cada actividad
+            vinculada, no por registro).'
+            */
+           distinct: true
         });
-        res.json(asistencias);
+        /*
+        El "dia cerrado" se calcula sobre TODOS los registros del dia, no solo la pagina visible- si no, el boton "CERRAR JORNADA" quedaria
+        hanilitado/deshabilido segun que pagina este mirando el supervisor, en vez del estado real del dia completo.
+        */
+       const totalAbiertos = await Asistencia.count({
+        where: {
+            fecha: hoy,
+            estado: { [Op.in]: ['EN_JORNADA','PENDIENTE_REVISION']},
+        },
+       });
+       const diaCerrado = total > 0 && totalAbiertos === 0;
+
+        res.json({
+            data: asistencias,
+            total,
+            pagina:paginaActual,
+            totalPaginas: Math.ceil(total / limitePagina) || 1,
+            diaCerrado,
+        });
     } catch(error){
         res.status(500).json({message:'Error al obtener asustencias', error});
     }

@@ -16,6 +16,18 @@ export class SupervisorPanel implements OnInit {
   asistenciasHoy: Asistencia[] = [];
   fechaSeleccionada: string = '';
 
+  //Paginacion del dia: el backend nunca manda de golpe todos los registros del dia
+  paginaHoy:number = 1;
+  totalPaginasHoy: number= 1;
+  total:number = 0;
+
+  /*
+  Verdadero cuando TODOS los registros del dia (no solo la pagina visible) ya fueron cerrador por el Supervisor (FINALIZADO o SALIDA_OLVIDADA).
+  Lo calcula el backend sobre el dia completo, por eso ya NO es un getter derivado de "asistenciasHoy" -- si lo fuera, el boton "Cerrar Jornada"
+  pondria mal segun que pagina se este mirando.
+  */
+  diaCerrado:boolean = false;
+
   //Edicion de observacion
   observacionEditandoId: number | null=null;
   observacionTexto: string = '';
@@ -30,9 +42,11 @@ export class SupervisorPanel implements OnInit {
   }
 
   cargarAsistencias(): void {
-    this.asistenciaService.obtenerAsistenciasHoy(this.fechaSeleccionada || undefined).subscribe({
-      next: (data: any) => {
-        this.asistenciasHoy = Array.isArray(data) ? data : data?.data || [];
+    this.asistenciaService.obtenerAsistenciasHoy(this.fechaSeleccionada || undefined, this.paginaHoy, 30).subscribe({
+      next: (res) => {
+        this.asistenciasHoy = res.data || [];
+        this.totalPaginasHoy = res.totalPaginas || 1;
+        this.diaCerrado = res.diaCerrado;
         this.cdr.detectChanges();
       },
       error: (err) => console.error('Error cargando asistencias:', err)
@@ -40,6 +54,7 @@ export class SupervisorPanel implements OnInit {
   }
 
   onCambioFecha():void{
+    this.paginaHoy = 1;
     this.cargarAsistencias();
   }
 
@@ -47,11 +62,11 @@ export class SupervisorPanel implements OnInit {
   Verdadero cuando TODOS los registros del dia mostrado ya fueron cerrados por el SUPERVUISOR(FINALIZADO o SALIDA_OLVIDADA).
   Si no hay registro todavia, no se considera "cerrado".
   */
- get diaCerrado(): boolean{
-  if(!this.asistenciasHoy || this.asistenciasHoy.length === 0) return false;
-    return this.asistenciasHoy.every(
-      (a) => a.estado === 'FINALIZADO' || a.estado === 'SALIDA_OLVIDADA'
-    );
+ cambiarPaginaHoy(nuevaPagina:number): void{
+  if(nuevaPagina >= 1 && nuevaPagina <= this.totalPaginasHoy){
+    this.paginaHoy = nuevaPagina;
+    this.cargarAsistencias();
+  }
  }
 
   ejecutarCierreDiario(): void {

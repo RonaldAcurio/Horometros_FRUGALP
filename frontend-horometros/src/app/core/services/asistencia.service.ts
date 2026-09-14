@@ -60,10 +60,18 @@ export class AsistenciaService {
         );
     }
 
-    // GET -> https://.../api/asistencia/hoy?fecha=YYYY-MM-DD (fecha opcional)
-    obtenerAsistenciasHoy(fecha?: string): Observable<Asistencia[]> {
-        const params = fecha ? `?fecha=${fecha}` : '';
-        return this.http.get<Asistencia[]>(`${this.baseUrl}/hoy${params}`);
+    // GET -> https://.../api/asistencia/hoy?fecha=YYYY-MM-DD&pagina=1&limite=30
+    // Paginado: al Supervisor tampoco le llega de golpe todo el dia de una sola vez.
+    obtenerAsistenciasHoy(
+        fecha?: string,
+        pagina: number = 1,
+        limite: number = 30
+    ): Observable<{ data: Asistencia[]; total: number; pagina: number; totalPaginas: number; diaCerrado: boolean }> {
+        let params = `?pagina=${pagina}&limite=${limite}`;
+        if(fecha) params += `&fecha=${fecha}`;
+        return this.http.get<{ data: Asistencia[]; total: number; pagina: number; totalPaginas: number; diaCerrado: boolean }>(
+            `${this.baseUrl}/hoy${params}`
+        );
     }
 
     //GET -> /api/asistencia/historial?fecha_inicio=YYYY-MM-DD&fecha_fin=YYYY-MM-DD

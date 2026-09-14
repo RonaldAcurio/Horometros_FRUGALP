@@ -83,6 +83,13 @@
         </tbody>
       </table>
     </div>
+    <div class="pagination-bar" *ngIf="asistenciasHoy.length > 0">
+      <span>Página {{ paginaHoy }} de {{ totalPaginasHoy }} ({{ totalHoy }} registros)</span>
+      <div class="flex gap-1">
+        <button [disabled]="paginaHoy === 1" (click)="cambiarPaginaHoy(paginaHoy - 1)" class="btn btn-secondary btn-sm">◀</button>
+        <button [disabled]="paginaHoy === totalPaginasHoy" (click)="cambiarPaginaHoy(paginaHoy + 1)" class="btn btn-secondary btn-sm">▶</button>
+      </div>
+    </div>
   </div>
 
   <!-- MODAL DE OBSERVACION -->
