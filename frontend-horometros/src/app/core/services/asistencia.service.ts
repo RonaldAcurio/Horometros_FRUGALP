@@ -67,15 +67,22 @@ export class AsistenciaService {
     }
 
     //GET -> /api/asistencia/historial?fecha_inicio=YYYY-MM-DD&fecha_fin=YYYY-MM-DD
-    obtenerHistorial(fechaInicio?: string, fechaFin?: string): Observable<Asistencia[]>{
-
-        let params = '';
+    obtenerHistorial(fechaInicio?: string, fechaFin?: string, pagina:number=1, limite:number=30
+    ): Observable<{data:Asistencia[]; total:number; pagina:number; totalPaginas:number}>{
+        let params = `?pagina=${pagina}&limite=${limite}`;
         if(fechaInicio && fechaFin){
             params = `?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`;
         } else if(fechaInicio){
             params = `?fecha_inicio=${fechaInicio}`;
         }
 
-        return this.http.get<Asistencia[]>(`${this.baseUrl}/historial${params}`);
+        return this.http.get<{data:Asistencia[]; total:number; pagina:number; totalPaginas:number}>(
+            `${this.baseUrl}/historial${params}`);
+    }
+
+    // GET -> /api/asistencia/:id/foto (se pide UNICAMENTE cuando el usuario hace clic en "Ver Evidencia"
+    // - los listados de arriba ya no traen la foto completa)
+    obtenerFotoAsistencia(id:number):Observable<{ foto_ingreso:string }>{
+        return this.http.get<{ foto_ingreso:string }>(`${this.baseUrl}/${id}/foto`);
     }
 }

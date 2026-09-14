@@ -8,6 +8,7 @@ import {
     finalizarDia,
     obtenerHistorial,
     revisarAsistencia,
+    obtenerFotoAsistencia,
 } from "../controllers/asistencia.controller";
 
 const router = Router();
@@ -20,5 +21,6 @@ router.get('/hoy', obtenerAsistenciaHoy);
 router.post('/finalizar-dia',finalizarDia);
 router.get('/historial',obtenerHistorial);
 router.put('/revisar/:id',revisarAsistencia);
+router.get('/:id/foto', obtenerAsistenciaHoy);
 
 export default router;

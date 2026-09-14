@@ -2,8 +2,19 @@ import { Request, Response } from 'express';
 import { Operador } from '../models/operador';
 import { Asistencia } from '../models/asistencias';
 import { Actividad } from '../models';
-import { Op } from 'sequelize';
+import { Op, literal } from 'sequelize';
 import { AsistenciaActividad } from '../models';
+
+/*
+Columnas que excluimos de los LISTADOS (hoy/historial): la foto pesa decenas/cientos de KB en Base64, y si el supervisor tiene
+70 registros en pantalla no tiene sentido bajarlas todas de una. 
+En su lugar mandamos "tiene_fot" (un booleano liviano) y la foto real se pide aparte, solo cuando el usuario hace clic en "ver-Evidencia"
+(ver obtenerFotoAsistencia).
+*/
+const ATRIBUTOS_SIN_FOTO = {
+    exclude: ['foto_ingreso'],
+    include: [[literal('"foto_ingreso" IS NOT NULL'), 'tiene_foto']] as any,
+};
 
 //funcion auxiliar para obtener la decha 'YYYY-MM-DD' en la zona horario de Ecuador
 const getFetchLocalEcuador = ():string => {
@@ -180,6 +191,7 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
         const hoy = fechaQuery || getFetchLocalEcuador();
         const asistencias = await Asistencia.findAll({
             where: { fecha:hoy },
+            attributes: ATRIBUTOS_SIN_FOTO,
             include: [
                 { model: Operador, as:'operador'},
                 { model: Actividad, as:'actividad'},
@@ -283,14 +295,28 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
         */
         whereCondition.estado = { [Op.in] : ['FINALIZADO','SALIDA_OLVIDADA']};
 
-        const historial = await Asistencia.findAll({
+        /*
+        Paginacion: sin esto, un filtro de "todo el ano" intentaria devolver miles de registros (con sus fotos, si no los hubieramos excluido arriba)
+        en una sola respuesta.
+        */
+       const paginaActual = Math.max(1, Number(req.query['pagina']) || 1);
+       const limitePagina = Math.min(100, Math.max(1, Number(req.query['limite']) || 30));
+       const offset = (paginaActual -1) * limitePagina;
+
+        const { rows:historial, count:total } = await Asistencia.findAndCountAll({
             where: whereCondition,
+            attributes:ATRIBUTOS_SIN_FOTO,
             include:[
                 { model: Operador, as: 'operador' },
                 { model: Actividad, as: 'actividad' },
                 { model: Actividad, as: 'actividades'},
             ],
-            order: [['fecha','DESC'],['hora_ingreso','DESC']]
+            order: [['fecha','DESC'],['hora_ingreso','DESC']],
+            limit: limitePagina,
+            offset,
+            //El include de 'actividades' es un JOIN muchos-a-muchos: sin 'distinct' el count quedaria inflado (cuenta una vez por cada actividad
+            //vinculada, no por registro).
+            distinct: true,
         });
 
         //Calculamos las horas trabajadas de cada registro(campo derivado, no vive en la BD)
@@ -307,14 +333,47 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
             return {...datos, total_horas};
         });
 
-        res.json(historialConHoras);
+        res.json({
+            data: historialConHoras,
+            total,
+            pagina: paginaActual,
+            totalPaginas: Math.ceil(total / limitePagina) || 1,
+        });
 
     } catch(err){
         res.status(500).json({ message: 'Error al consultar el historial del asistencia', err});
     }
 };
 
-// Edicion/Revision por parte del Supervisor(Ajustes de hora, estado u observacciones)
+/*
+Devuelve UNICAMENTE la foto de un registro puntual. Sellama recien cuando el usuario hace click en "Ver Evidencia" (ver ATRIBUTOS_SIN_FOTO): asi los listados
+(hoy/historial) nunca cargan fotos que nadie pidio ver
+*/
+export const obtenerFotoAsistencia = async(req:Request, res:Response):Promise<void> => {
+    try{
+        const { id } = req.params;
+
+        const asistencia = await Asistencia.findByPk(Number(id), {
+            attributes: ['id', 'foto_ingreso'],
+        });
+        if(!asistencia){
+            res.status(404).json({ message: 'Registro de asistencia no encontrado.'});
+            return;
+        }
+
+        if(!asistencia.foto_ingreso){
+            res.status(404).json({ message: 'Este registro no tiene foto de evidencia.'});
+            return;
+        }
+
+        res.json({ foto_ingreso: asistencia.foto_ingreso });
+
+    } catch(err){
+        res.status(500).json({ message: 'Error al obtener la foto de evidencia.', err});
+    }
+}
+
+//Edicion/Revision por parte del Supervisor(Ajustes de hora, estado u observacciones)
 export const revisarAsistencia = async(req:Request, res:Response):Promise<void> => {
     try{
 

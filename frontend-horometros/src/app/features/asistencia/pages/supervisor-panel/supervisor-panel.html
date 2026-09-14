@@ -55,7 +55,7 @@
               <span *ngIf="!asis.actividades || asis.actividades.length === 0" class="text-muted-sm">Sin registrar</span>
             </td>
             <td>
-              <app-visor-foto [fotoUrl]="asis.foto_ingreso"></app-visor-foto>
+              <app-visor-foto [asistenciaId]="asis.id" [tieneFoto]="!!asis.tiene_foto"></app-visor-foto>
             </td>
             <td>
               <span [ngClass]="{
@@ -68,8 +68,11 @@
               </span>
             </td>
             <td>
-              <button class="btn btn-secondary btn-sm" (click)="abrirObservacion(asis)"
-              [disabled]="asis.estado === 'FINALIZADO' || asis.estado === 'SALIDA_OLVIDADA'">
+              <button
+                class="btn btn-secondary btn-sm"
+                (click)="abrirObservacion(asis)"
+                [disabled]="asis.estado === 'FINALIZADO' || asis.estado === 'SALIDA_OLVIDADA'"
+              >
                 {{ (asis.estado === 'FINALIZADO' || asis.estado === 'SALIDA_OLVIDADA') ? '🔒 Cerrado' : (asis.observaciones ? '📝 Ver/Editar' : '➕ Agregar') }}
               </button>
             </td>

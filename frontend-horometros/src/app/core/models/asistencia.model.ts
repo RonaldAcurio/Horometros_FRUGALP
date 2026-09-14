@@ -23,7 +23,13 @@ export interface Asistencia {
     estado: 'EN_JORNADA' | 'PENDIENTE_REVISION' | 'FINALIZADO' | 'SALIDA_OLVIDADA';
     observaciones?: string;
     total_horas?: number | null;
+    /*
+    La foto ya no viaja en los listados (hoy/historial) para no cargar decenas de fotos de una sola vez:
+    el backend manda "tiene_foto" (liviano) y la imagen se pide aparte, solo cuando el usuario hace clic 
+    en " Ver Evidencia" (ver AsistenciaService).
+    */
     foto_ingreso?: string | null;
+    tiene_foto?: boolean;
     operador?: Operador;
     actividad?: Actividad;
     actividades?: Actividad[];

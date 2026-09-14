@@ -45,6 +45,10 @@ export class AsistenciaPanel implements OnInit{
   historial: Asistencia[] = [];
   fechaInicioFiltro: string= '';
   fechaFinFiltro:string = '';
+  //Paginacion del historial: el backend nunca manda todo el rando de fechas de una sola vez
+  paginaHistorial: number = 1;
+  totalPaginasHistorial: number = 1;
+  totalHistorial: number = 0;
 
   constructor(
     private asistenciaService: AsistenciaService,
@@ -193,10 +197,30 @@ export class AsistenciaPanel implements OnInit{
     }
   }
 
+  //Al cambiar el filtro de fechas siempre volvemos a la pagina 1 (una busqueda nueva)
   buscarHistorial():void{
-    this.asistenciaService.obtenerHistorial(this.fechaInicioFiltro || undefined, this.fechaFinFiltro || undefined).subscribe({
-      next:(data:any) => {
-        this.historial = Array.isArray(data) ? data : data?.data || [];
+    this.paginaHistorial = 1;
+    this.cargarPaginaHistorial();
+  }
+
+  cambiarPaginaHistorial(nuevaPagina:number):void{
+    if(nuevaPagina >= 1 && nuevaPagina <= this.totalPaginasHistorial){
+      this.paginaHistorial = nuevaPagina;
+      this.cargarPaginaHistorial();
+    }
+  }
+
+  private cargarPaginaHistorial():void{
+    this.asistenciaService.obtenerHistorial(
+      this.fechaInicioFiltro || undefined, 
+      this.fechaFinFiltro || undefined,
+      this.paginaHistorial,
+      30
+    ).subscribe({
+      next:(res) => {
+        this.historial = res.data || [];
+        this.totalPaginasHistorial = res.totalPaginas || 1;
+        this.totalHistorial = res.total || 0;
         this.cdr.detectChanges();
       },
       error:(err) => console.error('Error cargando historial:', err)

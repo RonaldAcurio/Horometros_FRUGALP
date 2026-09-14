@@ -1,5 +1,5 @@
 <button
-  *ngIf="fotoUrl; else sinFoto"
+  *ngIf="tieneFoto; else sinFoto"
   type="button"
   class="btn btn-secondary btn-sm"
   (click)="abrir()"
@@ -13,6 +13,8 @@
 <div class="modal-backdrop" *ngIf="mostrarModal" (click)="cerrar()">
   <div class="visor-foto-card" (click)="$event.stopPropagation()">
     <button type="button" class="visor-foto-cerrar" (click)="cerrar()">✕</button>
-    <img [src]="fotoUrl" alt="Evidencia de asistencia" class="visor-foto-imagen" />
+    <div *ngIf="cargando" class="text-muted-sm">Cargando evidencia...</div>
+    <div *ngIf="error" class="text-muted-sm">{{ error }}</div>
+    <img *ngIf="fotoUrl" [src]="fotoUrl" alt="Evidencia de asistencia" class="visor-foto-imagen" />
   </div>
 </div>
