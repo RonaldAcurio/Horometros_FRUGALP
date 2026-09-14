@@ -19,7 +19,7 @@ export class SupervisorPanel implements OnInit {
   //Paginacion del dia: el backend nunca manda de golpe todos los registros del dia
   paginaHoy:number = 1;
   totalPaginasHoy: number= 1;
-  total:number = 0;
+  totalHoy:number = 0;
 
   /*
   Verdadero cuando TODOS los registros del dia (no solo la pagina visible) ya fueron cerrador por el Supervisor (FINALIZADO o SALIDA_OLVIDADA).
@@ -46,6 +46,7 @@ export class SupervisorPanel implements OnInit {
       next: (res) => {
         this.asistenciasHoy = res.data || [];
         this.totalPaginasHoy = res.totalPaginas || 1;
+        this.totalHoy = res.total || 0;
         this.diaCerrado = res.diaCerrado;
         this.cdr.detectChanges();
       },
