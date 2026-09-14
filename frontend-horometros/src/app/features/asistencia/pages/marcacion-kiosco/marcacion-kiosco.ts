@@ -144,6 +144,6 @@ export class MarcacionKiosco implements OnDestroy {
     this.operadorPendienteSalidaId = null;
     this.escanearActivo = true;
     this.procesando = false;
-    this.cdr.detectChanges;
+    this.cdr.detectChanges();
   }
 }

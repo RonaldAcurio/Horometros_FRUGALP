@@ -218,7 +218,7 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
        const registroDelDia = await Asistencia.findAll({ where: {fecha: fechaProcesar}});
         if(registroDelDia.length === 0 ){
             res.status(404).json({
-                menddage:`No hay marcaciones registradas para el ${fechaProcesar}.`
+                message:`No hay marcaciones registradas para el ${fechaProcesar}.`
             });
             return;
         }
@@ -228,7 +228,7 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
         );
         if(!quedanPendientes){
             res.status(400).json({
-                menssage:`La jornada del ${fechaProcesar} ya fue cerrada anteriormente.`,
+                message:`La jornada del ${fechaProcesar} ya fue cerrada anteriormente.`,
                 ya_cerrado : true
             });
             return;
@@ -392,7 +392,7 @@ export const revisarAsistencia = async(req:Request, res:Response):Promise<void> 
         */
        if(asistencia.estado === 'FINALIZADO' || asistencia.estado === 'SALIDA_OLVIDADA'){
         res.status(400).json({
-            menssage:'Este registro ya fue cerrado y no se puede modificar.'
+            message:'Este registro ya fue cerrado y no se puede modificar.'
         });
         return;
        }

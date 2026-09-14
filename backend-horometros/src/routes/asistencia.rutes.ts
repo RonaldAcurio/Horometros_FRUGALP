@@ -21,6 +21,6 @@ router.get('/hoy', obtenerAsistenciaHoy);
 router.post('/finalizar-dia',finalizarDia);
 router.get('/historial',obtenerHistorial);
 router.put('/revisar/:id',revisarAsistencia);
-router.get('/:id/foto', obtenerAsistenciaHoy);
+router.get('/:id/foto', obtenerFotoAsistencia);
 
 export default router;
