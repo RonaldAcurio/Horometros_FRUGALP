@@ -54,7 +54,7 @@ RegistroActividad.init(
             type: DataTypes.INTEGER,
             allowNull: true,
             references:{
-                model: 'actividades',
+                model: 'secciones',
                 key: 'id',
             },
         },
