@@ -27,6 +27,7 @@ export class Asistencia extends Model<InferAttributes<Asistencia>, InferCreation
     declare estado: CreationOptional<'EN_JORNADA' | 'PENDIENTE_REVISION' | 'FINALIZADO' | 'SALIDA_OLVIDADA' | 'OBSERVANDO'>;
     declare foto_ingreso: CreationOptional<string | null>;
     declare observaciones: CreationOptional<string | null>;
+    declare disel_consumido: CreationOptional<number | null>;
 }
 
 Asistencia.init(
@@ -75,6 +76,10 @@ Asistencia.init(
         observaciones:{
             type: DataTypes.TEXT,
             allowNull: true
+        },
+        disel_consumido:{
+            type: DataTypes.DECIMAL(10,2),
+            allowNull: true,
         },
     },
     {

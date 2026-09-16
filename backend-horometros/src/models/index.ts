@@ -4,6 +4,8 @@ import { Actividad } from "./actividad";
 import { Ingresos_Semanales } from "./ingresos_semanales";
 import { Asistencia } from "./asistencias";
 import { AsistenciaActividad } from "./asistencia_actividad";
+import { Seccion } from "./seccion";
+import { RegistroActividad } from "./registro_actividad";
 
 //Un Ingreso Semanal pertenece a un equipo
 Ingresos_Semanales.belongsTo(Equipo,{ foreignKey:'equipo_id', as:'equipo'});
@@ -34,6 +36,19 @@ Actividad.belongsToMany(Asistencia,{
     as: 'asistenciaRelacionadas' 
 });
 
+// Panel de Actividades: cada fila cuelga de la jornada (Asistencia) del trabajador
+RegistroActividad.belongsTo(Asistencia, { foreignKey: 'asistencia_id', as: 'asistencia' });
+Asistencia.hasMany(RegistroActividad, { foreignKey: 'asistencia_id', as: 'registros' });
+
+RegistroActividad.belongsTo(Equipo, { foreignKey: 'equipo_id', as: 'equipo' });
+Equipo.hasMany(RegistroActividad, { foreignKey: 'equipo_id', as: 'registros' });
+
+RegistroActividad.belongsTo(Actividad, { foreignKey: 'actividad_id', as: 'actividad' });
+Actividad.hasMany(RegistroActividad, { foreignKey: 'actividad_id', as: 'registros' });
+
+RegistroActividad.belongsTo(Seccion, { foreignKey: 'seccion_id', as: 'seccion' });
+Seccion.hasMany(RegistroActividad, { foreignKey: 'seccion_id', as: 'registros' });
+
 export{
     Equipo,
     Operador,
@@ -41,4 +56,6 @@ export{
     Ingresos_Semanales,
     Asistencia,
     AsistenciaActividad,
+    Seccion,
+    RegistroActividad,
 };
