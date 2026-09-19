@@ -5,6 +5,8 @@ import asistenciaRoutes from './routes/asistencia.rutes';
 import router from './routes/actividades.rutes';
 import authRoutes from './routes/auth.rutes'; 
 import registroActividadRutes from './routes/registro_actividad.rutes';
+import haciendaRoutes from './routes/hacienda.rutes';
+import usuarioRoutes from './routes/usuario.rutes';
 
 const app: Application = express();
 
@@ -19,6 +21,8 @@ app.use('/api/asistencia',asistenciaRoutes);
 app.use('/api/actividad',router);
 app.use('/api/auth',authRoutes);
 app.use('/api/registro-actividades',registroActividadRutes);
+app.use('/api/haciendas',haciendaRoutes);
+app.use('/api/usuarios',usuarioRoutes);
 
 //Ruta de comprobacion de estado (Healthcheck)
 app.get('/api/health', (_req,res)=>{

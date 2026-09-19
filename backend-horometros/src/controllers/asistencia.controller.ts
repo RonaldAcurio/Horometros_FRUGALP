@@ -4,6 +4,8 @@ import { Asistencia } from '../models/asistencias';
 import { Actividad } from '../models';
 import { Op, literal } from 'sequelize';
 import { AsistenciaActividad } from '../models';
+import { Usuario } from '../models/usuario';
+import bcrypt from 'bcryptjs';
 
 /*
 Columnas que excluimos de los LISTADOS (hoy/historial): la foto pesa decenas/cientos de KB en Base64, y si el supervisor tiene
@@ -402,6 +404,101 @@ export const obtenerFotoAsistencia = async(req:Request, res:Response):Promise<vo
         res.status(500).json({ message: 'Error al obtener la foto de evidencia.', err});
     }
 }
+
+/*
+Admiti Trabajador Externo: el trabajador prestado escanea su QR igual que siempre (eso ya crea su Asistencia de hoy bajo el flujo normal).
+Esta accion es la que hace el Supervisor RECEPTOR para reclamar esa jornada como propia de su haceinda, dejando trazabilidad de quien lo asmitio.
+Requiere de JWT con el rol SUPERVISOR(ver requiereROL en la ruta).
+*/
+export const admitirTrabajadorExterno = async(req:Request, res:Response):Promise<void> => {
+    try{
+        const { operador_id } = req.body;
+        if(!operador_id){
+            res.status(400).json({ message:'operador_id es obligatorio.'});
+            return;
+        }
+        if(!req.auth?.hacienda_id){
+            res.status(400).json({ message:'Tu usuario no tiene una hacienda asignada.'});
+            return;
+        }
+
+        const operador = await Operador.findByPk(Number(operador_id));
+        if(!operador){
+            res.status(404).json({message:'El operador indicado no existe.'});
+            return;
+        }
+
+        //La hacienda "de casa" del operdaor es la de su Supervisor permanente.
+        let haciendaPropia: number | null=null;
+        if(operador.supervisor_id){
+            const supervisorPropio = await Usuario.findByPk(operador.supervisor_id);
+            haciendaPropia = supervisorPropio?.hacienda_id ?? null;
+        }
+        if(haciendaPropia === req.auth.hacienda_id){
+            res.status(400).json({message:'Este trabajador ya pertenece a tu haceinda: no necesita se admitido.'});
+            return;
+        }
+
+        //El trabajador debe haber marcado su ingreso de hoy antes de poder admitirlo.
+        const hoy= getFetchLocalEcuador();
+        const asistenciaHoy = await Asistencia.findOne({
+            where : { operador_id: operador.id, fecha:hoy},
+        });
+        if(!asistenciaHoy){
+            res.status(404).json({ message:'Este trabajador todavia no ha marcado su ingreso de hoy.'});
+            return;
+        }
+
+        await asistenciaHoy.update({
+            hacienda_prestamo_id: req.auth.hacienda_id,
+            admitido_por_usuario_id: req.auth.id,
+        });
+
+        res.json({
+            message:'Trabajador externo admitido correctamente.',
+            asistencia: asistenciaHoy
+        });
+
+    }catch(err){
+        res.status(500).json({ message:'Error al admitir al trabajador externo.',err});
+
+    }
+};
+
+/*
+Reseteo de clave del Operador(Mecanico/Operador):quien lo resetea fija una nueva, nunca puede ver la anterior (el hash no es 
+reversible). Requiere JWT con rol ADMIN o ASISTIENTE.
+*/
+export const resetearClaveOperador = async(req:Request, res:Response):Promise<void> => {
+    try{
+        const { id } = req.params;
+        const { clave } = req.body;
+
+        if(!clave || clave.length < 6){
+            res.status(400).json({message:'La clave debe tener al menos 6 caracteres.'});
+            return;
+        }
+
+        const operador = await Operador.findByPk(Number(id));
+        if(!operador){
+            res.status(404).json({message:'Operador no encontrado.'});
+            return;
+        }
+        if(!operador.usuario){
+            res.status(400).json({message:'Este operador todavia no tiene usuario de acceso configurado'});
+            return;
+        }
+
+        const clave_hash = await bcrypt.hash(clave, 10);
+        await operador.update({ clave_hash});
+
+        res.json({ message:'Clave del operador actualizada correctamente.'});
+
+    }catch(error){
+        res.status(500).json({message:'Error al resetear la clave del operador.',error});
+
+    }
+};
 
 //Edicion/Revision por parte del Supervisor(Ajustes de hora, estado u observacciones)
 export const revisarAsistencia = async(req:Request, res:Response):Promise<void> => {
