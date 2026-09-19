@@ -49,7 +49,7 @@ Usuario.init(
         hacienda_id:{
             type: DataTypes.INTEGER,
             allowNull: true,
-            unique: false,
+            unique: true,
             references:{
                 model: 'haciendas',
                 key: 'id',

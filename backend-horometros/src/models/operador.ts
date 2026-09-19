@@ -11,7 +11,7 @@ export class Operador extends Model <InferAttributes<Operador>, InferCreationAtt
     declare telefono: CreationOptional<string>;
     declare direccion: CreationOptional<string>;
     // ------- NUEVOS CAMPOS --------------
-    declare rol: CreationOptional<'MECANICO' | 'OPERADOR' | 'SUPERVICOR' | 'ASISTENTE' | 'ADMIN'>;
+    declare rol: CreationOptional<'MECANICO' | 'OPERADOR'>;
     declare area: CreationOptional<string>;
     declare firma_url: CreationOptional<string>;
     //A que SUPERVISOR (y por lo lo tanto que hacienda) pertenece este trabajador de forma permanente

@@ -9,7 +9,7 @@ export class Hacienda extends Model<InferAttributes<Hacienda>, InferCreationAttr
     stateless y no se guarda en la BD, ver clave_hash abajo). 
     */
    declare token_actual: CreationOptional<string | null>;
-   declare token_espira_en: CreationOptional<string | null>;
+   declare token_expira_en: CreationOptional<Date | null>;
 }
 
 Hacienda.init(
@@ -29,7 +29,7 @@ Hacienda.init(
             allowNull: true,
             unique: true,
         },
-        token_espira_en:{
+        token_expira_en:{
             type: DataTypes.DATE,
             allowNull: true,
         },

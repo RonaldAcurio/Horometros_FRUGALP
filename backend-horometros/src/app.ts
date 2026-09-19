@@ -4,6 +4,7 @@ import horometrosRoutes from './routes/horometros.routees';
 import asistenciaRoutes from './routes/asistencia.rutes';
 import router from './routes/actividades.rutes';
 import authRoutes from './routes/auth.rutes'; 
+import registroActividadRutes from './routes/registro_actividad.rutes';
 
 const app: Application = express();
 
@@ -17,6 +18,7 @@ app.use('/api/horometros', horometrosRoutes);
 app.use('/api/asistencia',asistenciaRoutes);
 app.use('/api/actividad',router);
 app.use('/api/auth',authRoutes);
+app.use('/api/registro-actividades',registroActividadRutes);
 
 //Ruta de comprobacion de estado (Healthcheck)
 app.get('/api/health', (_req,res)=>{

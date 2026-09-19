@@ -8,7 +8,7 @@ import { generarToken } from '../services/jwt.service';
 Login unico (pantalla unica ver en el frontend, en CLAUDE.md): un mismo usuario no puede existit a la vez en 'usuarios' Y en 'operadores' (se valida al crear
 cada cuenta, no aqui), asi que primero busca en una tabla y luego en otra nuca es ambiguo.
 */
-export const login = async(res: Response, req: Request):Promise<void> => {
+export const login = async(req: Request, res: Response):Promise<void> => {
     try{
         const {usuario, clave} = req.body;
         if(!usuario || !clave){
