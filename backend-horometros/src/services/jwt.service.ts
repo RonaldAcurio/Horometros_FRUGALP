@@ -1,0 +1,36 @@
+import jwt from 'jsonwebtoken';
+
+/*
+JWT de sesion: stateless, no se guarda en ninguna tabla(ver CLAUDE.md, seccion "dos token que NO son los mismo -
+esto no es el Token de Hacienda"). La firma la verifica jwt.verify() contra JWT_SECRET: si el secreto no esta confirgurado, fallamos
+fuerte al arrancar en vez de correr con un valor por defecto inseguro.
+*/
+
+const JWT_SECRET = process.env.JWT_SECRET;
+if(!JWT_SECRET){
+    throw new Error('Falta configurar JWT_SECRET en las variables de entorno.');
+}
+
+// 8 horas: cubre una jornada laboral completa sin dejar sesione abiertas indefinidamente.
+const JWT_EXPIRA_EN = '8h';
+
+export type TipoCuenta = 'usuario' | 'operador';
+
+export interface PayloadToken {
+    id: number;
+    tipo: TipoCuenta;
+    /*
+    para 'usuario': ADMIN | ASISTENTE | SUPERVISOR (viene de Usuario.cargo)
+    para 'operador': MECANICO | OPERADOR (viene de Operador.rol)
+    */
+   rol:string;
+   hacienda_id: number | null;
+}
+
+export const generarToken = (payload:PayloadToken):string => {
+    return jwt.sign(payload, JWT_SECRET as string, { expiresIn: JWT_EXPIRA_EN});
+}
+
+export const verificarToken = (token:string):PayloadToken => {
+    return jwt.verify(token, JWT_SECRET as string) as PayloadToken;
+}

@@ -6,6 +6,8 @@ import { Asistencia } from "./asistencias";
 import { AsistenciaActividad } from "./asistencia_actividad";
 import { Seccion } from "./seccion";
 import { RegistroActividad } from "./registro_actividad";
+import { Hacienda } from "./hacienda";
+import { Usuario } from "./usuario";
 
 //Un Ingreso Semanal pertenece a un equipo
 Ingresos_Semanales.belongsTo(Equipo,{ foreignKey:'equipo_id', as:'equipo'});
@@ -49,6 +51,18 @@ Actividad.hasMany(RegistroActividad, { foreignKey: 'actividad_id', as: 'registro
 RegistroActividad.belongsTo(Seccion, { foreignKey: 'seccion_id', as: 'seccion' });
 Seccion.hasMany(RegistroActividad, { foreignKey: 'seccion_id', as: 'registros' });
 
+Usuario.belongsTo(Hacienda, { foreignKey: 'hacienda_id', as: 'hacienda' });
+Hacienda.hasMany(Usuario, { foreignKey: 'hacienda_id', as: 'usuarios' });
+
+Seccion.belongsTo(Hacienda, { foreignKey: 'hacienda_id', as: 'hacienda' });
+Hacienda.hasMany(Seccion, { foreignKey: 'hacienda_id', as: 'secciones' });
+
+Operador.belongsTo(Usuario, { foreignKey: 'supervisor_id', as: 'supervisor' });
+Usuario.hasMany(Operador, { foreignKey: 'supervisor_id', as: 'operadores' });
+
+Asistencia.belongsTo(Hacienda, { foreignKey: 'hacienda_prestamo_id', as: 'haciendaPrestamo' });
+Asistencia.belongsTo(Usuario, { foreignKey: 'admitido_por_usuario_id', as: 'admitidoPor' });
+
 export{
     Equipo,
     Operador,
@@ -58,4 +72,6 @@ export{
     AsistenciaActividad,
     Seccion,
     RegistroActividad,
+    Hacienda,
+    Usuario,
 };

@@ -28,6 +28,9 @@ export class Asistencia extends Model<InferAttributes<Asistencia>, InferCreation
     declare foto_ingreso: CreationOptional<string | null>;
     declare observaciones: CreationOptional<string | null>;
     declare diesel_consumido: CreationOptional<number | null>;
+    //declare (junto a diesel_consumido)
+    declare haciendo_prestamo_id: CreationOptional<number | null>;
+    declare admitido_por_id: CreationOptional<number | null>;
 }
 
 Asistencia.init(
@@ -80,6 +83,22 @@ Asistencia.init(
         diesel_consumido:{
             type: DataTypes.DECIMAL(10,2),
             allowNull: true,
+        },
+        haciendo_prestamo_id:{
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            references:{
+                model: 'haciendas',
+                key:'id',
+            },
+        },
+        admitido_por_id:{
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            references:{
+                model:'usuarios',
+                key:'id',
+            },
         },
     },
     {

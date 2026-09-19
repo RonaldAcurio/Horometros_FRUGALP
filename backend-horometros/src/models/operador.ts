@@ -14,6 +14,11 @@ export class Operador extends Model <InferAttributes<Operador>, InferCreationAtt
     declare rol: CreationOptional<'MECANICO' | 'OPERADOR' | 'SUPERVICOR' | 'ASISTENTE' | 'ADMIN'>;
     declare area: CreationOptional<string>;
     declare firma_url: CreationOptional<string>;
+    //A que SUPERVISOR (y por lo lo tanto que hacienda) pertenece este trabajador de forma permanente
+    declare supervisor_id: CreationOptional<number | null>;
+    //Usuario+clave propios, ademas del QR fisico, Ambor juntos: o los datos o ninguno
+    declare usuario: CreationOptional<string | null>;
+    declare clave_hash: CreationOptional<string | null>;
     
 }
 
@@ -62,6 +67,23 @@ Operador.init(
         firma_url:{
             type: DataTypes.TEXT,
             allowNull: true
+        },
+        supervisor_id:{
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            references:{
+                model:'usuarios',
+                key: 'id',
+            },
+        },
+        usuario:{
+            type: DataTypes.STRING(50),
+            allowNull: true,
+            unique: true,
+        },
+        clave_hash:{
+            type: DataTypes.STRING(255),
+            allowNull: true,
         },
     },
     {

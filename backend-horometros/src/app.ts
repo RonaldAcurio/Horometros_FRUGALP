@@ -3,6 +3,7 @@ import cors from 'cors';
 import horometrosRoutes from './routes/horometros.routees';
 import asistenciaRoutes from './routes/asistencia.rutes';
 import router from './routes/actividades.rutes';
+import authRoutes from './routes/auth.rutes'; 
 
 const app: Application = express();
 
@@ -15,6 +16,7 @@ app.use(express.urlencoded({ limit:'10mb', extended:true }));
 app.use('/api/horometros', horometrosRoutes);
 app.use('/api/asistencia',asistenciaRoutes);
 app.use('/api/actividad',router);
+app.use('/api/auth',authRoutes);
 
 //Ruta de comprobacion de estado (Healthcheck)
 app.get('/api/health', (_req,res)=>{

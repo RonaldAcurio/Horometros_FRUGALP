@@ -4,6 +4,7 @@ import { sequelize } from "../config/database";
 export class Seccion extends Model<InferAttributes<Seccion>, InferCreationAttributes<Seccion>>{
     declare id: CreationOptional<number>;
     declare nombre: string;
+    declare hacienda_id: number;
 }
 
 Seccion.init(
@@ -16,6 +17,14 @@ Seccion.init(
         nombre:{
             type: DataTypes.STRING(100),
             allowNull: false,
+        },
+        hacienda_id:{
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            references:{
+                model: 'haciendas',
+                key:'id',
+            },
         },
     },
     {

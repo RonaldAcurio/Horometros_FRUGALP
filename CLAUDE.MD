@@ -17,7 +17,6 @@ En esta parte cuando hace la capture solo necesito que muestre la pantalla del e
 -Puede ver las horas, las múltiples actividades registradas por cada mecánico y las fotos de evidencia.
 
 -Si detecta algo irregular, agrega una Observación.
-
 -Hace clic en "Finalizar Día" para cerrar la jornada y congelar los datos.
 
 3. Panel de Asistente (Auditoría y Gestión de Personal):
