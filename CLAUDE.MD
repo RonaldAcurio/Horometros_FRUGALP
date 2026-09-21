@@ -1,7 +1,9 @@
 # FRUGALP - Sistema de Asistencia y Horómetros
 
-Empresa agrícola. Backend Node/Express + TypeScript + Sequelize sobre PostgreSQL (Render). Frontend Angular,
-empaquetado **nativo** (no PWA) para los celulares de Mecánicos/Operadores.
+Empresa agrícola. Backend Node/Express + TypeScript + Sequelize sobre PostgreSQL (Render, `dpg-dab9e9ojo6nc739j25ug-a`).
+Frontend Angular 22 (standalone components) + Tailwind CSS, desplegado en **Vercel**. El destino final es empaquetar
+la app **nativo** (no PWA) para los celulares de Mecánicos/Operadores, pero mientras se construye el Frontend se
+prueba directo en el link de Vercel (navegador), no hace falta empaquetar para cada prueba.
 
 Este documento es el briefing de arquitectura para retomar el proyecto en cualquier momento: qué existe, qué reglas
 de negocio ya están confirmadas, y qué falta. No es un documento para el usuario final de la app.
@@ -144,6 +146,40 @@ Al lado de cada trabajador que aparece logueado hoy en su panel, el Supervisor c
 - **registro_actividades**: el detalle del Panel de Actividades (equipo + actividad + sección + horómetro por
   jornada) - módulo ya construido (`registro_actividad.controller.ts`/`.rutes.ts`), no rediseñado en esta sesión.
 
+## Frontend (estado real, revisado directo del repo)
+
+Angular 22 standalone (sin NgModules), Tailwind CSS, `@zxing/ngx-scanner` (lectura de cámara) + `qrcode` (generación
+de QR), HttpClient sin interceptores todavía, testing con Vitest. Rutas por `loadComponent` (lazy), sin guards.
+
+**Ya construido:**
+- `dashboard` - menú principal (enlaza a Asistencia/Horómetros).
+- `asistencia-menu` - submenú del módulo Asistencia.
+- `marcacion-kiosco` - el flujo clásico de escaneo de carnet físico (cámara al 40%, captura de evidencia).
+- `supervisor-panel` - validación diaria, observaciones, Finalizar Día.
+- `asistencia-panel` - Historial de Asistencia con filtro de fecha (rol Asistente).
+- `directorio-operadores` + `carnet-qr` - directorio y generación del carnet QR de cada Operador.
+- `modal-actividad`, `visor-foto` - piezas compartidas (selector de actividades en la salida, ventana flotante de evidencia).
+- Módulo Horómetros (OCR) - aparte, no tocar.
+
+**Lo que NO existe todavía:** ninguna pantalla de Login, ningún guard/interceptor de rutas, ningún menú diferenciado
+por rol (hoy cualquiera que entre al link ve todo). Coincide 1 a 1 con que el backend todavía tiene rutas `público*`
+(ver tabla de Endpoints) - las dos cosas se cierran juntas.
+
+**Deuda técnica encontrada en esta revisión:**
+- `environment.ts`/`environment.development.ts` usan la propiedad `apuUrl` (typo de `apiUrl`) - funciona porque
+  `AsistenciaService` la referencia igual, pero es un nombre confuso para servicios nuevos. Se corrige a `apiUrl`
+  cuando se toquen los environments para el Login (con su respectivo find/replace en los servicios existentes).
+- `package.json` tiene una dependencia `qcore` instalada que no se usa en ningún lado del código (`grep` sin
+  resultados) - candidata a eliminar, no se toca hasta confirmar que de verdad no se necesita.
+- No hay `vercel.json` en el repo - el deploy en Vercel corre con auto-detección de Angular. Si Vercel necesita config
+  especial (rewrites para rutas de Angular, variables de entorno de build), anotar aquí cuando se confirme.
+
+## Cuenta ADMIN de arranque
+
+Como `POST /api/usuarios` exige ya estar logueado como ADMIN, el primer Admin no se puede crear por la API (huevo y
+gallina) - se insertó a mano por SQL directo en la base de producción de Render. Usuario `ronald_admin`, cargo
+`ADMIN`, sin `hacienda_id`. Ya probado: login exitoso, devuelve JWT con `rol:"ADMIN"`.
+
 ## Endpoints
 
 | Método/Ruta | Rol requerido | Qué hace |
@@ -189,9 +225,10 @@ junto con el Frontend de Login (ver Pendiente).
 - Filtrar `finalizarDia` por `hacienda_id` (bloqueado por Login, ver arriba).
 - Cerrar las rutas `público*` con `verificarAutenticacion` una vez exista el Login en el Frontend.
 
-**Frontend** (nada de esto empezó)
-- Pantalla de Login única (usuarios + operadores).
-- Menú Admin (accede a lo que ve Supervisor y Asistente).
+**Frontend** (sobre lo ya construido, ver sección de arriba)
+- Pantalla de Login única (usuarios + operadores) + `AuthService` + guard de rutas + interceptor que agregue el JWT
+  a cada request.
+- Menú Admin (accede a lo que ve Supervisor y Asistente) + pantallas para crear Usuario/Operador con credenciales.
 - UI de Camino A (teclado numérico/código) y Camino B (QR flotante que se auto-refresca cada ~90s) - el Supervisor
   elige el modo de su hacienda.
 - Botones O/X en el Panel de Supervisor, al lado de cada trabajador logueado hoy.
@@ -202,5 +239,8 @@ junto con el Frontend de Login (ver Pendiente).
 
 ## Flujo de trabajo de esta sesión
 
-Todo cambio de backend se prueba primero contra Postgres local (`service postgresql start`, rol `postgre`/`1234`,
+Backend: todo cambio se prueba primero contra Postgres local (`service postgresql start`, rol `postgre`/`1234`,
 BD `horometros_db`) antes de darse por terminado. Migraciones nuevas van numeradas después de la última existente.
+
+Frontend: mientras no esté empaquetado nativo, se prueba en el navegador contra el link de Vercel (o `ng serve` local
+apuntando al backend real de Render) - no hace falta empaquetar para cada prueba.
