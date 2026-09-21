@@ -10,7 +10,7 @@ import { Operador, Asistencia } from '../models/asistencia.model';
 export class AsistenciaService {
     // 1. Limpiamos '/horometros' para obtener la base limpia: 'https://horometros-frugalp.onrender.com/api'
     // Y le pegamos directo a la base del módulo de asistencia: 'https://horometros-frugalp.onrender.com/api/asistencia'
-    private baseUrl = `${environment.apuUrl}/asistencia`;
+    private baseUrl = `${environment.apiUrl}/asistencia`;
 
     constructor(private http: HttpClient) {}
 
@@ -51,7 +51,7 @@ export class AsistenciaService {
     // GET -> /api/actividades (Catálogo de actividades para la salida)
     // Nota: como está en la raíz de /api, construimos la URL reemplazando la ruta base
     obtenerActividades(): Observable<any[]> {
-        const urlActividades = `${environment.apuUrl}/actividad`;
+        const urlActividades = `${environment.apiUrl}/actividad`;
         return this.http.get<any[]>(urlActividades).pipe(
             catchError(err => {
                 console.warn('Error al obtener actividades de /api/actividad: ',err);

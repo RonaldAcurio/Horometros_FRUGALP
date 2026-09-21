@@ -2,6 +2,7 @@ import { Component, inject, Output, EventEmitter, ChangeDetectorRef } from '@ang
 import { CommonModule } from '@angular/common';
 import { RespuestaLote } from '../../../../core/models/horometro.model';
 import { HorometrosService } from '../../../../core/services/horometros.services';
+import { NotificacionService } from '../../../../core/services/notificacion.service';
 
 @Component({
   standalone: true,
@@ -14,6 +15,7 @@ export class CargaLoteComponent {
 
   private horometrosService = inject(HorometrosService);
   private cdr = inject(ChangeDetectorRef);
+  private notificacionService = inject(NotificacionService);
 
   @Output() loteProcesado = new EventEmitter<RespuestaLote>();
 
@@ -86,7 +88,7 @@ export class CargaLoteComponent {
 
         // Validar si la respuesta viene vacía o sin reportes procesados
         if (!respuesta.reportesOrdenados || respuesta.reportesOrdenados.length === 0) {
-          alert('⚠️ No se pudo extraer información de ninguna imagen del lote. Por favor verifica las imágenes o reintenta en un momento.');
+          this.notificacionService.advertencia('No se pudo extraer información de ninguna imagen del lote. Por favor verifica las imágenes o reintenta en un momento.');
           this.cdr.detectChanges();
           return;
         }
@@ -98,7 +100,7 @@ export class CargaLoteComponent {
       error: (err) => {
         this.cargando = false;
         const mensajeError = err.error?.error || 'Ocurrió un error al conectar con el servidor.';
-        alert(`⚠️ ${mensajeError}`);
+        this.notificacionService.error(mensajeError);
         this.cdr.detectChanges(); // Forzar ocultar el spinner de carga
       }
     });

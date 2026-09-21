@@ -1,0 +1,11 @@
+<div class="toast-wrapper" *ngIf="notificacionService.actual() as noti">
+  <div
+    class="alert toast-card"
+    [class.alert-success]="noti.tipo === 'exito'"
+    [class.alert-danger]="noti.tipo === 'error'"
+    [class.alert-warning]="noti.tipo === 'advertencia'"
+  >
+    <span class="toast-mensaje">{{ noti.mensaje }}</span>
+    <button type="button" class="toast-cerrar" (click)="cerrar()" aria-label="Cerrar notificación">✕</button>
+  </div>
+</div>

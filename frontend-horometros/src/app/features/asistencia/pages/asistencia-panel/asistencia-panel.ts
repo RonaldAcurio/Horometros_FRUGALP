@@ -5,6 +5,7 @@ import { AsistenciaService } from '../../../../core/services/asistencia.service'
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { VisorFoto } from '../../components/visor-foto/visor-foto';
+import { NotificacionService } from '../../../../core/services/notificacion.service';
 
 @Component({
   standalone:true,
@@ -52,7 +53,8 @@ export class AsistenciaPanel implements OnInit{
 
   constructor(
     private asistenciaService: AsistenciaService,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private notificacionService: NotificacionService
   ){};
 
   ngOnInit(): void {
@@ -136,10 +138,10 @@ export class AsistenciaPanel implements OnInit{
 
     this.asistenciaService.actualizarOperador(this.operadorSeleccionado.id, datos).subscribe({
       next: () => {
-        alert('¡Datos del operador actualizados exitosamente!');
+        this.notificacionService.exito('¡Datos del operador actualizados exitosamente!');
         this.cargarOperadores();
       },
-      error: () => alert('Error al actualizar los datos')
+      error: () => this.notificacionService.error('Error al actualizar los datos')
     });
   }
 
@@ -159,13 +161,13 @@ export class AsistenciaPanel implements OnInit{
 
     this.asistenciaService.crearOperador(this.nuevoOperador).subscribe({
       next: () => {
-        alert('¡Operador creado con éxito!');
+        this.notificacionService.exito('¡Operador creado con éxito!');
         this.cargarOperadores();
         this.cerrarModalNuevoOperador();
       },
       error: (err) => {
         console.error('Error al crear operador:', err);
-        alert('Error al guardar operador.');
+        this.notificacionService.error('Error al guardar operador.');
       }
     });
   }

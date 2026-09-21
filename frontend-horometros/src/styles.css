@@ -371,6 +371,12 @@ html, body {
   color: var(--vino);
 }
 
+.alert-warning {
+  background-color: rgba(242, 183, 5, 0.12);
+  border: 1px solid var(--amarillo-hover);
+  color: #8a6a00;
+}
+
 .qr-box {
   background-color: #ffffff;
   border: 1px solid var(--border-card);

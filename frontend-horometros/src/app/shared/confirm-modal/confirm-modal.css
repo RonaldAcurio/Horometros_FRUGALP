@@ -1,0 +1,4 @@
+.confirm-mensaje {
+  @apply text-sm mb-5;
+  color: var(--text-muted);
+}

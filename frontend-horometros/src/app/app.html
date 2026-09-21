@@ -1,6 +1,6 @@
 <div class="layout-container">
   <!-- Header Principal Global -->
-  <header class="main-header">
+  <header class="main-header" *ngIf="mostrarHeader">
     <div class="header-content">
       <div class="brand-box">
         <div class="brand-icon">
@@ -14,10 +14,21 @@
         </div>
       </div>
 
-      <!-- BOTÓN DINÁMICO -->
-      <a [routerLink]="menuButtonLink" class="btn-menu">
-        {{ menuButtonText }}
-      </a>
+      <div class="header-acciones">
+        <!-- Sesión activa: nombre + rol (y hacienda si la cuenta tiene una fija) + botón de salir -->
+        <div class="sesion-chip" *ngIf="authService.perfil() as perfil">
+          <span class="sesion-nombre">{{ perfil.nombre_completo }}</span>
+          <span class="sesion-rol">{{ perfil.rol }}{{ perfil.hacienda_nombre ? ' · ' + perfil.hacienda_nombre : '' }}</span>
+        </div>
+        <button type="button" *ngIf="authService.estaAutenticado()" (click)="cerrarSesion()" class="btn-menu">
+          Cerrar sesión
+        </button>
+
+        <!-- BOTÓN DINÁMICO -->
+        <a [routerLink]="menuButtonLink" class="btn-menu">
+          {{ menuButtonText }}
+        </a>
+      </div>
     </div>
   </header>
 
@@ -25,4 +36,8 @@
   <main class="main-content">
     <router-outlet></router-outlet>
   </main>
+
+  <!-- Notificaciones y confirmaciones globales (con estilos propios, sin depender de alert()/confirm() del navegador) -->
+  <app-toast></app-toast>
+  <app-confirm-modal></app-confirm-modal>
 </div>

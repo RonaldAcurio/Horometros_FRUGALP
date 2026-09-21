@@ -1,0 +1,15 @@
+<div class="modal-backdrop" *ngIf="confirmacionService.solicitud() as solicitud">
+  <div class="modal-card">
+    <h3 class="modal-title">{{ solicitud.titulo }}</h3>
+    <p class="confirm-mensaje">{{ solicitud.mensaje }}</p>
+
+    <div class="flex justify-end gap-2">
+      <button type="button" (click)="responder(false)" class="btn btn-secondary">
+        Cancelar
+      </button>
+      <button type="button" (click)="responder(true)" class="btn btn-primary">
+        Aceptar
+      </button>
+    </div>
+  </div>
+</div>

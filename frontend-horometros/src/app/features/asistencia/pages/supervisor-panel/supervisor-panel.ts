@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 import { Asistencia } from '../../../../core/models/asistencia.model';
 import { VisorFoto } from '../../components/visor-foto/visor-foto';
+import { NotificacionService } from '../../../../core/services/notificacion.service';
+import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
 
 @Component({
   standalone: true,
@@ -34,7 +36,9 @@ export class SupervisorPanel implements OnInit {
 
   constructor(
     private asistenciaService: AsistenciaService,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private notificacionService: NotificacionService,
+    private confirmacionService: ConfirmacionService
   ) {}
 
   ngOnInit(): void {
@@ -70,24 +74,28 @@ export class SupervisorPanel implements OnInit {
   }
  }
 
-  ejecutarCierreDiario(): void {
+  async ejecutarCierreDiario(): Promise<void> {
 
     //Guarda defensiva: el boton ya se deshabilita en el HTML cuando el dia esta cerrado,
     //pero validamos aca tambien por si se llega a disparar el click de otra forma.
     if(this.diaCerrado){
-      alert('Esta jornada ya fue cerrada anteriormente.');
+      this.notificacionService.advertencia('Esta jornada ya fue cerrada anteriormente.');
       return;
     }
 
     const etiquetaFEcha = this.fechaSeleccionada || 'la jornada de hoy';
 
-    if (confirm(`¿Desea realizar el cierre diario de ${etiquetaFEcha}? Los datos quedaran congelados y no se podran modificar.`)) {
+    const confirmado = await this.confirmacionService.preguntar(
+      `¿Desea realizar el cierre diario de ${etiquetaFEcha}? Los datos quedaran congelados y no se podran modificar.`,
+      'Cerrar jornada'
+    );
+    if (confirmado) {
       this.asistenciaService.finalizarDia(this.fechaSeleccionada || undefined).subscribe({
         next: (res) => {
-          alert(res.message || 'Cierre de jornada completado.');
+          this.notificacionService.exito(res.message || 'Cierre de jornada completado.');
           this.cargarAsistencias();
         },
-        error: (err) => alert(err.error?.message || 'Error procesando el cierre de día.')
+        error: (err) => this.notificacionService.error(err.error?.message || 'Error procesando el cierre de día.')
       });
     }
   }
@@ -96,7 +104,7 @@ export class SupervisorPanel implements OnInit {
   abrirObservacion(asis:Asistencia):void{
     //Datos congelados: si el registro ya fue cerrado, no se abre el formulario de edicion
     if(asis.estado === 'FINALIZADO' || asis.estado === 'SALIDA_OLVIDADA'){
-      alert('Este registro ya fue cerrado y no se puede modificar.');
+      this.notificacionService.advertencia('Este registro ya fue cerrado y no se puede modificar.');
       return;
     }
 
@@ -115,7 +123,7 @@ export class SupervisorPanel implements OnInit {
         this.cerrarObservacion();
         this.cargarAsistencias();
       },
-      error: (err) => alert(err.error?.message || 'Error al guardar la observacion.')
+      error: (err) => this.notificacionService.error(err.error?.message || 'Error al guardar la observacion.')
     });
   }
 
