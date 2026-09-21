@@ -1,0 +1,56 @@
+/* Tabs (mismo estilo que asistencia-panel, que lo tiene en su propio CSS encapsulado, no en el global) */
+.tabs-bar {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid #dbe6d3;
+  margin-bottom: 1.5rem;
+}
+
+.tab-btn {
+  background: transparent;
+  border: none;
+  color: #6b7768;
+  padding: 0.75rem 1.25rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover {
+  color: #1c2620;
+}
+
+.tab-btn.active {
+  color: #16a34a;
+  border-bottom-color: #16a34a;
+}
+
+/* Campo de clave con boton de "ojito" para mostrar/ocultar */
+.campo-clave {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.campo-clave .input-control {
+  padding-right: 2.5rem;
+}
+
+.boton-ojo {
+  position: absolute;
+  right: 0.5rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.25rem;
+}
+
+.token-valor {
+  font-family: monospace;
+  font-size: 0.75rem;
+  word-break: break-all;
+}

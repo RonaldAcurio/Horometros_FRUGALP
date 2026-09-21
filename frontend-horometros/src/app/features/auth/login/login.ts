@@ -17,6 +17,7 @@ export class Login {
 
   usuario = '';
   clave = '';
+  mostrarClave = signal(false);
   cargando = signal(false);
   // Error propio del formulario (persiste hasta el proximo intento) - distinto de una notificacion toast,
   // porque el usuario necesita verlo justo ahi, al lado de los campos que fallaron.

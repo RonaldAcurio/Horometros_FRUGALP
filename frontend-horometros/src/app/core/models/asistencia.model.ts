@@ -5,6 +5,11 @@ export interface Operador {
     cedula?: string;
     telefono?: string;
     direccion?: string;
+    rol?: 'MECANICO' | 'OPERADOR';
+    // Credenciales de acceso (opcionales, van siempre juntas usuario+clave). 'usuario' se puede leer (para
+    // mostrarlo), la clave nunca viaja de vuelta del backend - solo se manda al crear/resetear.
+    supervisor_id?: number | null;
+    usuario?: string | null;
 }
 
 export interface Actividad{

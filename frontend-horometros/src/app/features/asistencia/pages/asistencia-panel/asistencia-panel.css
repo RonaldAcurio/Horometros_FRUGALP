@@ -4,6 +4,28 @@
   margin: 0 auto;
 }
 
+/* Campo de clave con boton de "ojito" para mostrar/ocultar (mismo patron que admin-panel/login) */
+.campo-clave {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.campo-clave .input-control {
+  padding-right: 2.5rem;
+}
+
+.boton-ojo {
+  position: absolute;
+  right: 0.5rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.25rem;
+}
+
 .panel-header {
   margin-bottom: 1.5rem;
 }

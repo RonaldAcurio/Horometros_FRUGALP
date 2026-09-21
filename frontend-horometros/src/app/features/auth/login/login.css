@@ -34,6 +34,19 @@
   @apply w-full;
 }
 
+/* Campo de clave con boton de "ojito" para mostrar/ocultar (mismo patron que admin-panel) */
+.campo-clave {
+  @apply relative flex items-center;
+}
+
+.campo-clave .login-input {
+  @apply pr-10;
+}
+
+.boton-ojo {
+  @apply absolute right-2 bg-transparent border-0 cursor-pointer text-base leading-none p-1;
+}
+
 .login-boton {
   @apply w-full mt-3;
 }

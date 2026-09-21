@@ -88,6 +88,38 @@
               <label class="form-label">Dirección</label>
               <input type="text" class="input-control" [(ngModel)]="direccion">
             </div>
+            <div class="form-group">
+              <label class="form-label">Supervisor (hacienda permanente)</label>
+              <select class="input-control" [(ngModel)]="supervisorIdSeleccionado">
+                <option [ngValue]="null">Sin asignar</option>
+                <option *ngFor="let sup of supervisores" [ngValue]="sup.id">{{ sup.nombre_completo }} — {{ sup.hacienda?.nombre }}</option>
+              </select>
+            </div>
+
+            <!-- Credenciales de acceso: si ya tiene usuario, solo se puede resetear la clave; si no, se asignan aqui -->
+            <div class="form-group" *ngIf="operadorSeleccionado?.usuario">
+              <label class="form-label">Usuario de acceso</label>
+              <div class="flex items-center gap-2">
+                <span class="code-badge">{{ operadorSeleccionado?.usuario }}</span>
+                <button type="button" class="btn btn-secondary btn-sm" (click)="abrirModalResetClaveOperador()">🔑 Resetear clave</button>
+              </div>
+            </div>
+            <ng-container *ngIf="!operadorSeleccionado?.usuario">
+              <div class="form-group">
+                <label class="form-label">Asignar usuario de acceso</label>
+                <input type="text" class="input-control" [(ngModel)]="credencialesOperador.usuario" placeholder="usuario">
+              </div>
+              <div class="form-group" *ngIf="credencialesOperador.usuario">
+                <label class="form-label">Clave (mínimo 6 caracteres)</label>
+                <div class="campo-clave">
+                  <input [type]="mostrarClaveCredenciales() ? 'text' : 'password'" class="input-control" [(ngModel)]="credencialesOperador.clave">
+                  <button type="button" class="boton-ojo" (click)="mostrarClaveCredenciales.set(!mostrarClaveCredenciales())">
+                    {{ mostrarClaveCredenciales() ? '🙈' : '👁️' }}
+                  </button>
+                </div>
+              </div>
+            </ng-container>
+
             <button class="btn btn-primary w-full mt-2" (click)="guardarDatosOperador()">
               💾 Actualizar Ficha
             </button>
@@ -196,9 +228,65 @@
           <label class="form-label">Cédula</label>
           <input type="text" [(ngModel)]="nuevoOperador.cedula" name="cedula" class="input-control w-full">
         </div>
+        <div>
+          <label class="form-label">Supervisor (hacienda permanente)</label>
+          <select [(ngModel)]="nuevoOperador.supervisor_id" name="supervisor_id" class="input-control w-full">
+            <option [ngValue]="null">Sin asignar</option>
+            <option *ngFor="let sup of supervisores" [ngValue]="sup.id">{{ sup.nombre_completo }} — {{ sup.hacienda?.nombre }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Usuario de acceso (opcional)</label>
+          <input type="text" [(ngModel)]="nuevoOperador.usuario" name="usuario" class="input-control w-full">
+        </div>
+        <div *ngIf="nuevoOperador.usuario">
+          <label class="form-label">Clave (mínimo 6 caracteres)</label>
+          <div class="campo-clave">
+            <input
+              [type]="mostrarClaveNuevoOperador() ? 'text' : 'password'"
+              [(ngModel)]="nuevoOperadorClave"
+              name="claveNuevoOperador"
+              minlength="6"
+              class="input-control w-full"
+            >
+            <button type="button" class="boton-ojo" (click)="mostrarClaveNuevoOperador.set(!mostrarClaveNuevoOperador())">
+              {{ mostrarClaveNuevoOperador() ? '🙈' : '👁️' }}
+            </button>
+          </div>
+        </div>
         <div class="flex justify-end gap-2 pt-3">
           <button type="button" (click)="cerrarModalNuevoOperador()" class="btn btn-secondary">Cancelar</button>
-          <button type="submit" [disabled]="!formOp.form.valid" class="btn btn-primary">Guardar</button>
+          <button type="submit" [disabled]="!formOp.form.valid || (!!nuevoOperador.usuario && nuevoOperadorClave.length < 6)" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: RESETEAR CLAVE DEL OPERADOR SELECCIONADO -->
+  <div class="modal-backdrop" *ngIf="mostrarModalResetClaveOperador">
+    <div class="modal-card">
+      <h3 class="modal-title">🔑 Resetear clave de {{ operadorSeleccionado?.nombre_completo }}</h3>
+      <p class="text-muted-sm mb-3">La clave anterior no se puede recuperar - se reemplaza por esta nueva.</p>
+      <form (ngSubmit)="guardarClaveResetOperador()" #formClaveOp="ngForm" class="space-y-3">
+        <div class="form-group">
+          <label class="form-label">Clave nueva * (mínimo 6 caracteres)</label>
+          <div class="campo-clave">
+            <input
+              [type]="mostrarClaveResetOperador() ? 'text' : 'password'"
+              [(ngModel)]="claveResetOperador"
+              name="claveResetOperador"
+              required
+              minlength="6"
+              class="input-control w-full"
+            >
+            <button type="button" class="boton-ojo" (click)="mostrarClaveResetOperador.set(!mostrarClaveResetOperador())">
+              {{ mostrarClaveResetOperador() ? '🙈' : '👁️' }}
+            </button>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 pt-3">
+          <button type="button" (click)="cerrarModalResetClaveOperador()" class="btn btn-secondary">Cancelar</button>
+          <button type="submit" [disabled]="!formClaveOp.form.valid" class="btn btn-primary">Actualizar clave</button>
         </div>
       </form>
     </div>

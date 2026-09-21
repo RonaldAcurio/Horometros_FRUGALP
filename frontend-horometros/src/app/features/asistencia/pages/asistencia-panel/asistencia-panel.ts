@@ -1,7 +1,9 @@
-import { Component, ChangeDetectorRef, OnInit } from '@angular/core';
+import { Component, ChangeDetectorRef, OnInit, signal } from '@angular/core';
 import { Operador, Asistencia } from '../../../../core/models/asistencia.model';
 import * as QRCode from 'qrcode';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
+import { UsuarioService } from '../../../../core/services/usuario.service';
+import { Usuario } from '../../../../core/models/usuario.model';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { VisorFoto } from '../../components/visor-foto/visor-foto';
@@ -30,16 +32,34 @@ export class AsistenciaPanel implements OnInit{
   cedula: string = '';
   telefono: string = '';
   direccion: string = '';
+  // A que Supervisor (y por lo tanto hacienda) pertenece de forma permanente este trabajador.
+  supervisorIdSeleccionado: number | null = null;
+  // Credenciales: solo se usan para ASIGNAR por primera vez (si el operador ya tiene usuario, se resetea
+  // la clave aparte, ver abrirModalResetClaveOperador - usuario+clave van siempre juntos).
+  credencialesOperador = { usuario: '', clave: '' };
+  mostrarClaveCredenciales = signal(false);
+
+  // Modal: Resetear clave de un Operador que YA tiene credenciales
+  mostrarModalResetClaveOperador: boolean = false;
+  claveResetOperador: string = '';
+  mostrarClaveResetOperador = signal(false);
+
+  // Lista de Supervisores (para el selector "a que hacienda pertenece")
+  supervisores: Usuario[] = [];
 
   // Modal Nuevo Operador
   mostrarModalOperador: boolean = false;
+  mostrarClaveNuevoOperador = signal(false);
   nuevoOperador: Partial<Operador> = {
     nombre_completo: '',
     codigo_megued: '',
     cedula: '',
     telefono: '',
-    direccion: ''
+    direccion: '',
+    supervisor_id: null,
+    usuario: '',
   };
+  nuevoOperadorClave: string = '';
 
   //Historial de ASISTENCIA
   tabActual: 'directorio' | 'historial' = 'directorio';
@@ -53,12 +73,24 @@ export class AsistenciaPanel implements OnInit{
 
   constructor(
     private asistenciaService: AsistenciaService,
+    private usuarioService: UsuarioService,
     private cdr: ChangeDetectorRef,
     private notificacionService: NotificacionService
   ){};
 
   ngOnInit(): void {
     this.cargarOperadores();
+    this.cargarSupervisores();
+  }
+
+  cargarSupervisores(): void {
+    this.usuarioService.obtenerUsuarios().subscribe({
+      next: (data) => {
+        this.supervisores = data.filter((u) => u.cargo === 'SUPERVISOR');
+        this.cdr.detectChanges();
+      },
+      error: (err) => console.error('Error cargando supervisores:', err),
+    });
   }
 
   cargarOperadores(): void {
@@ -114,6 +146,9 @@ export class AsistenciaPanel implements OnInit{
     this.cedula = op.cedula || '';
     this.telefono = op.telefono || '';
     this.direccion = op.direccion || '';
+    this.supervisorIdSeleccionado = op.supervisor_id ?? null;
+    this.credencialesOperador = { usuario: '', clave: '' };
+    this.mostrarClaveCredenciales.set(false);
     await this.generarQR(op.id);
     this.cdr.detectChanges();
   }
@@ -130,44 +165,104 @@ export class AsistenciaPanel implements OnInit{
   guardarDatosOperador(): void {
     if (!this.operadorSeleccionado) return;
 
-    const datos = {
+    const datos: any = {
       cedula: this.cedula,
       telefono: this.telefono,
-      direccion: this.direccion
+      direccion: this.direccion,
+      supervisor_id: this.supervisorIdSeleccionado,
     };
 
+    // Las credenciales solo se mandan si se estan asignando por primera vez (usuario+clave van juntos,
+    // ver validarCredencialesOperador en el backend). Si el operador ya tiene usuario, esto queda vacio
+    // y el reseteo de clave se hace aparte (ver abrirModalResetClaveOperador).
+    if (this.credencialesOperador.usuario && this.credencialesOperador.clave) {
+      datos.usuario = this.credencialesOperador.usuario;
+      datos.clave = this.credencialesOperador.clave;
+    }
+
     this.asistenciaService.actualizarOperador(this.operadorSeleccionado.id, datos).subscribe({
-      next: () => {
+      next: (res) => {
         this.notificacionService.exito('¡Datos del operador actualizados exitosamente!');
+        this.operadorSeleccionado = res.operador;
+        this.credencialesOperador = { usuario: '', clave: '' };
         this.cargarOperadores();
+        this.cdr.detectChanges();
       },
-      error: () => this.notificacionService.error('Error al actualizar los datos')
+      error: (err) => {
+        this.notificacionService.error(err.error?.message || 'Error al actualizar los datos');
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  // --- Resetear clave de un Operador que YA tiene credenciales ---
+  abrirModalResetClaveOperador(): void {
+    this.claveResetOperador = '';
+    this.mostrarClaveResetOperador.set(false);
+    this.mostrarModalResetClaveOperador = true;
+  }
+
+  cerrarModalResetClaveOperador(): void {
+    this.mostrarModalResetClaveOperador = false;
+  }
+
+  guardarClaveResetOperador(): void {
+    if (!this.operadorSeleccionado || this.claveResetOperador.length < 6) return;
+
+    this.asistenciaService.resetearClaveOperador(this.operadorSeleccionado.id, this.claveResetOperador).subscribe({
+      next: () => {
+        this.notificacionService.exito('Clave del operador actualizada correctamente.');
+        this.cerrarModalResetClaveOperador();
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.notificacionService.error(err.error?.message || 'Error al resetear la clave.');
+        this.cdr.detectChanges();
+      },
     });
   }
 
   // MODAL NUEVO OPERADOR
+  private operadorNuevoVacio(): Partial<Operador> {
+    return { nombre_completo: '', codigo_megued: '', cedula: '', telefono: '', direccion: '', supervisor_id: null, usuario: '' };
+  }
+
   abrirModalNuevoOperador(): void {
-    this.nuevoOperador = { nombre_completo: '', codigo_megued: '', cedula: '', telefono: '', direccion: '' };
+    this.nuevoOperador = this.operadorNuevoVacio();
+    this.nuevoOperadorClave = '';
+    this.mostrarClaveNuevoOperador.set(false);
     this.mostrarModalOperador = true;
   }
 
   cerrarModalNuevoOperador(): void {
     this.mostrarModalOperador = false;
-    this.nuevoOperador = { nombre_completo: '', codigo_megued: '', cedula: '', telefono: '', direccion: '' };
+    this.nuevoOperador = this.operadorNuevoVacio();
+    this.nuevoOperadorClave = '';
   }
 
   guardarNuevoOperador(): void {
     if (!this.nuevoOperador.nombre_completo || !this.nuevoOperador.codigo_megued) return;
 
-    this.asistenciaService.crearOperador(this.nuevoOperador).subscribe({
+    // usuario+clave van siempre juntos (ver backend) - si solo se lleno uno, no se manda ninguno.
+    const datos: Partial<Operador> & { clave?: string } = { ...this.nuevoOperador };
+    if (datos.usuario && this.nuevoOperadorClave) {
+      datos.clave = this.nuevoOperadorClave;
+    } else {
+      delete datos.usuario;
+    }
+    if (!datos.supervisor_id) delete datos.supervisor_id;
+
+    this.asistenciaService.crearOperador(datos).subscribe({
       next: () => {
         this.notificacionService.exito('¡Operador creado con éxito!');
         this.cargarOperadores();
         this.cerrarModalNuevoOperador();
+        this.cdr.detectChanges();
       },
       error: (err) => {
         console.error('Error al crear operador:', err);
-        this.notificacionService.error('Error al guardar operador.');
+        this.notificacionService.error(err.error?.message || 'Error al guardar operador.');
+        this.cdr.detectChanges();
       }
     });
   }

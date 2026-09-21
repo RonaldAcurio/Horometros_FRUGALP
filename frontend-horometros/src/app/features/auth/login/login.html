@@ -30,15 +30,20 @@
 
       <div class="form-group">
         <label class="form-label" for="clave">Clave</label>
-        <input
-          id="clave"
-          name="clave"
-          type="password"
-          class="input-control login-input"
-          autocomplete="current-password"
-          [(ngModel)]="clave"
-          required
-        />
+        <div class="campo-clave">
+          <input
+            id="clave"
+            name="clave"
+            [type]="mostrarClave() ? 'text' : 'password'"
+            class="input-control login-input"
+            autocomplete="current-password"
+            [(ngModel)]="clave"
+            required
+          />
+          <button type="button" class="boton-ojo" (click)="mostrarClave.set(!mostrarClave())" [attr.aria-label]="mostrarClave() ? 'Ocultar clave' : 'Mostrar clave'">
+            {{ mostrarClave() ? '🙈' : '👁️' }}
+          </button>
+        </div>
       </div>
 
       <button type="submit" class="btn btn-primary login-boton" [disabled]="cargando() || !usuario || !clave">

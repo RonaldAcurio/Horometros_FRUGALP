@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
 import { guestGuard } from './core/guards/guest.guard';
+import { roleGuard } from './core/guards/role.guard';
 
 export const routes: Routes = [
     {
@@ -17,6 +18,11 @@ export const routes: Routes = [
         path: 'dashboard',
         canActivate: [authGuard],
         loadComponent: () => import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent)
+    },
+    {
+        path: 'admin',
+        canActivate: [authGuard, roleGuard('ADMIN')],
+        loadComponent: () => import('./features/admin/pages/admin-panel/admin-panel').then(m => m.AdminPanel)
     },
     {
         path: 'horometros',

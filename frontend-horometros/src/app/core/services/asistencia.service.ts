@@ -29,6 +29,11 @@ export class AsistenciaService {
         return this.http.put(`${this.baseUrl}/operadores/${id}`, datos);
     }
 
+    // PUT -> /api/asistencia/operadores/:id/clave (requiere JWT con rol ADMIN o ASISTENTE)
+    resetearClaveOperador(id: number, clave: string): Observable<{ message: string }> {
+        return this.http.put<{ message: string }>(`${this.baseUrl}/operadores/${id}/clave`, { clave });
+    }
+
     // POST -> /api/asistencia/marcar (soportando actividad_id para la salida)
     registrarMarcaQR(operadorId: number, actividadIds?: number[], fotoIngreso?: string | null): Observable<any> {
         return this.http.post(`${this.baseUrl}/marcar-qr`, { 

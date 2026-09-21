@@ -6,6 +6,19 @@ import { Hacienda } from "../models/hacienda";
 const TOKEN_VIGENCIA_MS = 24*60*60*1000;
 
 /*
+Lista de haciendas: la usa el Frontend para los selectores (asignar hacienda a un Usuario ESCANER/SUPERVISOR
+nuevo, elegir para cual generar el Token). Requiere JWT con rol ADMIN o SUPERVISOR (ver la ruta).
+*/
+export const obtenerHaciendas = async(_req:Request, res:Response):Promise<void> => {
+    try{
+        const haciendas = await Hacienda.findAll({ order: [['nombre', 'ASC']] });
+        res.json(haciendas);
+    }catch(err){
+        res.status(500).json({ message: 'Error al obtener las haciendas.', err});
+    }
+};
+
+/*
 Gerena/regenera ek Token de Hacienda. Solo el Supervisor de esa Hacienda puede hacerlo (o un Admin, que puede tocar cualquiera). 
 No es un JWT:es una cadena aleatoria que se guarda en la BD porque cada escaneo QR la tiene que poder consultar.
 */
