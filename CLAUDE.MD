@@ -1,32 +1,54 @@
-FRUGALP empresa agricola, estoy como pasante tratando de crear una aplicacion de asistencia el cual tiene el siguietne flujo:
--tiene un panel donde escoge ASISTENCIA y HOROMETRO(aqui trato de crear un OCR con genai 3.5), por el momento necesito enfocarme en la opcion de ASISTENCIA
-Flujo de ASISTENCIA:
+# FRUGALP — Asistencia y Horómetros (Arquitectura & Reglas)
 
-1. Punto de Marcación (Kiosco):
+Sistema multi-rol de asistencia por Kiosco QR y registro de actividades agrícolas/taller para FRUGALP Agrícola Exportadora.
+Monorepo: `frontend-horometros/` (Angular standalone) y `backend-horometros/` (Node/Express + Sequelize + Postgres).
 
--Entrada: El operador/mecánico escanea su QR (se toma la foto captura como evidencia).
+---
 
--Salida: Vuelve a escanear su QR y el sistema le despliega una interfaz para agregar 1 o más actividades realizadas antes de confirmar la salida.
+## 1. Reglas de Negocio Clave
+- **Roles:**
+  - `ADMIN` y `ASISTENTE` (`usuarios`): Globales.
+  - `SUPERVISOR` (`usuarios`): Restringido a 1 hacienda en BD (`UNIQUE hacienda_id`).
+  - `MECANICO` y `OPERADOR` (`operadores`): Login por usuario/clave + QR físico. Asignados a su supervisor.
+- **Autenticación:** JWT stateless para sesiones (no guardar en BD). Token de Hacienda (24h) en BD para habilitar kiosco.
+- **Trabajadores Prestados:** Trabajan el día completo en la hacienda receptora. Se registra `hacienda_prestamo_id` y `admitido_por_usuario_id` en `asistencias`. `Operador.supervisor_id` no cambia.
+- **Offline-First:** Panel de Actividades usa IndexedDB + Sincronización manual/periódica (evitar Background Sync API por iOS).
 
-En esta parte cuando hace la capture solo necesito que muestre la pantalla del escaner en un 40% para que el operador/mecanico no se percate que le van a tomar una capture
+---
 
-2. Panel de Supervisor (Validación Diaria):
+## 2. Flujo de Asistencia (Kiosco & Paneles)
 
--Revisa las marcaciones del día anterior (o jornada activa).
+### A. Punto de Marcación (Kiosco)
+- **Entrada:** Escaneo de QR + captura de foto de evidencia disimulada (**visores de cámara ocupan máximo 40% de pantalla** para evitar que el operador note la captura).
+- **Salida:** Escaneo de QR + interfaz para registrar 1 o más actividades antes de confirmar salida.
 
--Puede ver las horas, las múltiples actividades registradas por cada mecánico y las fotos de evidencia.
+### B. Evidencia Fotográfica
+- Capturas almacenadas en servidor/S3 o codificadas. Se guarda la URL/Ruta en la columna `evidencia` del registro.
+- En la UI, al dar clic en la opción de evidencia, despliega un **modal / ventana flotante con la imagen**.
 
--Si detecta algo irregular, agrega una Observación.
--Hace clic en "Finalizar Día" para cerrar la jornada y congelar los datos.
+### C. Panel Supervisor (Validación Diaria)
+- Revisa marcaciones de la jornada activa o día anterior (horas, actividades, evidencias).
+- Registra observaciones si detecta irregularidades.
+- Botón **"Finalizar Día"**: cierra la jornada, invalida el token de hacienda y congela datos.
 
-3. Panel de Asistente (Auditoría y Gestión de Personal):
+### D. Panel Asistente (Auditoría)
+- Directorio de carnets QR + pestaña "Historial de Asistencia" con filtro por fecha.
+- Muestra lista de mecánicos, total de horas, desglose de actividades, fotos de evidencia y observaciones del supervisor.
 
--Además del directorio de operadores/carnets QR, cuenta con una pestaña de "Historial de Asistencia".
+---
 
--Incluye un filtro por calendario/fecha para consultar cualquier día pasado (semana, mes, etc.).
+## 3. Estructura de Base de Datos
+- **`usuarios`**: Admin, Asistente, Supervisor (`hacienda_id` UNIQUE).
+- **`operadores`**: Mecánicos y Operadores (`supervisor_id`, `usuario`, `clave_hash`).
+- **`haciendas`**: (`token_actual`, `token_expira_en`).
+- **`asistencias`**: (`diesel_consumido`, `hacienda_prestamo_id`, `admitido_por_usuario_id`).
+- **`registro_actividades`**: Cuelga de `asistencia_id` (`equipo_id`, `actividad_id`, `seccion_id`, `horometro_inicio/final`, `hora_inicio/fin`, `observaciones`).
+- **`secciones`**: Sub-áreas por hacienda (`hacienda_id`).
 
--Muestra la lista de mecánicos que trabajaron ese día con su total de horas, el desglose de sus múltiples actividades, las fotos de evidencia y las observaciones del supervisor.
+---
 
-Tambien necesito de alguna manera poder guardar las captures que se realizan en cada registro hacerlas de alguna manera no pesen tanto podriamos guardar la URL en la BD y en el backend hacer fotograma base 64 en una carpeta ir guardando o incluso en un servidor de almacenamiento como AWS S3 / Cloudinary y de ahi agregar una columna que diga evidencia en cada usuario y cuadno demos click en una opcion de la evidencia nos abra una ventana flotante con la imagen
-
-El diseno tambien tiene que ser compatible con toda clase de dispositvos
+## 4. Guía de Desarrollo & Workflow
+- **Diseño UI:** 100% Responsive / Compatible con todos los dispositivos (móvil, tablet, desktop).
+- **Git:** Trabajo en rama `main` de `RonaldAcurio/Horometros_FRUGALP`. **Nunca hacer push directo.**
+- **Testing Local:** Probar siempre en Postgres local (`DB_USER=postgre`, `DB_PASSWORD=1234`, `DB_NAME=horometros_db`) y Playwright antes de entregar.
+- **Entregas:** Revertir cambios de sandbox (`git checkout --`), explicar decisiones técnicamente y entregar código en el chat para aplicación manual.

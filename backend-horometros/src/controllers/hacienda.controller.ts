@@ -34,7 +34,7 @@ export const generarTokenHacienda = async(req:Request, res:Response):Promise<voi
         });
 
         res.json({
-            messaje:'Token de hacienda generado correctamente',
+            message:'Token de hacienda generado correctamente',
             token_actual: token,
             token_expira_en: expiraEn
         });

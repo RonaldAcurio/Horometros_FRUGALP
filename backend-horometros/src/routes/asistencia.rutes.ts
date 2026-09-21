@@ -26,6 +26,6 @@ router.get('/historial',obtenerHistorial);
 router.put('/revisar/:id',revisarAsistencia);
 router.get('/:id/foto', obtenerFotoAsistencia);
 router.post('/admitir-externo',verificarAutenticacion, requireRol('SUPERVISOR','ADMIN'),admitirTrabajadorExterno);
-router.put('/operador/:id/clave',verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), resetearClaveOperador);
+router.put('/operadores/:id/clave',verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), resetearClaveOperador);
 
 export default router;
