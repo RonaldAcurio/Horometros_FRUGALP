@@ -31,6 +31,8 @@ export class Asistencia extends Model<InferAttributes<Asistencia>, InferCreation
     //declare (junto a diesel_consumido)
     declare hacienda_prestamo_id: CreationOptional<number | null>;
     declare admitido_por_usuario_id: CreationOptional<number | null>;
+    // O/X del Supervisor: null = sin revisar, true = O (vino), false = X (no vino, ver confirmarAsistencia).
+    declare confirmado_por_supervisor: CreationOptional<boolean | null>;
 }
 
 Asistencia.init(
@@ -99,6 +101,11 @@ Asistencia.init(
                 model:'usuarios',
                 key:'id',
             },
+        },
+        confirmado_por_supervisor:{
+            type: DataTypes.BOOLEAN,
+            allowNull: true,
+            defaultValue: null,
         },
     },
     {

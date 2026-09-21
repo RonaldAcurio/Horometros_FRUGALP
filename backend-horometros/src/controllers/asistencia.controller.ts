@@ -5,7 +5,9 @@ import { Actividad } from '../models';
 import { Op, literal } from 'sequelize';
 import { AsistenciaActividad } from '../models';
 import { Usuario } from '../models/usuario';
+import { Hacienda } from '../models/hacienda';
 import bcrypt from 'bcryptjs';
+import { generarTokenQrJornada, verificarTokenQrJornada } from '../services/jwt.service';
 
 /*
 Columnas que excluimos de los LISTADOS (hoy/historial): la foto pesa decenas/cientos de KB en Base64, y si el supervisor tiene
@@ -23,6 +25,50 @@ const getFetchLocalEcuador = ():string => {
     return new Date().toLocaleDateString('sv-SE',{timeZone: 'America/Guayaquil'});
 };
 
+/*
+Valida el trio opcional supervisor_id/usuario/clave que puede venir al crear o actualizar un Operador.
+Devuelve null (y ya respondio el error) si algo no es valido, o el objeto listo para mezclar en Operador.create/update.
+usuario y clave van SIEMPRE juntos: no tiene sentido mandar uno sin el otro.
+*/
+const validarCredencialesOperador = async(
+    req: Request, res: Response
+): Promise<{ supervisor_id: number | null; usuario: string | null; clave_hash: string | null } | null> => {
+    const { supervisor_id, usuario, clave } = req.body;
+
+    let supervisorIdFinal: number | null = null;
+    if(supervisor_id){
+        const supervisor = await Usuario.findByPk(Number(supervisor_id));
+        if(!supervisor || supervisor.cargo !== 'SUPERVISOR'){
+            res.status(404).json({ message: 'El supervisor indicado no existe o no tiene el cargo SUPERVISOR.'});
+            return null;
+        }
+        supervisorIdFinal = supervisor.id;
+    }
+
+    let usuarioFinal: string | null = null;
+    let claveHashFinal: string | null = null;
+    if(usuario || clave){
+        if(!usuario || !clave){
+            res.status(400).json({ message: 'usuario y clave van juntos: si envias uno, tienes que enviar el otro.'});
+            return null;
+        }
+        if(clave.length < 6){
+            res.status(400).json({ message: 'La clave debe tener al menos 6 caracteres.'});
+            return null;
+        }
+        const usuarioExistente = await Usuario.findOne({ where: { usuario }});
+        const operadorConMismoUsuario = await Operador.findOne({ where: { usuario }});
+        if(usuarioExistente || operadorConMismoUsuario){
+            res.status(409).json({ message: 'Ese nombre de usuario ya esta en uso.'});
+            return null;
+        }
+        usuarioFinal = usuario;
+        claveHashFinal = await bcrypt.hash(clave, 10);
+    }
+
+    return { supervisor_id: supervisorIdFinal, usuario: usuarioFinal, clave_hash: claveHashFinal };
+};
+
 //Crear un Nuevo Operador
 export const crearOperador = async (req:Request, res:Response):Promise<void> => {
     try{
@@ -33,15 +79,22 @@ export const crearOperador = async (req:Request, res:Response):Promise<void> => 
             return;
         }
 
+        const credenciales = await validarCredencialesOperador(req, res);
+        if(!credenciales) return; // ya se respondio el error adentro
+
         const nuevoOperador = await Operador.create({
             nombre_completo,
             codigo_megued,
             cedula,
             telefono,
-            direccion
+            direccion,
+            supervisor_id: credenciales.supervisor_id,
+            usuario: credenciales.usuario,
+            clave_hash: credenciales.clave_hash,
         });
 
-        res.status(201).json(nuevoOperador);
+        const { clave_hash: _omitido, ...perfil } = nuevoOperador.toJSON() as any;
+        res.status(201).json(perfil);
     }
     catch(err){
         res.status(500).json({message:'Error al crear el operador',err});
@@ -60,9 +113,21 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
             return;
         }
 
-        await operador.update({ cedula, telefono, direccion});
-        res.json({message:"Operador actualizado exitosamente", operador});
-    } 
+        const credenciales = await validarCredencialesOperador(req, res);
+        if(!credenciales) return;
+
+        await operador.update({
+            cedula,
+            telefono,
+            direccion,
+            // ?? en vez de || : si no mandan un dato nuevo, conservamos el que ya tenia (no lo borramos).
+            supervisor_id: credenciales.supervisor_id ?? operador.supervisor_id,
+            usuario: credenciales.usuario ?? operador.usuario,
+            clave_hash: credenciales.clave_hash ?? operador.clave_hash,
+        });
+        const { clave_hash: _omitido, ...perfil } = operador.toJSON() as any;
+        res.json({message:"Operador actualizado exitosamente", operador: perfil});
+    }
     catch(err){
         res.status(404).json({message: 'Error al actualizar el operador', err});
     }
@@ -71,17 +136,146 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
 //Obtener la lista de operadores
 export const obtenerOperadores = async(_req: Request, res:Response):Promise<void> => {
     try{
-        const operadores = await Operador.findAll({ order: [['nombre_completo','ASC']]});
+        const operadores = await Operador.findAll({
+            attributes: { exclude: ['clave_hash'] },
+            include: [{ model: Usuario, as: 'supervisor', attributes: { exclude: ['clave_hash'] } }],
+            order: [['nombre_completo','ASC']],
+        });
         res.json(operadores);
     } catch(err){
         res.status(500).json({message:'Error al obtener operdadores',err});
     }
 };
 
-//Logica de Marcacion con Escaner QR (Entrada/Salida)
+/*
+Contexto de "donde" ocurre la marcacion: solo tiene datos cuando alguien mas confirma la identidad del trabajador
+(Camino A: codigo+Token de Hacienda, o Camino B: Supervisor/Escaner escaneando el QR de sesion). El carnet fisico
+(registrarMacarcoQR) no pasa contexto: sigue siendo el flujo clasico, sin cambios.
+*/
+interface ContextoMarcacion {
+    hacienda_prestamo_id?: number | null;
+    admitido_por_usuario_id?: number | null;
+}
+
+/*
+Nucleo de la logica de Entrada/Salida, compartido por los 3 caminos que hoy puede tomar una marcacion:
+carnet fisico (registrarMacarcoQR), codigo+Token de Hacienda (marcarConCodigo) y QR de sesion (marcarConQrSesion).
+Antes esta logica vivia duplicada solo en registrarMacarcoQR; sacarla de ahi evita que un cambio de regla de negocio
+(p.ej. como se cierra un turno que cruza la medianoche) se tenga que repetir y probar 3 veces.
+Devuelve {status, body} en vez de escribir directo en 'res': quien la llama decide como responder.
+*/
+const procesarMarcacion = async(
+    operador: Operador,
+    datos: { actividades_ids?: unknown; foto_ingreso?: string | null },
+    contexto: ContextoMarcacion = {}
+): Promise<{ status: number; body: any }> => {
+    const ahora = new Date();
+
+    /*
+    Pasa 1= tienes una jornada ABIERTA(EN_JORNADA), sin importar la fecha en que empezo?
+    ESto es lo que permite cerrar correctamente turnos que cruzan la medianoche (entra 10pm, sale 6am del dia sigueiente):
+    la salida cierra ESA marca puntual, no depende de que la fecha calendario siga siendo la misma
+    */
+    let asistencia = await Asistencia.findOne({
+        where:{
+            operador_id: operador.id,
+            estado: 'EN_JORNADA'
+        },
+    });
+
+    if(asistencia){
+        //Tiene una jornada abierta -> este escaneo es una SALIDA (exigimos actividad)
+        const actividadesIds:number[] = Array.isArray(datos.actividades_ids)
+            ? (datos.actividades_ids as unknown[]).map(Number)
+            : [];
+
+        if(actividadesIds.length === 0){
+            return {
+                status: 400,
+                body: {
+                    message:"Es obligatorio seleccionar al menos una actividad para registrar la salida.",
+                    require_actividad: true
+                },
+            };
+        }
+
+        // Validar que la actividad exista y NO este eliminada(Soft Delete)
+        const actividadExistente = await Actividad.findAll({where: { id: actividadesIds}});
+        if(actividadExistente.length !== actividadesIds.length){
+            return { status: 404, body: { message:'Una o mas actividades seleccionadas no existen o estan inactivas'} };
+        }
+
+        await asistencia.update({ hora_salida:ahora, estado:'PENDIENTE_REVISION' });
+
+        //Insertamos el detalle de actividades en la tabla pivote (relacion muchos a muchos)
+        await AsistenciaActividad.bulkCreate(
+            actividadesIds.map((actividad_id) => ({
+                asistencia_id: asistencia!.id,
+                actividad_id,
+            }))
+        );
+
+        return {
+            status: 200,
+            body: {
+                tipo: 'SALIDA',
+                message:`Hasta Luego! Salida registrada a las ${ahora.toLocaleTimeString('es-EC')}`,
+                operador: operador.nombre_completo,
+                asistencia,
+            },
+        };
+    }
+
+    /*
+    Paso 2: no tiene ninguna jornada abierta. Antes de crear una ENTRADA nueva, verificamos si HOY (fecha calendario)
+    ya completo un turno completo, para mantener la regla de "una jornada por dia" (evita reingresos multiples el mismo dia).
+    */
+    const hoy = getFetchLocalEcuador();
+    const asistenciaHoy = await Asistencia.findOne({
+        where: {operador_id: operador.id, fecha: hoy},
+    });
+    if(asistenciaHoy){
+        return {
+            status: 400,
+            body: { message: `El operador ${operador.nombre_completo} ya completo su jornada laboral de hoy.` },
+        };
+    }
+
+    //Paso 3: Entrada Nueva
+    asistencia = await Asistencia.create({
+        operador_id: operador.id,
+        fecha: hoy,
+        hora_ingreso: ahora,
+        estado: 'EN_JORNADA',
+        foto_ingreso: datos.foto_ingreso || null,
+        hacienda_prestamo_id: contexto.hacienda_prestamo_id ?? null,
+        admitido_por_usuario_id: contexto.admitido_por_usuario_id ?? null,
+    });
+
+    return {
+        status: 200,
+        body: {
+            tipo:'ENTRADA',
+            message: `Bienvenido! Entrada registrada a las ${ahora.toLocaleTimeString('es-EC')}`,
+            operador: operador.nombre_completo,
+            asistencia,
+        },
+    };
+};
+
+/*
+Resuelve la hacienda "de casa" de un Operador: la de su Supervisor permanente (el Operador no tiene hacienda_id propio).
+*/
+const resolverHaciendaPropia = async(operador: Operador): Promise<number | null> => {
+    if(!operador.supervisor_id) return null;
+    const supervisor = await Usuario.findByPk(operador.supervisor_id);
+    return supervisor?.hacienda_id ?? null;
+};
+
+//Logica de Marcacion con Escaner QR (Entrada/Salida) - carnet fisico del kiosco, sin cambios de comportamiento.
 export const registrarMacarcoQR= async(req:Request, res:Response):Promise<void> => {
     try{
-        const { operador_id, actividades_ids, foto_ingreso, observaciones } = req.body;
+        const { operador_id, actividades_ids, foto_ingreso } = req.body;
 
         const operador = await Operador.findByPk(Number(operador_id));
         if(!operador){
@@ -89,99 +283,121 @@ export const registrarMacarcoQR= async(req:Request, res:Response):Promise<void> 
             return;
         }
 
-        const ahora = new Date();
-
-        /*
-        Pasa 1= tienes una jornada ABIERTA(EN_JORNADA), sin importar la fecha en que empezo?
-        ESto es lo que permite cerrar correctamente turnos que cruzan la medianoche (entra 10pm, sale 6am del dia sigueiente):
-        la salida cierra ESA marca puntual, no depende de que la fecha calendario siga siendo la misma
-        */
-
-        let asistencia = await Asistencia.findOne({
-            where:{
-                operador_id: operador.id,
-                estado: 'EN_JORNADA'
-            },
-        });
-
-        if(asistencia){
-            //Tiene una jornada abierta -> este escaneo es una SALIDA (exigimos actividad)
-            const actividadesIds:number[] = Array.isArray(actividades_ids) ? actividades_ids.map(Number) : [];
-
-            if(actividadesIds.length === 0){
-                res.status(400).json({
-                    message:"Es obligatorio seleccionar al menos una actividad para registrar la salida.",
-                    require_actividad: true
-                });
-                return;
-            }
-
-            // Validar que la actividad exista y NO este eliminada(Soft Delete)
-            const actividadExistente = await Actividad.findAll({where: { id: actividadesIds}});
-            if(actividadExistente.length !== actividadesIds.length){
-                res.status(404).json({ message:'Una o mas actividades seleccionadas no existen o estan inactivas'});
-                return;
-            }
-
-            await asistencia.update({
-                hora_salida:ahora,
-                estado:'PENDIENTE_REVISION',
-            });
-
-            //Insertamos el detalle de actividades en la tabla pivote (relacion muchos a muchos)
-            await AsistenciaActividad.bulkCreate(
-                actividadesIds.map((actividad_id) => ({
-                    asistencia_id: asistencia!.id,
-                    actividad_id,
-                }))
-            );
-
-            res.json({
-                tipo: 'SALIDA',
-                message:`Hasta Luego! Salida registrada a las ${ahora.toLocaleTimeString('es-EC')}`,
-                operador: operador.nombre_completo,
-                asistencia,
-            });
-
-            return;
-
-        }
-        /*
-        Paso 2: no tiene ninguna jornada abierta. Antes de crear una ENTRADA nueva, verificamos si HOY (decha calendario)
-        ya completo un turno completo, para mantener la regla de "una jornada por dia" (evita reingresos multiples el mismo dia).
-        */
-        const hoy = getFetchLocalEcuador();
-        const asistenciaHoy = await Asistencia.findOne({
-            where: {operador_id: operador.id, fecha: hoy},
-        });
-        if(asistenciaHoy){
-            /*
-            ya tiene creado un registro de hoy y no esta EN_JORNADA (ya lo descartamos en el paso 1)
-            ya completo su jornada laboral de hoy.
-            */
-           res.status(400).json({
-            message: `El operador ${operador.nombre_completo} ya completo su jornada laboral de hoy.`,
-           });
-           return;
-        }
-
-        //Paso 3: Entrada Nueva
-        asistencia = await Asistencia.create({
-                operador_id: operador.id,
-                fecha: hoy,
-                hora_ingreso: ahora,
-                estado: 'EN_JORNADA',
-                foto_ingreso: foto_ingreso || null,
-            });
-            res.json({
-                tipo:'ENTRADA',
-                message: `Bienvenido! Entrada registrada a las ${ahora.toLocaleTimeString('es-EC')}`,
-                operador: operador.nombre_completo,
-                asistencia,
-            });
-
+        const { status, body } = await procesarMarcacion(operador, { actividades_ids, foto_ingreso });
+        res.status(status).json(body);
     } catch(err){
         res.status(500).json({message:'Error procesando marca QR',err});
+    }
+};
+
+/*
+Camino A: haciendas sin camara/QR marcan con USUARIO+CLAVE del propio trabajador + Token de Hacienda del punto de
+control (prueba que esta fisicamente ahi: el token cambia cada 24h y lo genera el Supervisor/Admin, ver hacienda.controller.ts).
+No emite JWT de sesion: es una accion de una sola vez, igual que escanear el carnet, solo que autenticada por
+credenciales en vez de confiar ciegamente en un QR fisico que se puede fotocopiar.
+Si el trabajador esta marcando en una hacienda que NO es la suya, esto reemplaza al paso manual de "admitir externo":
+como el token ya probo que esta fisicamente ahi, se autoadmite bajo el Supervisor de esa hacienda.
+*/
+export const marcarConCodigo = async(req:Request, res:Response):Promise<void> => {
+    try{
+        const { usuario, clave, token_hacienda, actividades_ids, foto_ingreso } = req.body;
+        if(!usuario || !clave || !token_hacienda){
+            res.status(400).json({ message: 'usuario, clave y token_hacienda son obligatorios.'});
+            return;
+        }
+
+        const hacienda = await Hacienda.findOne({ where: { token_actual: token_hacienda }});
+        if(!hacienda || !hacienda.token_expira_en || hacienda.token_expira_en.getTime() < Date.now()){
+            res.status(401).json({ message: 'El codigo de la hacienda es invalido o ya expiro.'});
+            return;
+        }
+
+        const operador = await Operador.findOne({ where: { usuario }});
+        if(!operador || !operador.clave_hash){
+            res.status(401).json({ message: 'Usuario o clave incorrectos.'});
+            return;
+        }
+        const claveValida = await bcrypt.compare(clave, operador.clave_hash);
+        if(!claveValida){
+            res.status(401).json({ message: 'Usuario o clave incorrectos.'});
+            return;
+        }
+
+        const haciendaPropia = await resolverHaciendaPropia(operador);
+        const esPrestamo = haciendaPropia !== null && haciendaPropia !== hacienda.id;
+
+        let contexto: ContextoMarcacion = {};
+        if(esPrestamo){
+            const supervisorDeAlla = await Usuario.findOne({ where: { hacienda_id: hacienda.id, cargo: 'SUPERVISOR' }});
+            contexto = {
+                hacienda_prestamo_id: hacienda.id,
+                admitido_por_usuario_id: supervisorDeAlla?.id ?? null,
+            };
+        }
+
+        const { status, body } = await procesarMarcacion(operador, { actividades_ids, foto_ingreso }, contexto);
+        res.status(status).json(body);
+    }catch(err){
+        res.status(500).json({ message: 'Error procesando la marcacion con codigo.', err});
+    }
+};
+
+/*
+Camino B, paso 1: el trabajador YA esta logueado (tiene su JWT de sesion) y pide su QR flotante de jornada para que
+alguien mas (Supervisor o Escaner) lo escanee. Requiere JWT de tipo 'operador' con jornada activa (ver
+verificarJornadaOperadorActiva en la ruta).
+*/
+export const generarMiQr = async(req:Request, res:Response):Promise<void> => {
+    try{
+        if(!req.auth || req.auth.tipo !== 'operador'){
+            res.status(403).json({ message: 'Solo un Operador/Mecanico puede generar su QR de jornada.'});
+            return;
+        }
+        const qr_token = generarTokenQrJornada(req.auth.id);
+        res.json({ qr_token, vigencia_segundos: 90 });
+    }catch(err){
+        res.status(500).json({ message: 'Error al generar el QR de jornada.', err});
+    }
+};
+
+/*
+Camino B, paso 2: el Supervisor o el Escaner (cuenta fija del punto de control) escanea el QR flotante de otro
+dispositivo y lo manda aqui. Requiere JWT de tipo 'usuario' con rol SUPERVISOR o ESCANER (ver requireRol en la ruta).
+*/
+export const marcarConQrSesion = async(req:Request, res:Response):Promise<void> => {
+    try{
+        const { qr_token, actividades_ids, foto_ingreso } = req.body;
+        if(!qr_token){
+            res.status(400).json({ message: 'qr_token es obligatorio.'});
+            return;
+        }
+
+        let payload;
+        try{
+            payload = verificarTokenQrJornada(qr_token);
+        }catch{
+            res.status(401).json({ message: 'El QR es invalido o ya expiro (se renueva cada 90 segundos).'});
+            return;
+        }
+
+        const operador = await Operador.findByPk(payload.operador_id);
+        if(!operador){
+            res.status(404).json({ message: 'Operador no encontrado.'});
+            return;
+        }
+
+        const haciendaPropia = await resolverHaciendaPropia(operador);
+        const haciendaEscaner = req.auth?.hacienda_id ?? null;
+        const esPrestamo = haciendaEscaner !== null && haciendaPropia !== null && haciendaPropia !== haciendaEscaner;
+
+        const contexto: ContextoMarcacion = esPrestamo
+            ? { hacienda_prestamo_id: haciendaEscaner, admitido_por_usuario_id: req.auth!.id }
+            : {};
+
+        const { status, body } = await procesarMarcacion(operador, { actividades_ids, foto_ingreso }, contexto);
+        res.status(status).json(body);
+    }catch(err){
+        res.status(500).json({ message: 'Error procesando la marcacion por QR de sesion.', err});
     }
 };
 
@@ -541,3 +757,46 @@ export const revisarAsistencia = async(req:Request, res:Response):Promise<void> 
 
     }
 }
+
+/*
+O/X del Supervisor: al lado de cada trabajador que le aparece logueado hoy en su panel, el Supervisor confirma si
+de verdad vino. presente=true (O) solo deja la marca de confirmado. presente=false (X) ademas mueve el estado a
+OBSERVANDO y genera una observacion automatica, para que quede visible en Auditoria (Panel de Asistente) por que
+esa jornada no cuenta como valida. Requiere JWT con rol SUPERVISOR o ADMIN (ver ruta).
+*/
+export const confirmarAsistencia = async(req:Request, res:Response):Promise<void> => {
+    try{
+        const { id } = req.params;
+        const { presente } = req.body;
+
+        if(typeof presente !== 'boolean'){
+            res.status(400).json({ message: 'presente es obligatorio y debe ser true (O) o false (X).'});
+            return;
+        }
+
+        const asistencia = await Asistencia.findByPk(Number(id));
+        if(!asistencia){
+            res.status(404).json({ message: 'Registro de asistencia no encontrado.'});
+            return;
+        }
+        if(asistencia.estado === 'FINALIZADO' || asistencia.estado === 'SALIDA_OLVIDADA'){
+            res.status(400).json({ message: 'Este registro ya fue cerrado y no se puede confirmar.'});
+            return;
+        }
+
+        if(presente){
+            await asistencia.update({ confirmado_por_supervisor: true });
+        }else{
+            const nota = `[${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })}] Marcado como NO presente por el supervisor.`;
+            await asistencia.update({
+                confirmado_por_supervisor: false,
+                estado: 'OBSERVANDO',
+                observaciones: asistencia.observaciones ? `${asistencia.observaciones}\n${nota}` : nota,
+            });
+        }
+
+        res.json({ message: 'Confirmacion registrada.', asistencia });
+    }catch(err){
+        res.status(500).json({ message: 'Error al confirmar la asistencia.', err});
+    }
+};
