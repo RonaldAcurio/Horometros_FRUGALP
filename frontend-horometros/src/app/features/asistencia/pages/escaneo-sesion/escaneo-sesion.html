@@ -1,0 +1,31 @@
+<div class="asistencia-container">
+  <div class="header-banner">
+    <div>
+      <h2 class="main-title">Escanear Trabajador</h2>
+      <p class="subtitle">Apunta la cámara al QR que aparece en el celular del trabajador</p>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="scanner-container" *ngIf="escanearActivo">
+      <div class="scanner-wrapper">
+        <zxing-scanner
+          [videoConstraints]="{ width: { ideal: 1280 }, height: { ideal: 720 } }"
+          (scanSuccess)="onCodeResult($event)"
+        ></zxing-scanner>
+      </div>
+    </div>
+
+    <div class="alert-container" *ngIf="mensajeEscaneo">
+      <div [class]="tipoMensaje === 'exito' ? 'alert alert-success' : 'alert alert-danger'">
+        {{ mensajeEscaneo }}
+      </div>
+    </div>
+  </div>
+
+  <app-modal-actividad
+    [mostrar]="mostrarModalActividad"
+    (seleccionar)="confirmarSalidaConActividad($event)"
+    (cancelar)="cerrarModalActividad()">
+  </app-modal-actividad>
+</div>

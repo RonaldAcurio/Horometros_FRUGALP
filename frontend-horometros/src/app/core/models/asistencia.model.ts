@@ -18,6 +18,28 @@ export interface Actividad{
     description: string;
 }
 
+export interface Equipo {
+    id: number;
+    codigo_megued: string;
+    nombre_equipo: string;
+}
+
+// Panel de Actividades: una labor puntual dentro de la jornada abierta de un Operador/Mecanico. 'seccion_id',
+// 'horometro_inicio' y 'horometro_final' son de fase 2 (hoy siempre quedan en null, ver CLAUDE.md) - no se piden
+// en el formulario todavia.
+export interface RegistroActividad {
+    id: number;
+    asistencia_id: number;
+    equipo_id: number;
+    actividad_id: number;
+    area?: string | null;
+    observaciones?: string | null;
+    hora_inicio: string;
+    hora_fin?: string | null;
+    equipo?: Equipo;
+    actividad?: Actividad;
+}
+
 export interface Asistencia {
     id: number;
     operador_id: number;

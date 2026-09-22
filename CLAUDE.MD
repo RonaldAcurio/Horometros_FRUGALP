@@ -48,35 +48,63 @@ no tiene un UNIQUE de columna simple; son 2 índices UNIQUE **parciales** (`WHER
 `WHERE cargo = 'ESCANER'`), así una misma hacienda tiene como máximo 1 Supervisor y 1 Escáner, pero ambos pueden
 coexistir (migración `20260921060000`).
 
-## Dos caminos de entrada a la jornada (Mecánico/Operador)
+## Dos caminos de entrada a la jornada (Mecánico/Operador) - unificados en el login
 
-Cada hacienda opera en modo **código** (sin cámara) o modo **QR** (con cámara) - eso es una elección del Supervisor
-en el frontend, no un campo en la BD (no hay forma de "trampear" el modo desde el backend: ambos endpoints existen
-siempre, el frontend simplemente muestra uno u otro según cómo esté configurada esa hacienda).
+**Decisión de diseño de esta ronda:** cuál camino le toca a un trabajador NO es una elección manual del Supervisor en
+el frontend ni un campo aparte en la BD - se deriva automáticamente de si la hacienda de ese trabajador tiene ahora
+mismo un **Token de Hacienda vigente** (`hacienda.token_actual` + `token_expira_en` en el futuro). El propio
+`POST /api/auth/login` lo calcula y lo manda en el perfil como `hacienda_requiere_codigo: boolean`
+(`auth.controller.ts`, rama `operador`) - así el frontend nunca tiene que adivinar ni ofrecer los dos caminos a la
+vez: **es estricto**, uno u otro, decidido en el momento exacto del login. Si el Supervisor genera un Token hoy, sus
+trabajadores ven código; si lo deja vencer, ven QR - sin que nadie tenga que tocar un "modo" a mano en ningún lado.
 
-### Camino A - Código + Token de Hacienda (`POST /api/asistencia/marcar-codigo`)
+### Camino A - Código (haciendas con Token de Hacienda vigente)
 
-Para haciendas sin cámara. El propio trabajador teclea **su usuario + su clave** (prueba quién es) más el **Token de
-Hacienda** vigente de ese punto de control (prueba que está físicamente ahí - lo genera el Supervisor/Admin,
-vigencia 24h, `POST /api/haciendas/:id/token`). No emite JWT de sesión: es una acción de una sola vez, como escanear
-el carnet, solo que autenticada por credenciales en vez de confiar ciegamente en un QR físico fotocopiable. Si el
-trabajador marca en una hacienda que no es la suya, el sistema lo autoadmite bajo el Supervisor de esa hacienda
-(reemplaza el paso manual de "admitir externo" para este camino, porque el Token ya probó la presencia física).
+Dos variantes del mismo núcleo (comparten `procesarMarcacion`):
+- `POST /api/asistencia/marcar-codigo` (público, sin JWT): el kiosco clásico sin login, donde el trabajador teclea
+  usuario+clave+Token de Hacienda desde cero. Sigue existiendo para dispositivos compartidos que no quieren manejar
+  sesiones.
+- `POST /api/asistencia/marcar-mi-codigo` (autenticado, tipo `operador`): la pantalla **"mi jornada"** del propio
+  trabajador (`mi-jornada.ts`, fase `codigo`) - ya se logueó con usuario+clave una sola vez (`POST /api/auth/login`),
+  así que aquí solo confirma el Token de Hacienda, sin volver a escribir su clave. Marca al instante (entrada o
+  salida, `procesarMarcacion` decide cuál según si ya tiene jornada abierta) y **no lleva a ningún panel** - se
+  cierra sola la sesión (`AuthService.logout()`) unos segundos después de la confirmación.
 
-### Camino B - Login + QR de sesión (`GET /api/asistencia/mi-qr` + `POST /api/asistencia/marcar-qr-sesion`)
+Si el trabajador marca en una hacienda que no es la suya, el sistema lo autoadmite bajo el Supervisor de esa
+hacienda (reemplaza "admitir externo" para este camino, porque el Token ya probó la presencia física).
 
-Para haciendas con cámara. El trabajador se loguea primero (con `POST /api/auth/login`, como cualquier cuenta), y ya
-logueado pide su propio QR de jornada, que **alguien más** (Supervisor o Escáner) escanea. El QR **no** es su
-`operador_id` fijo: es un JWT corto y aparte (`qr_token`, 90s de vigencia, tipo `qr_jornada`) que el frontend vuelve a
-pedir y redibujar en bucle mientras el QR está en pantalla. Así una foto/captura de ese QR deja de servir en menos de
-2 minutos - el reemplazo del viejo esquema "QR = operador_id" que sí se podía reusar indefinidamente.
+### Camino B - Login + QR de sesión (haciendas SIN Token de Hacienda vigente)
 
-### El carnet físico (kiosco) sigue existiendo
+`GET /api/asistencia/mi-qr` + `POST /api/asistencia/marcar-qr-sesion`. El trabajador se loguea (una sola vez), y ya
+logueado, la pantalla **"mi jornada"** (fase `qr`) le muestra su propio QR de jornada en bucle - **obligatorio**,
+no hay forma de saltárselo: alguien más (Supervisor o Escáner, desde `/asistencia/escanear`, ver más abajo) tiene que
+escanearlo. El QR **no** es su `operador_id` fijo: es un JWT corto y aparte (`qr_token`, 90s de vigencia, tipo
+`qr_jornada`) que el frontend vuelve a pedir y redibujar en bucle mientras está en pantalla - una foto/captura deja
+de servir en menos de 2 minutos (reemplaza el viejo esquema "QR = operador_id", reusable indefinidamente).
 
-`POST /api/asistencia/marcar-qr` (sin autenticación) es el flujo clásico original: alguien escanea el carnet QR
-impreso del trabajador. Sigue funcionando exactamente igual - es el que usan los puntos de marcación que todavía no
-migraron a Camino A/B. Los 3 caminos comparten el mismo núcleo de lógica de entrada/salida
-(`procesarMarcacion` en `asistencia.controller.ts`), para no triplicar reglas como el cruce de medianoche.
+Una vez escaneado (entrada), `mi-jornada.ts` detecta el cambio por **polling** de `GET /api/asistencia/mi-estado`
+(cada 5s, endpoint nuevo de esta ronda) y pasa sola a la fase `actividades` (Panel de Actividades, ver abajo). Para
+la salida, el trabajador pulsa "Marcar salida" (vuelve a mostrar el QR) y **también** tiene que ser escaneado de
+nuevo - no hay salida sin escaneo, es la misma regla que la entrada.
+
+### El carnet físico (kiosco público) sigue existiendo, sin cambios
+
+`POST /api/asistencia/marcar-qr` (sin autenticación, `marcacion-kiosco.ts`, ruta `/asistencia/marcacion`) es el
+flujo clásico original: alguien escanea el carnet QR impreso del trabajador, sin que nadie tenga que loguearse. No
+se tocó en esta ronda - sigue siendo el único camino que no pasa por `procesarMarcacion` vía sesión de nadie.
+Los 4 caminos (kiosco, código público, código autenticado, QR de sesión) comparten el mismo núcleo de lógica de
+entrada/salida (`procesarMarcacion` en `asistencia.controller.ts`), para no triplicar reglas como el cruce de
+medianoche.
+
+### Panel de Actividades (solo camino QR)
+
+Una vez escaneado, el trabajador entra al Panel de Actividades de su propia jornada (`mi-jornada.ts`, fase
+`actividades`): registra labores puntuales contra el catálogo de **Equipos** (`GET /api/equipos`, nuevo endpoint de
+solo lectura - el CRUD completo de Equipo es del módulo Horómetros, no tocado) y **Actividades**
+(`GET /api/actividad`), usando el modelo `RegistroActividad` que ya existía en el backend sin frontend
+(`registro_actividad.controller.ts`). Campo `area` (MECANICO) es fase 1; `seccion_id`/`horometro_inicio`/
+`horometro_final` (OPERADOR) siguen en fase 2, no se piden en el formulario todavía (ver el propio modelo,
+`registro_actividad.ts`). El camino código **no** pasa por este panel - marca y termina, ver arriba.
 
 ## Dos tokens que NO son lo mismo
 
@@ -98,7 +126,10 @@ compañero ausente con logins repetidos.
 - **En cada request autenticado** (`verificarJornadaOperadorActiva` en `auth.middleware.ts`): revisa lo mismo por si
   el token fue emitido esta mañana (cuando la jornada seguía `EN_JORNADA`) y la jornada se cerró **mientras el token
   seguía vivo** - en ese caso lo corta igual, aunque el JWT todavía no haya expirado por tiempo.
-- Aplica solo a rutas de cara al propio Operador (hoy: `GET /api/asistencia/mi-qr`). No aplica a rutas de oficina.
+- Aplica solo a rutas de cara al propio Operador: `GET /api/asistencia/mi-qr` y `POST /api/asistencia/marcar-mi-codigo`.
+  No aplica a `GET /api/asistencia/mi-estado` a propósito - ese endpoint reporta el estado tal cual está, incluido
+  "ya se cerró" (lo usa la pantalla del QR flotante para detectar la salida), cortarse a sí mismo no tendría sentido.
+  Tampoco aplica a rutas de oficina.
 
 ## O/X - Confirmación de asistencia del Supervisor
 
@@ -145,36 +176,81 @@ Al lado de cada trabajador que aparece logueado hoy en su panel, el Supervisor c
   `hacienda_prestamo_id` + `admitido_por_usuario_id` (trabajador externo), `diesel_consumido`,
   `confirmado_por_supervisor` (O/X, null hasta que el Supervisor lo revisa).
 - **registro_actividades**: el detalle del Panel de Actividades (equipo + actividad + sección + horómetro por
-  jornada) - módulo ya construido (`registro_actividad.controller.ts`/`.rutes.ts`), no rediseñado en esta sesión.
+  jornada) - el backend ya existía (`registro_actividad.controller.ts`/`.rutes.ts`); el frontend (`mi-jornada.ts`,
+  fase `actividades`) se construyó recién esta ronda, usando solo los campos de fase 1 (ver sección de arriba).
+- ~~`asistencias.diesel_consumido`~~: columna sin usar en ningún controlador ni en el frontend - se sacó del modelo
+  Sequelize (`asistencias.ts`) en la auditoría de código suelto de esta ronda. La columna sigue existiendo en la BD
+  (no se tocó ninguna migración), simplemente Sequelize ya no la conoce.
 
 ## Frontend (estado real, revisado directo del repo)
 
 Angular 22 standalone (sin NgModules), Tailwind CSS, `@zxing/ngx-scanner` (lectura de cámara) + `qrcode` (generación
 de QR), HttpClient con interceptor de auth, testing con Vitest. Rutas por `loadComponent` (lazy), con guards.
 
+### Ruteo por rol: cada rol tiene su propia "casa", nunca un menú compartido con `*ngIf`
+
+Decisión de esta ronda, en respuesta a un hueco real (ESCANER y MECANICO/OPERADOR terminaban viendo el Dashboard de
+oficina y el menú de 3 tarjetas de Asistencia, sin deberían). `rutas-por-rol.ts` centraliza en una sola función
+(`rutaHomePorRol(perfil)`) a dónde pertenece cada rol - la usan el login (a dónde navegar tras autenticarse),
+`roleGuard` (a dónde mandar a quien no tiene el rol de la ruta - **nunca** un `/dashboard` fijo, que además causaría
+un loop de redirects para roles sin Dashboard), `homeRedirectGuard` (rutas `''` y `**`) y el botón "Menú" del header:
+
+| Rol | Ruta hogar | Qué ve |
+|---|---|---|
+| ADMIN, ASISTENTE, SUPERVISOR | `/dashboard` | Menú con tarjetas (Asistencia, Horómetros, + Administración si aplica) |
+| ESCANER | `/escaner` | Un solo botón "📷 Escanear" (ver abajo) |
+| MECANICO, OPERADOR | `/mi-jornada` | Código o QR flotante, según su hacienda (ver arriba), después Panel de Actividades |
+
+`/dashboard` y `/horometros` ahora llevan `roleGuard('ADMIN','ASISTENTE','SUPERVISOR')` (antes solo `authGuard`,
+cualquier rol logueado entraba) - ESCANER y MECANICO/OPERADOR nunca tuvieron necesidad real de esas pantallas.
+
 **Ya construido:**
-- `dashboard` - menú principal (Asistencia/Horómetros, + "Administración" si el rol es ADMIN o ASISTENTE).
+- `dashboard` - menú principal (Asistencia/Horómetros, + "Administración" si el rol es ADMIN o ASISTENTE). Solo
+  ADMIN/ASISTENTE/SUPERVISOR llegan aquí (ver tabla de arriba).
 - `asistencia-menu` - submenú del módulo Asistencia con las 3 tarjetas (Gestión de Personal / Punto de Marcación /
   Panel de Supervisor). Solo lo ve tal cual el ADMIN: `/asistencia` tiene el guard `asistenciaRedirectGuard`, que
   manda a cada otro rol directo a SU panel (SUPERVISOR → `/asistencia/supervisor`, ASISTENTE → `/asistencia/asistente`,
-  ESCANER → `/asistencia/marcacion`) sin pasar por el menú - corrige un bug real donde un SUPERVISOR podía entrar al
-  panel de la Asistente solo porque el menú no distinguía roles. Los 3 paneles además llevan `roleGuard` propio
-  (`/asistencia/asistente` → ADMIN/ASISTENTE, `/asistencia/supervisor` → ADMIN/SUPERVISOR) para que esto no dependa
-  solo de la navegación: aunque alguien escriba la URL directo, el guard de rol lo bloquea igual.
-  **Botón "Menú" del header (`app.ts`):** en cualquier vista `/asistencia/*`, apunta a `/asistencia` SOLO si el rol
-  es ADMIN (ahí sí tiene sentido: vuelve al menú de 3 tarjetas). Para cualquier otro rol apunta directo a
-  `/dashboard` - si apuntara a `/asistencia`, `asistenciaRedirectGuard` lo rebotaría de inmediato al mismo panel
-  donde ya está, y el botón parecería "no hacer nada" (bug real reportado y corregido en esta misma ronda).
-- `marcacion-kiosco` - el flujo clásico de escaneo de carnet físico (cámara al 40%, captura de evidencia). Sin guard
-  a propósito: el trabajador lo usa SIN loguearse. El Supervisor también llega aquí desde un botón "📷 Escanear" en
-  su propio panel (en vez de una tarjeta aparte en el menú).
-- `supervisor-panel` - validación diaria, observaciones, Finalizar Día, botón "📷 Escanear" hacia el kiosco.
+  ESCANER/MECANICO/OPERADOR → su propia ruta hogar, por si alguien escribe `/asistencia` a mano) sin pasar por el
+  menú - corrige un bug real donde un SUPERVISOR podía entrar al panel de la Asistente solo porque el menú no
+  distinguía roles. Los 3 paneles además llevan `roleGuard` propio (`/asistencia/asistente` → ADMIN/ASISTENTE,
+  `/asistencia/supervisor` → ADMIN/SUPERVISOR) para que esto no dependa solo de la navegación.
+- `escaner-menu` (`/escaner`, rol ESCANER únicamente) - **un solo botón**, a propósito (pedido explícito del
+  usuario): "📷 Escanear" lleva a `/asistencia/escanear`. El botón "Menú" del header siempre vuelve aquí, lo que
+  desmonta el componente de escaneo y apaga la cámara sola (`ngOnDestroy`) - así el dispositivo "descansa la
+  cámara" sin cerrar sesión, sin necesitar ningún botón especial de "pausa".
+- `escaneo-sesion` (`/asistencia/escanear`, ADMIN/SUPERVISOR/ESCANER) - escaneo **autenticado** del QR flotante de
+  Camino B (`marcar-qr-sesion`), distinto del kiosco público de abajo (que escanea el carnet físico con
+  `marcar-qr`). Estructuralmente calcado del kiosco (misma lógica de cámara/evidencia) pero mantenido aparte porque
+  son 2 caminos de negocio distintos, no el mismo flujo - queda anotado como candidato a unificar más adelante si
+  hace falta (ver Pendiente). Lo usan el botón "📷 Escanear" del Panel de Supervisor y el único botón de ESCANER.
+- `marcacion-kiosco` (`/asistencia/marcacion`, público) - el flujo clásico de escaneo de carnet físico (cámara al
+  40%, captura de evidencia). Sin guard a propósito: el trabajador lo usa SIN loguearse. **No se tocó en esta
+  ronda** - sigue siendo un camino totalmente aparte del QR de sesión.
+- `supervisor-panel` - validación diaria, observaciones, Finalizar Día, botón "📷 Escanear" hacia `/asistencia/escanear`.
 - `asistencia-panel` - Directorio de Operadores (+ credenciales usuario/clave/supervisor_id) e Historial de
   Asistencia con filtro de fecha (rol Asistente).
-- `directorio-operadores` + `carnet-qr` - directorio y generación del carnet QR de cada Operador.
-- `modal-actividad`, `visor-foto` - piezas compartidas (selector de actividades en la salida, ventana flotante de evidencia).
+- `mi-jornada` (`/mi-jornada`, rol MECANICO/OPERADOR únicamente) - pantalla única y cautiva (sin botón "Menú": no
+  hay a dónde más ir). 3 fases internas según el estado real, nunca las 3 a la vez:
+  1. **`codigo`** (hacienda con Token vigente): input de código, confirma con `marcar-mi-codigo`. Si el backend
+     responde pidiendo actividad (ya tenía jornada abierta = es una salida), muestra el mismo selector de
+     actividades que el kiosco y reintenta. Al confirmar, mensaje de cierre y logout automático a los 4s.
+  2. **`qr`**: QR flotante que se auto-regenera cada 80s (vence a los 90s) + cuenta regresiva visible. Hace
+     **polling de `GET /api/asistencia/mi-estado` cada 5s** para detectar que lo escanearon, sin que el trabajador
+     tenga que hacer nada.
+  3. **`actividades`** (Panel de Actividades, solo camino QR): formulario para iniciar una labor (equipo +
+     actividad + área si es MECANICO + observaciones) y tabla de labores del día con botón "Finalizar" por labor.
+     Botón "🔚 Marcar salida" vuelve a mostrar el QR (fase `qr` de nuevo) para que lo vuelvan a escanear - el mismo
+     polling de estado detecta la salida y cierra sesión sola.
+  Al entrar (`ngOnInit`), consulta `mi-estado` ANTES de decidir la fase inicial - si el trabajador ya tenía una
+  jornada abierta (refrescó la página, o se desconectó y volvió), no muestra el QR/código de entrada por error
+  antes de corregirse solo; salta directo a la fase que corresponde.
+- `modal-actividad`, `visor-foto` - piezas compartidas (selector de actividades en la salida, ventana flotante de
+  evidencia). `modal-actividad` ahora lo reusan 3 componentes: `marcacion-kiosco`, `escaneo-sesion` y `mi-jornada`.
 - `login` (`/login`) - pantalla única (usuarios + operadores), con `AuthService` (signals: `token`/`perfil`),
   `authGuard`/`guestGuard`/`roleGuard`, e interceptor que agrega el JWT a cada request y desloguea solo en un 401.
+  Tras un login exitoso, navega a `rutaHomePorRol(perfil)` - nunca a `/dashboard` fijo (ver tabla de arriba). El
+  formulario en sí sigue siendo solo usuario+clave: el código de hacienda (si aplica) se pide después, ya
+  autenticado, en `mi-jornada`.
 - `admin-panel` (`/admin`, ADMIN y ASISTENTE) - pestaña **Usuarios** (crear ADMIN/ASISTENTE/SUPERVISOR/ESCANER con
   clave, selector de hacienda solo si el cargo la necesita, resetear clave) y pestaña **Haciendas** (crear hacienda
   nueva, generar/invalidar su Token) - esta segunda pestaña **solo visible para ADMIN**, un Asistente no la ve.
@@ -182,6 +258,16 @@ de QR), HttpClient con interceptor de auth, testing con Vitest. Rutas por `loadC
   reemplazan `alert()`/`confirm()` nativos del navegador en TODO el proyecto (no tienen sentido en una app
   empaquetada nativo). Todo campo de clave tiene su "ojito" para mostrar/ocultar.
 - Módulo Horómetros (OCR) - aparte, no tocar (⚠️ el usuario quiere sacarlo a un proyecto separado, ver Pendiente).
+  Ahora con `roleGuard('ADMIN','ASISTENTE','SUPERVISOR')` en frontend y backend (antes cualquier rol logueado).
+
+**Botón "Menú" del header (`app.ts`):** calcula `rutaHomePorRol(perfil)` en cada navegación y:
+- MECANICO/OPERADOR: el botón **no se muestra** (`mostrarBotonMenu = false`) - pantalla cautiva, no hay a dónde ir.
+- ESCANER: siempre apunta a `/escaner` (oculto si ya está ahí).
+- ADMIN en `/asistencia/*`: apunta a `/asistencia` (el menú de 3 tarjetas, tiene sentido para ese rol).
+- Cualquier otro caso: apunta a la ruta hogar del rol, oculto si ya está en ella.
+Antes apuntaba a un `/dashboard` fijo en varias ramas - roto para ESCANER/MECANICO/OPERADOR desde que dejaron de
+tener Dashboard, y para roles de un solo panel (ej. Asistente en su propio panel) el botón "no hacía nada" porque
+`asistenciaRedirectGuard` lo rebotaba al mismo sitio (bug real reportado y corregido).
 
 **Detalle técnico importante para el que siga tocando componentes nuevos:** esta app necesita
 `ChangeDetectorRef.detectChanges()` explícito después de cada respuesta HTTP que mute un campo plano (no-signal) del
@@ -228,7 +314,9 @@ gallina) - se insertó a mano por SQL directo en la base de producción de Rende
 | POST /api/asistencia/marcar-qr | público | Carnet físico clásico (entrada/salida) - sin JWT **a propósito**, lo usa el trabajador SIN loguearse en el kiosco. |
 | POST /api/asistencia/marcar-codigo | público | Camino A: usuario+clave+Token de Hacienda - sin JWT **a propósito**, la credencial ES el operador. |
 | GET /api/asistencia/mi-qr | operador, jornada activa | Camino B paso 1: genera el QR de 90s. |
-| POST /api/asistencia/marcar-qr-sesion | SUPERVISOR, ESCANER | Camino B paso 2: valida el QR y marca. |
+| GET /api/asistencia/mi-estado | operador | El propio Operador consulta si ya tiene jornada EN_JORNADA hoy (lo usa mi-jornada para detectar el escaneo por polling). |
+| POST /api/asistencia/marcar-mi-codigo | operador, jornada activa | Camino A para un Operador YA logueado - solo confirma el Token de Hacienda, sin re-pedir su clave. |
+| POST /api/asistencia/marcar-qr-sesion | ADMIN, SUPERVISOR, ESCANER | Camino B paso 2: valida el QR y marca (desde `/asistencia/escanear`). |
 | PUT /api/asistencia/:id/confirmar | SUPERVISOR, ADMIN | O/X de asistencia. |
 | GET /api/asistencia/hoy | ADMIN, SUPERVISOR | Reporte del día, paginado. |
 | POST /api/asistencia/finalizar-dia | ADMIN, SUPERVISOR | Cierra jornada (⚠️ todavía no filtra por hacienda, ver Deuda técnica). |
@@ -259,6 +347,33 @@ inventó ningún permiso nuevo, solo se hizo cumplir en el backend lo que el fro
 confirmar que ningún flujo real se rompió. `marcar-qr`, `marcar-codigo` y el catálogo de `actividad` (GET) siguen
 públicos **a propósito**: los usa el kiosco sin login.
 
+## Auditoría de código suelto (esta ronda)
+
+Pedido explícito del usuario: revisar y dejar solo lo que se usa, sin redundancia. Se investigó con un agente de
+solo-lectura (rutas duplicadas, componentes/imports huérfanos, bloques comentados, exports sin enrutar) y se aplicó
+lo confirmado:
+
+- **Ruta muerta**: `app.routes.ts` tenía DOS entradas `path: 'asistencia'` - la segunda (un `redirectTo`) nunca podía
+  dispararse porque Angular usa el primer match. Eliminada (de paso, quedó absorbida por el rediseño de ruteo de
+  esta misma ronda).
+- **4 componentes huérfanos borrados** (nunca importados fuera de su propio `.spec.ts`): `carnet-qr` y
+  `directorio-operadores` (`asistencia/components/`), `tabla-historial` y `revision-lote`
+  (`horometros/components/`) - carpetas completas (`.ts`/`.html`/`.css`/`.spec.ts`).
+- **Bloques comentados eliminados** (código muerto, no documentación): la ruta vieja de `procesar-foto` completa en
+  `horometros.routees.ts` (con su import de `analizarfotoHorometro`, que ya no se usaba en ningún otro lado del
+  archivo - los controladores lo importan por su cuenta), un chequeo de duplicado comentado en
+  `actividades.controller.ts`, y un constructor `Sequelize(...)` viejo en `config/database.ts` superado por el
+  actual.
+- **Imports sin usar eliminados**: `Optional`, `Operador`, `Actividad`, `CreateAuthTokenConfig` (este último un
+  resto de autocompletado, sin relación con el archivo) en `models/asistencias.ts`; `toDefaultValue` en
+  `models/operador.ts`.
+- **Campo de modelo sin usar eliminado**: `asistencias.diesel_consumido` - ninguna llamada en ningún controlador ni
+  en el frontend lo lee o escribe. Se sacó del modelo Sequelize (la columna de la BD no se tocó, ver Tablas).
+- **Script de debug suelto borrado**: `backend-horometros/src/test.model.ts` (probaba la API de Gemini a mano, no
+  formaba parte de ningún flujo de la app ni de `package.json`).
+- `backend-horometros/src/config/database.js` (CommonJS) **no es** código muerto pese a parecer un duplicado de
+  `database.ts` - es el config que `sequelize-cli` lee para migraciones (`.sequelizerc`), se dejó intacto.
+
 ## Deuda técnica heredada
 
 - `finalizarDia` no filtra por `hacienda_id`: un Supervisor con permiso para cerrar jornada cierra TODAS las
@@ -275,10 +390,8 @@ públicos **a propósito**: los usa el kiosco sin login.
   ahí el Supervisor SÍ tiene permiso para la acción, solo que la acción no respeta el límite de "su" hacienda.
 
 **Frontend** (sobre lo ya construido, ver sección de arriba)
-- UI de Camino A (teclado numérico/código) y Camino B (QR flotante que se auto-refresca cada ~90s) - el Supervisor
-  elige el modo de su hacienda.
-- Botones O/X en el Panel de Supervisor, al lado de cada trabajador logueado hoy.
-- Pantalla/rol ESCANER: login simplificado para dispositivo fijo de punto de control.
+- Botones O/X en el Panel de Supervisor, al lado de cada trabajador logueado hoy (el backend
+  `PUT /api/asistencia/:id/confirmar` ya existe y está protegido, ver Endpoints - solo falta el botón en el frontend).
 - Offline/sync: la app empaqueta nativo (no PWA, así que no aplica la limitación de Background Sync de iOS/Safari de
   todas formas), pero se mantiene el diseño de sync manual/periódico ya acordado para cuando no hay señal en campo.
 - **Sacar el módulo Horómetros a un proyecto aparte** (decisión del usuario, todavía no ejecutada): separar lo que es
@@ -289,8 +402,13 @@ públicos **a propósito**: los usa el kiosco sin login.
     ver e imprimir la hoja física de actividades de ESE operador puntual, más "Descargar" (exporta a Excel, formato
     pendiente de que el usuario lo proporcione) e "Imprimir" general - este último solo se habilita cuando el
     Historial está filtrado a **un solo día** (imprime todas las hojas físicas de ese día de una vez); con varios
-    días combinados no se habilita, para no tener que resolver "cuántas hojas de cuántos días imprimo".
-  - Nueva pestaña para ver/agregar Equipos, Actividades y Secciones (catálogos que hoy no tienen UI de gestión).
+    días combinados no se habilita, para no tener que resolver "cuántas hojas de cuántos días imprimo". Nota: el
+    componente `carnet-qr` que existía para esto se borró en la auditoría de código suelto de esta ronda (estaba
+    huérfano, sin cablear a nada) - al construir esta feature, evaluar desde cero en vez de asumir que sigue ahí.
+  - Nueva pestaña de ADMIN para crear/editar/eliminar Equipos y Secciones (catálogos que hoy no tienen UI de
+    gestión, solo lectura) - Actividades ya tiene sus 3 endpoints de mutación protegidos y listos
+    (`POST/PUT/DELETE /api/actividad`, ver Endpoints), y Equipos ganó un `GET /api/equipos` de solo lectura esta
+    ronda (lo necesitaba el Panel de Actividades) - falta el resto del CRUD y la pantalla.
 
 ## Flujo de trabajo de esta sesión
 

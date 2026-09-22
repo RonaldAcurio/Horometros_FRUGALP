@@ -45,12 +45,7 @@ export const crearActividad = async(req:Request, res:Response ) => {
         if(!codigo_megued || !description){
             return res.status(400).json({ message:'El codigo Megued y la Descripcion son campos requeridos '});
         }
-/*
-        const existente = await Actividad.findOne({ where: { codigo_megued: codigo_megued }});
-        if(existente){
-            return res.status(400).json({ message: 'Este codigo ya existe'});
-        }
-*/
+
         const nuevaActividad = await Actividad.create({
             codigo_megued,
             description,

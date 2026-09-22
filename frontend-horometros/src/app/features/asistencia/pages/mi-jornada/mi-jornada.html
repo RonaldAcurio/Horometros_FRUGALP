@@ -1,0 +1,140 @@
+<div class="jornada-container">
+
+  <!-- FASE: CODIGO (hacienda con Token de Hacienda activo) -->
+  <div class="card jornada-card" *ngIf="fase === 'codigo'">
+    <h2 class="jornada-title">🔑 Marcar con código</h2>
+    <p class="jornada-subtitle" *ngIf="!pidiendoActividadSalida">
+      Tu hacienda usa código de acceso. Pide el código del día a tu supervisor y escríbelo aquí.
+    </p>
+
+    <form *ngIf="!pidiendoActividadSalida" (ngSubmit)="confirmarCodigo()" class="space-y-3">
+      <input
+        type="text"
+        class="input-control w-full codigo-input"
+        [(ngModel)]="codigoIngresado"
+        name="codigo"
+        placeholder="Código de la hacienda"
+        autocomplete="off"
+        required
+      >
+      <div class="alert alert-danger" *ngIf="errorCodigo">{{ errorCodigo }}</div>
+      <button type="submit" class="btn btn-primary w-full" [disabled]="procesandoCodigo || !codigoIngresado.trim()">
+        {{ procesandoCodigo ? 'Procesando...' : 'Confirmar' }}
+      </button>
+    </form>
+
+    <!-- Si es una SALIDA, el backend exige elegir actividades antes de aceptar la marca -->
+    <div *ngIf="pidiendoActividadSalida">
+      <p class="jornada-subtitle">Antes de marcar tu salida, selecciona en qué trabajaste hoy:</p>
+      <div class="actividades-lista">
+        <label class="actividad-item" *ngFor="let act of actividadesCatalogo">
+          <input type="checkbox" (change)="toggleActividadSalida(act.id, $any($event.target).checked)">
+          {{ act.codigo_megued }} - {{ act.description }}
+        </label>
+      </div>
+      <button
+        class="btn btn-primary w-full mt-2"
+        [disabled]="procesandoCodigo || actividadesSeleccionadasSalida.length === 0"
+        (click)="confirmarSalidaConActividad()"
+      >
+        {{ procesandoCodigo ? 'Procesando...' : 'Confirmar salida' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- FASE: QR FLOTANTE (hacienda sin código activo) -->
+  <div class="card jornada-card" *ngIf="fase === 'qr'">
+    <h2 class="jornada-title">📱 Muestra este código</h2>
+    <p class="jornada-subtitle">Pide a tu supervisor o al punto de control que escanee este QR para registrar tu marca.</p>
+    <div class="qr-flotante-box" *ngIf="qrCodeUrl">
+      <img [src]="qrCodeUrl" class="qr-flotante-img" alt="Tu código QR">
+    </div>
+    <p class="qr-vigencia">Se renueva en {{ segundosRestantes }}s</p>
+  </div>
+
+  <!-- FASE: PANEL DE ACTIVIDADES (ya escaneado, jornada abierta) -->
+  <div class="panel-actividades" *ngIf="fase === 'actividades'">
+    <div class="card">
+      <div class="card-header flex justify-between items-center">
+        <h5 class="card-title">🛠️ Panel de Actividades</h5>
+        <button class="btn btn-warning btn-sm" (click)="mostrarQrDeSalida()">🔚 Marcar salida</button>
+      </div>
+      <div class="card-body-grid" style="grid-template-columns: 1fr;">
+        <form (ngSubmit)="guardarNuevoRegistro()" class="registro-form">
+          <div class="form-group">
+            <label class="form-label">Equipo</label>
+            <select class="input-control w-full" [(ngModel)]="nuevoRegistro.equipo_id" name="equipo_id" required>
+              <option [ngValue]="null">Selecciona un equipo</option>
+              <option *ngFor="let eq of equipos" [ngValue]="eq.id">{{ eq.codigo_megued }} - {{ eq.nombre_equipo }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Actividad</label>
+            <select class="input-control w-full" [(ngModel)]="nuevoRegistro.actividad_id" name="actividad_id" required>
+              <option [ngValue]="null">Selecciona una actividad</option>
+              <option *ngFor="let act of actividadesCatalogo" [ngValue]="act.id">{{ act.codigo_megued }} - {{ act.description }}</option>
+            </select>
+          </div>
+          <div class="form-group" *ngIf="esMecanico">
+            <label class="form-label">OT / Área</label>
+            <input type="text" class="input-control w-full" [(ngModel)]="nuevoRegistro.area" name="area" placeholder="Ej: Taller central">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Observaciones</label>
+            <input type="text" class="input-control w-full" [(ngModel)]="nuevoRegistro.observaciones" name="observaciones">
+          </div>
+          <button type="submit" class="btn btn-primary w-full" [disabled]="guardandoRegistro || !nuevoRegistro.equipo_id || !nuevoRegistro.actividad_id">
+            ➕ Iniciar labor
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card mt-section">
+      <div class="card-header">
+        <h5 class="card-title">📋 Labores de hoy</h5>
+      </div>
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Equipo</th>
+              <th>Actividad</th>
+              <th>Inicio</th>
+              <th>Fin</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let reg of registros">
+              <td>{{ reg.equipo?.nombre_equipo || reg.equipo_id }}</td>
+              <td>{{ reg.actividad?.description || reg.actividad_id }}</td>
+              <td><span class="time-badge">{{ reg.hora_inicio | date:'HH:mm':'-0500' }}</span></td>
+              <td>
+                <span *ngIf="reg.hora_fin" class="time-badge">{{ reg.hora_fin | date:'HH:mm':'-0500' }}</span>
+                <button *ngIf="!reg.hora_fin" class="btn btn-secondary btn-sm" (click)="finalizarRegistro(reg)">Finalizar</button>
+              </td>
+              <td>
+                <span *ngIf="reg.hora_fin" class="badge-status status-finalizado">Cerrada</span>
+                <span *ngIf="!reg.hora_fin" class="badge-status status-jornada">En curso</span>
+              </td>
+            </tr>
+            <tr *ngIf="registros.length === 0">
+              <td colspan="5" class="table-empty">Todavía no registras ninguna labor.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- FASE: TERMINADO -->
+  <div class="card jornada-card" *ngIf="fase === 'terminado'">
+    <h2 class="jornada-title">✅ {{ mensajeFinal }}</h2>
+    <p class="jornada-subtitle">Cerrando tu sesión...</p>
+  </div>
+
+  <div class="card jornada-card" *ngIf="fase === 'cargando'">
+    <p class="jornada-subtitle">Cargando...</p>
+  </div>
+</div>

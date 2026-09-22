@@ -1,0 +1,80 @@
+.jornada-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 2rem;
+}
+
+.jornada-card {
+  max-width: 26rem;
+  width: 100%;
+  text-align: center;
+  padding: 2rem;
+}
+
+.jornada-title {
+  font-size: 1.375rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.jornada-subtitle {
+  color: #6b7768;
+  font-size: 0.9rem;
+  margin-bottom: 1.25rem;
+}
+
+.codigo-input {
+  text-align: center;
+  font-size: 1.25rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 0.75rem;
+}
+
+.qr-flotante-box {
+  display: flex;
+  justify-content: center;
+  padding: 1rem;
+  background: #fff;
+  border-radius: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.qr-flotante-img {
+  width: 260px;
+  height: 260px;
+}
+
+.qr-vigencia {
+  color: #6b7768;
+  font-size: 0.8rem;
+}
+
+.actividades-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-align: left;
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 1rem;
+}
+
+.actividad-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.panel-actividades {
+  width: 100%;
+  max-width: 40rem;
+}
+
+.registro-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}

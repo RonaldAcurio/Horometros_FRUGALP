@@ -1,6 +1,5 @@
 import { DataTypes, Model, CreationOptional, InferAttributes, InferCreationAttributes } from 'sequelize';
 import { sequelize } from '../config/database';
-import { toDefaultValue } from 'sequelize/lib/utils';
 
 export class Operador extends Model <InferAttributes<Operador>, InferCreationAttributes<Operador>>{
     declare id: CreationOptional<number>;

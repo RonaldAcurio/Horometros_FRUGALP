@@ -3,12 +3,15 @@ import { authGuard } from './core/guards/auth.guard';
 import { guestGuard } from './core/guards/guest.guard';
 import { roleGuard } from './core/guards/role.guard';
 import { asistenciaRedirectGuard } from './core/guards/asistencia-redirect.guard';
+import { homeRedirectGuard } from './core/guards/home-redirect.guard';
 
 export const routes: Routes = [
     {
+        // Manda a cada rol a SU "hogar" (ver rutas-por-rol.ts) - no todos los roles tienen Dashboard.
         path: '',
-        redirectTo: 'dashboard',
-        pathMatch: 'full'
+        pathMatch: 'full',
+        canActivate: [authGuard, homeRedirectGuard],
+        loadComponent: () => import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent)
     },
     {
         path: 'login',
@@ -16,8 +19,10 @@ export const routes: Routes = [
         loadComponent: () => import('./features/auth/login/login').then(m => m.Login)
     },
     {
+        // Solo roles de oficina (ADMIN/ASISTENTE/SUPERVISOR) tienen Dashboard. ESCANER y MECANICO/OPERADOR
+        // caen directo a su propia pantalla dedicada desde el login (ver login.ts) y nunca ven este menu.
         path: 'dashboard',
-        canActivate: [authGuard],
+        canActivate: [authGuard, roleGuard('ADMIN', 'ASISTENTE', 'SUPERVISOR')],
         loadComponent: () => import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent)
     },
     {
@@ -29,7 +34,7 @@ export const routes: Routes = [
     },
     {
         path: 'horometros',
-        canActivate: [authGuard],
+        canActivate: [authGuard, roleGuard('ADMIN', 'ASISTENTE', 'SUPERVISOR')],
         loadComponent: () => import('./features/horometros/horometros.component').then(m => m.HorometrosComponent)
     },
     {
@@ -56,14 +61,29 @@ export const routes: Routes = [
         canActivate: [authGuard, roleGuard('ADMIN', 'SUPERVISOR')],
         loadComponent: () => import('./features/asistencia/pages/supervisor-panel/supervisor-panel').then(m => m.SupervisorPanel)
     },
-    // Redirección por defecto si entran a /asistencia
     {
-        path: 'asistencia',
-        redirectTo: 'asistencia/asistente',
-        pathMatch: 'full'
+        // Escaneo autenticado del QR flotante de Camino B (distinto del kiosco publico de arriba, que
+        // escanea el carnet fisico). Lo usan SUPERVISOR (boton "Escanear" de su panel) y ESCANER (su unica opcion).
+        path: 'asistencia/escanear',
+        canActivate: [authGuard, roleGuard('ADMIN', 'SUPERVISOR', 'ESCANER')],
+        loadComponent: () => import('./features/asistencia/pages/escaneo-sesion/escaneo-sesion').then(m => m.EscaneoSesion)
+    },
+    {
+        // Landing dedicado del rol ESCANER: un solo boton (ver CLAUDE.md, "ESCANER: menu de una sola opcion").
+        path: 'escaner',
+        canActivate: [authGuard, roleGuard('ESCANER')],
+        loadComponent: () => import('./features/asistencia/pages/escaner-menu/escaner-menu').then(m => m.EscanerMenu)
+    },
+    {
+        // Pantalla cautiva de MECANICO/OPERADOR: codigo o QR flotante segun su hacienda, y despues el Panel
+        // de Actividades (ver mi-jornada.ts). No hay ningun otro menu para este rol.
+        path: 'mi-jornada',
+        canActivate: [authGuard, roleGuard('MECANICO', 'OPERADOR')],
+        loadComponent: () => import('./features/asistencia/pages/mi-jornada/mi-jornada').then(m => m.MiJornada)
     },
     {
         path: '**',
-        redirectTo: 'dashboard'
+        canActivate: [authGuard, homeRedirectGuard],
+        loadComponent: () => import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent)
     }
 ];

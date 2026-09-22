@@ -1,55 +1,14 @@
 import { Router } from "express";
 import { upload } from "../middlewares/upload.middleware";
-import { analizarfotoHorometro } from "../services/gemini.service";
 import { procesarReporteHorometro, confirmarIngreso, procesarLoteHorometros } from "../controllers/horometros.controller";
-import { verificarAutenticacion } from "../middlewares/auth.middleware";
+import { verificarAutenticacion, requireRol } from "../middlewares/auth.middleware";
 
 const router = Router();
 
-/*
-// Ruta para subir un archivo
-router.post('/procesar-foto', upload.single('imagen'), async (req,res): Promise<void> =>{
-
-    try{
-        if(!req.file){
-            res.status(400).json({error:'No se encontro ninguna imagen. 🚫'});
-            return;
-        }
-
-        console.log('📸 Procesando foto en Gemini:', req.file.originalname);
-
-        //Enviamos la foto desde la memoria  RAM(buffer) hacia Gemini
-        const resultadoIA = await analizarfotoHorometro(
-            req.file.buffer,
-            req.file.mimetype
-        );
-
-        console.log('🤖 Resultado de Gemini:', resultadoIA);
-
-        res.json({
-            exito: true,
-            mensaje: 'Foto procesada correctamente con IA',
-            archivo: {
-                nombre: req.file.originalname,
-                peso_bytes: req.file.size,
-            },
-            resultado: resultadoIA,
-        });
-
-    } catch(error:any){
-        console.error('❌ Error procesando foto:', error);
-        res.status(500).json({
-            exito: false,
-            error: error.message || 'Error interno al procesar la imagen.',
-        });
-    }
-});
-*/
-
-// Modulo Horometros: disponible para cualquier cuenta logueada (el dashboard no restringe por rol, ver
-// dashboard.component.html), asi que solo exige sesion valida, sin requireRol especifico.
-router.post('/procesar-foto', verificarAutenticacion, upload.single('imagen'), procesarReporteHorometro);
-router.post('/confirmar-ingreso', verificarAutenticacion, confirmarIngreso);
-router.post('/procesar-lote', verificarAutenticacion, upload.array('imagenes',6), procesarLoteHorometros);
+// Modulo Horometros: ADMIN/ASISTENTE/SUPERVISOR (roles de oficina con Dashboard). ESCANER y MECANICO/OPERADOR
+// tienen su propia pantalla dedicada y nunca llegan al Dashboard, asi que no necesitan este modulo.
+router.post('/procesar-foto', verificarAutenticacion, requireRol('ADMIN','ASISTENTE','SUPERVISOR'), upload.single('imagen'), procesarReporteHorometro);
+router.post('/confirmar-ingreso', verificarAutenticacion, requireRol('ADMIN','ASISTENTE','SUPERVISOR'), confirmarIngreso);
+router.post('/procesar-lote', verificarAutenticacion, requireRol('ADMIN','ASISTENTE','SUPERVISOR'), upload.array('imagenes',6), procesarLoteHorometros);
 
 export default router;

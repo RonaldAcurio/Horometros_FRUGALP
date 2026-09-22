@@ -98,4 +98,40 @@ export class AsistenciaService {
     obtenerFotoAsistencia(id:number):Observable<{ foto_ingreso:string }>{
         return this.http.get<{ foto_ingreso:string }>(`${this.baseUrl}/${id}/foto`);
     }
+
+    // POST -> /api/asistencia/marcar-codigo (Camino A: hacienda con codigo activo, sin camara)
+    marcarConCodigo(datos: {
+        usuario: string; clave: string; token_hacienda: string;
+        actividades_ids?: number[]; foto_ingreso?: string | null;
+    }): Observable<any> {
+        return this.http.post(`${this.baseUrl}/marcar-codigo`, datos);
+    }
+
+    // POST -> /api/asistencia/marcar-mi-codigo (Camino A para un Operador YA logueado, sin re-pedir su clave)
+    marcarConMiCodigo(tokenHacienda: string, actividadesIds?: number[], fotoIngreso?: string | null): Observable<any> {
+        return this.http.post(`${this.baseUrl}/marcar-mi-codigo`, {
+            token_hacienda: tokenHacienda,
+            actividades_ids: actividadesIds,
+            foto_ingreso: fotoIngreso,
+        });
+    }
+
+    // GET -> /api/asistencia/mi-qr (Camino B paso 1: el propio Operador pide su QR de jornada, vence en 90s)
+    generarMiQr(): Observable<{ qr_token: string; vigencia_segundos: number }> {
+        return this.http.get<{ qr_token: string; vigencia_segundos: number }>(`${this.baseUrl}/mi-qr`);
+    }
+
+    // GET -> /api/asistencia/mi-estado (el propio Operador consulta si ya tiene jornada EN_JORNADA hoy)
+    obtenerMiEstado(): Observable<{ en_jornada: boolean; asistencia_id: number | null }> {
+        return this.http.get<{ en_jornada: boolean; asistencia_id: number | null }>(`${this.baseUrl}/mi-estado`);
+    }
+
+    // POST -> /api/asistencia/marcar-qr-sesion (Camino B paso 2: SUPERVISOR/ESCANER escanean el QR de jornada)
+    marcarConQrSesion(qrToken: string, actividadesIds?: number[], fotoIngreso?: string | null): Observable<any> {
+        return this.http.post(`${this.baseUrl}/marcar-qr-sesion`, {
+            qr_token: qrToken,
+            actividades_ids: actividadesIds,
+            foto_ingreso: fotoIngreso,
+        });
+    }
 }

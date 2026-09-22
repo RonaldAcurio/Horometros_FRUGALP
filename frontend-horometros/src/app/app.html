@@ -24,8 +24,8 @@
           Cerrar sesión
         </button>
 
-        <!-- BOTÓN DINÁMICO -->
-        <a [routerLink]="menuButtonLink" class="btn-menu">
+        <!-- BOTÓN DINÁMICO: oculto para roles cautivos (MECANICO/OPERADOR) o cuando ya estamos en su "hogar" -->
+        <a *ngIf="mostrarBotonMenu" [routerLink]="menuButtonLink" class="btn-menu">
           {{ menuButtonText }}
         </a>
       </div>

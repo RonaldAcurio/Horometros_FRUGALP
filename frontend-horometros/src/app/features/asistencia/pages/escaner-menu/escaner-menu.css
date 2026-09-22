@@ -1,0 +1,40 @@
+.escaner-menu-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 4rem;
+  padding-bottom: 4rem;
+}
+
+.escaner-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 26rem;
+  width: 100%;
+  padding: 2.5rem 2rem;
+}
+
+.escaner-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.escaner-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.escaner-subtitle {
+  color: #6b7768;
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+
+.escaner-boton {
+  width: 100%;
+  font-size: 1.1rem;
+  padding: 0.9rem;
+}

@@ -429,6 +429,47 @@ export const marcarConCodigo = async(req:Request, res:Response):Promise<void> =>
 };
 
 /*
+Camino A para un trabajador YA logueado (distinto de marcarConCodigo, que es publico y re-verifica usuario+clave
+desde cero para el kiosco SIN sesion): aca el trabajador entro por el login normal (usuario+clave, una sola vez) y
+ya tiene su JWT - en la pantalla de "mi jornada" solo debe confirmar el codigo de su hacienda, sin volver a escribir
+su clave. Requiere JWT de tipo 'operador' con jornada activa (ver verificarJornadaOperadorActiva en la ruta).
+*/
+export const marcarConMiCodigo = async(req:Request, res:Response):Promise<void> => {
+    try{
+        if(!req.auth || req.auth.tipo !== 'operador'){
+            res.status(403).json({ message: 'Solo un Operador/Mecanico puede marcar con su codigo.'});
+            return;
+        }
+        const { token_hacienda, actividades_ids, foto_ingreso } = req.body;
+        if(!token_hacienda){
+            res.status(400).json({ message: 'token_hacienda es obligatorio.'});
+            return;
+        }
+        if(!req.auth.hacienda_id){
+            res.status(400).json({ message: 'Tu cuenta todavia no tiene una hacienda asignada.'});
+            return;
+        }
+
+        const hacienda = await Hacienda.findByPk(req.auth.hacienda_id);
+        if(!hacienda || hacienda.token_actual !== token_hacienda || !hacienda.token_expira_en || hacienda.token_expira_en.getTime() < Date.now()){
+            res.status(401).json({ message: 'El codigo ingresado es invalido o ya expiro.'});
+            return;
+        }
+
+        const operador = await Operador.findByPk(req.auth.id);
+        if(!operador){
+            res.status(404).json({ message: 'Operador no encontrado.'});
+            return;
+        }
+
+        const { status, body } = await procesarMarcacion(operador, { actividades_ids, foto_ingreso });
+        res.status(status).json(body);
+    }catch(err){
+        res.status(500).json({ message: 'Error procesando la marcacion con codigo.', err});
+    }
+};
+
+/*
 Camino B, paso 1: el trabajador YA esta logueado (tiene su JWT de sesion) y pide su QR flotante de jornada para que
 alguien mas (Supervisor o Escaner) lo escanee. Requiere JWT de tipo 'operador' con jornada activa (ver
 verificarJornadaOperadorActiva en la ruta).
@@ -443,6 +484,32 @@ export const generarMiQr = async(req:Request, res:Response):Promise<void> => {
         res.json({ qr_token, vigencia_segundos: 90 });
     }catch(err){
         res.status(500).json({ message: 'Error al generar el QR de jornada.', err});
+    }
+};
+
+/*
+El propio Operador consulta si YA tiene una jornada abierta hoy (EN_JORNADA). La pantalla del QR flotante hace
+polling de esto para saber cuando dejar de mostrar el QR y pasar al Panel de Actividades - sin esto, el trabajador
+no tendria forma de saber que ya lo escanearon sin refrescar la pagina a mano. Requiere JWT de tipo 'operador'.
+*/
+export const obtenerMiEstado = async(req:Request, res:Response):Promise<void> => {
+    try{
+        if(!req.auth || req.auth.tipo !== 'operador'){
+            res.status(403).json({ message: 'Solo un Operador/Mecanico puede consultar su propio estado.'});
+            return;
+        }
+        const hoy = getFetchLocalEcuador();
+        const asistenciaHoy = await Asistencia.findOne({
+            where: { operador_id: req.auth.id, fecha: hoy },
+            attributes: ['id', 'estado'],
+        });
+        const enJornada = asistenciaHoy?.estado === 'EN_JORNADA';
+        res.json({
+            en_jornada: enJornada,
+            asistencia_id: enJornada ? asistenciaHoy!.id : null,
+        });
+    }catch(err){
+        res.status(500).json({ message: 'Error al consultar tu estado.', err});
     }
 };
 

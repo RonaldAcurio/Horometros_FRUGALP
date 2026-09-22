@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
+import { rutaHomePorRol } from '../../../core/utils/rutas-por-rol';
 
 @Component({
   standalone: true,
@@ -32,7 +33,9 @@ export class Login {
     this.authService.login(this.usuario.trim(), this.clave).subscribe({
       next: () => {
         this.cargando.set(false);
-        this.router.navigate(['/dashboard']);
+        // Cada rol tiene su propia "casa": ESCANER y MECANICO/OPERADOR NUNCA pasan por el Dashboard de
+        // oficina (ver rutas-por-rol.ts) - evita el bug real de "todos terminan viendo el mismo menu".
+        this.router.navigate([rutaHomePorRol(this.authService.perfil())]);
       },
       error: (err) => {
         this.cargando.set(false);

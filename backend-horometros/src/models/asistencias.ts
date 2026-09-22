@@ -1,22 +1,6 @@
-import { DataTypes, Model, Optional, CreationOptional, InferAttributes, InferCreationAttributes } from 'sequelize';
+import { DataTypes, Model, CreationOptional, InferAttributes, InferCreationAttributes } from 'sequelize';
 import { sequelize } from '../config/database';
-import { Operador } from './operador';
-import { Actividad } from './actividad'; 
-import { CreateAuthTokenConfig } from '@google/genai';
 
-/*1. Definimos la interfaz con TODOS los atributos de la tabla
-interface AsistenciaAttributes {
-  id: number;
-  operador_id: number;
-  fecha: string;
-  hora_ingreso: Date;
-  hora_salida?: Date | null;
-  estado: 'PRESENTE' | 'FINALIZADO';
-}
-
-// 2. Definimos cuáles son opcionales al CREAR (el 'id' es auto-incremental, 'hora_salida' es opcional)
-interface AsistenciaCreationAttributes extends Optional<AsistenciaAttributes, 'id' | 'hora_salida'> {}
-*/
 export class Asistencia extends Model<InferAttributes<Asistencia>, InferCreationAttributes<Asistencia>>{
     declare id: CreationOptional<number>;
     declare operador_id: number;
@@ -27,8 +11,6 @@ export class Asistencia extends Model<InferAttributes<Asistencia>, InferCreation
     declare estado: CreationOptional<'EN_JORNADA' | 'PENDIENTE_REVISION' | 'FINALIZADO' | 'SALIDA_OLVIDADA' | 'OBSERVANDO'>;
     declare foto_ingreso: CreationOptional<string | null>;
     declare observaciones: CreationOptional<string | null>;
-    declare diesel_consumido: CreationOptional<number | null>;
-    //declare (junto a diesel_consumido)
     declare hacienda_prestamo_id: CreationOptional<number | null>;
     declare admitido_por_usuario_id: CreationOptional<number | null>;
     // O/X del Supervisor: null = sin revisar, true = O (vino), false = X (no vino, ver confirmarAsistencia).
@@ -81,10 +63,6 @@ Asistencia.init(
         observaciones:{
             type: DataTypes.TEXT,
             allowNull: true
-        },
-        diesel_consumido:{
-            type: DataTypes.DECIMAL(10,2),
-            allowNull: true,
         },
         hacienda_prestamo_id:{
             type: DataTypes.INTEGER,

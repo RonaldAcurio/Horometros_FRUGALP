@@ -106,6 +106,18 @@ export const login = async(req: Request, res: Response):Promise<void> => {
                 haciendaId = supervisor?.hacienda_id ?? null;
             }
 
+            /*
+            Si la hacienda tiene un Token de Hacienda vigente ("activo el codigo"), ese trabajador debe marcar
+            SIEMPRE con codigo (Camino A) - nunca con QR. Si no tiene token vigente (o no tiene hacienda todavia),
+            el frontend lo manda al QR flotante (Camino B). Esto se decide UNA vez aqui, en el login, para que el
+            frontend no tenga que adivinar ni mostrar los dos caminos a la vez (ver CLAUDE.md).
+            */
+            let haciendaRequiereCodigo = false;
+            if(haciendaId){
+                const hacienda = await Hacienda.findByPk(haciendaId);
+                haciendaRequiereCodigo = !!(hacienda?.token_actual && hacienda.token_expira_en && hacienda.token_expira_en.getTime() > Date.now());
+            }
+
             const token = generarToken({
                 id: cuentaOperador.id,
                 tipo: 'operador',
@@ -120,6 +132,7 @@ export const login = async(req: Request, res: Response):Promise<void> => {
                     nombre_completo: cuentaOperador.nombre_completo,
                     rol: cuentaOperador.rol,
                     hacienda_id: haciendaId,
+                    hacienda_requiere_codigo: haciendaRequiereCodigo,
                 },
             });
             return;

@@ -12,7 +12,9 @@ import {
     admitirTrabajadorExterno,
     resetearClaveOperador,
     marcarConCodigo,
+    marcarConMiCodigo,
     generarMiQr,
+    obtenerMiEstado,
     marcarConQrSesion,
     confirmarAsistencia,
 } from "../controllers/asistencia.controller";
@@ -45,11 +47,17 @@ router.post('/admitir-externo',verificarAutenticacion, requireRol('SUPERVISOR','
 
 // Camino A: hacienda sin camara, marca con usuario+clave+Token de Hacienda. No requiere JWT (la credencial ES el operador).
 router.post('/marcar-codigo', marcarConCodigo);
+// Camino A para un trabajador YA logueado (pantalla "mi jornada"): solo confirma el codigo, sin re-escribir su clave.
+router.post('/marcar-mi-codigo', verificarAutenticacion, verificarJornadaOperadorActiva, marcarConMiCodigo);
 
 // Camino B: el propio Operador/Mecanico (ya logueado) pide su QR de jornada, que se renueva cada 90s.
 router.get('/mi-qr', verificarAutenticacion, verificarJornadaOperadorActiva, generarMiQr);
+// El propio Operador consulta si ya tiene jornada abierta hoy (lo usa la pantalla del QR flotante para saber
+// cuando lo escanearon y pasar al Panel de Actividades). Sin verificarJornadaOperadorActiva a proposito: este
+// endpoint reporta el estado tal cual esta, incluido "ya se cerro" - no tiene sentido que se corte a si mismo.
+router.get('/mi-estado', verificarAutenticacion, obtenerMiEstado);
 // Camino B: Supervisor o Escaner (punto de control) escanean ese QR para marcar entrada/salida.
-router.post('/marcar-qr-sesion', verificarAutenticacion, requireRol('SUPERVISOR','ESCANER'), marcarConQrSesion);
+router.post('/marcar-qr-sesion', verificarAutenticacion, requireRol('ADMIN','SUPERVISOR','ESCANER'), marcarConQrSesion);
 
 // O/X: el Supervisor confirma si el trabajador que aparece logueado hoy realmente esta presente.
 router.put('/:id/confirmar', verificarAutenticacion, requireRol('SUPERVISOR','ADMIN'), confirmarAsistencia);
