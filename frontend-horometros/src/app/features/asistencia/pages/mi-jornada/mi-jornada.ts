@@ -6,6 +6,7 @@ import { AsistenciaService } from '../../../../core/services/asistencia.service'
 import { RegistroActividadService } from '../../../../core/services/registro-actividad.service';
 import { AuthService } from '../../../../core/services/auth.service';
 import { NotificacionService } from '../../../../core/services/notificacion.service';
+import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
 import { Equipo, Actividad, RegistroActividad } from '../../../../core/models/asistencia.model';
 
 type FaseJornada = 'cargando' | 'codigo' | 'qr' | 'actividades' | 'terminado';
@@ -65,6 +66,7 @@ export class MiJornada implements OnInit, OnDestroy {
     private registroActividadService: RegistroActividadService,
     private authService: AuthService,
     private notificacionService: NotificacionService,
+    private confirmacionService: ConfirmacionService,
     private cdr: ChangeDetectorRef,
   ) {}
 
@@ -323,5 +325,36 @@ export class MiJornada implements OnInit, OnDestroy {
   mostrarQrDeSalida(): void {
     this.fase = 'qr';
     this.iniciarFlujoQr();
+  }
+
+  marcandoSalidaOlvidada = false;
+
+  /*
+  Autoservicio: cuando el trabajador ya no va a poder volver a un punto de escaneo ni reingresar el codigo (se le
+  hizo tarde y ya se fue a su casa), cierra su propia jornada como SALIDA_OLVIDADA - antes solo el Supervisor
+  podia hacerlo, en bloque, al cerrar el dia (ver CLAUDE.md).
+  */
+  async marcarMiSalidaOlvidada(): Promise<void> {
+    const confirmado = await this.confirmacionService.preguntar(
+      'Vas a cerrar tu jornada de hoy sin haber sido escaneado. Tu supervisor la revisará después. ¿Confirmas?',
+      'Marcar salida olvidada'
+    );
+    if (!confirmado) return;
+
+    this.marcandoSalidaOlvidada = true;
+    this.asistenciaService.marcarSalidaOlvidada().subscribe({
+      next: (res) => {
+        this.mensajeFinal = res.message || 'Tu salida quedó marcada.';
+        this.fase = 'terminado';
+        this.detenerIntervalos();
+        this.cdr.detectChanges();
+        setTimeout(() => this.authService.logout(), 4000);
+      },
+      error: (err) => {
+        this.notificacionService.error(err.error?.message || 'No se pudo marcar tu salida.');
+        this.marcandoSalidaOlvidada = false;
+        this.cdr.detectChanges();
+      },
+    });
   }
 }

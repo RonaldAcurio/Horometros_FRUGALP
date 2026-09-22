@@ -87,6 +87,25 @@ Una vez escaneado (entrada), `mi-jornada.ts` detecta el cambio por **polling** d
 la salida, el trabajador pulsa "Marcar salida" (vuelve a mostrar el QR) y **también** tiene que ser escaneado de
 nuevo - no hay salida sin escaneo, es la misma regla que la entrada.
 
+**La salida por QR de sesión NO vuelve a pedir actividades** (corrección de esta ronda): al escanear una salida,
+`marcarConQrSesion` detecta que ya hay una jornada abierta y, en vez de exigir que quien escanea elija actividades a
+mano (`require_actividad`, el comportamiento original heredado del carnet físico), **deriva la lista directamente
+de los `RegistroActividad` que el trabajador ya cargó en el Panel de Actividades** durante el día - así el resumen
+que ve el Supervisor (`AsistenciaActividad`) sigue quedando poblado, sin el cuadro redundante de "selecciona una
+actividad" que ya no tiene sentido si el trabajador ya las registró una por una. Este cambio es **exclusivo del
+Camino B** (`omitirActividadRequerida` en `ContextoMarcacion`) - el kiosco físico y el Camino A (código) siguen
+exigiendo elegir actividad al marcar salida, porque esos caminos no tienen Panel de Actividades detrás.
+
+**Autoservicio "Salida Olvidada"** (`POST /api/asistencia/marcar-salida-olvidada`, nuevo endpoint de esta ronda):
+antes, `estado: 'SALIDA_OLVIDADA'` solo lo ponía el Supervisor en bloque al cerrar el día (`finalizarDia`) - el
+trabajador no tenía ninguna forma de cerrar su propia jornada si no lograba volver a un punto de escaneo ni
+reingresar el código (ej. sale muy tarde y ya se fue a su casa). Ahora `mi-jornada.ts` ofrece un link discreto
+("¿No puedes llegar a un punto de control?" / "No podré escanear hoy" / "¿No tienes el código...?") en las 3 fases
+donde puede hacer falta - `qr` (cuando ya es una salida), `codigo` (idem) y `actividades` - que llama a este
+endpoint directamente: cierra la jornada como `SALIDA_OLVIDADA` con la hora del clic (opcionalmente editable, mismo
+patrón que `hora_inicio`/`hora_fin` del Panel de Actividades) y desloguea. El Supervisor la ve igual que las que
+él mismo cierra en bloque - queda congelada (no se puede hacer O/X ni editar, mismo trato que `FINALIZADO`).
+
 ### El carnet físico (kiosco público) sigue existiendo, sin cambios
 
 `POST /api/asistencia/marcar-qr` (sin autenticación, `marcacion-kiosco.ts`, ruta `/asistencia/marcacion`) es el
@@ -248,12 +267,17 @@ cualquier rol logueado entraba) - ESCANER y MECANICO/OPERADOR nunca tuvieron nec
      **polling de `GET /api/asistencia/mi-estado` cada 5s** para detectar que lo escanearon, sin que el trabajador
      tenga que hacer nada.
   3. **`actividades`** (Panel de Actividades, solo camino QR): formulario para iniciar una labor (equipo +
-     actividad + área si es MECANICO + observaciones) y tabla de labores del día con botón "Finalizar" por labor.
-     Botón "🔚 Marcar salida" vuelve a mostrar el QR (fase `qr` de nuevo) para que lo vuelvan a escanear - el mismo
-     polling de estado detecta la salida y cierra sesión sola.
+     actividad + área si es MECANICO + hora de inicio editable + observaciones) y tabla de labores del día con
+     botón "Finalizar" por labor (abre un editor inline con la hora de fin, también editable - ninguna de las 2
+     horas se le impone al trabajador, puede estar cargando esto más tarde). Botón "🔚 Marcar salida" vuelve a
+     mostrar el QR (fase `qr` de nuevo) para que lo vuelvan a escanear - el mismo polling de estado detecta la
+     salida y cierra sesión sola. Esa salida **ya no pide elegir actividades** (ver "Camino B" arriba).
   Al entrar (`ngOnInit`), consulta `mi-estado` ANTES de decidir la fase inicial - si el trabajador ya tenía una
   jornada abierta (refrescó la página, o se desconectó y volvió), no muestra el QR/código de entrada por error
   antes de corregirse solo; salta directo a la fase que corresponde.
+  **Autoservicio "Salida Olvidada"**: link discreto en las fases `qr` (solo si ya es una salida), `codigo` (solo
+  si ya es una salida) y `actividades`, para cuando el trabajador no va a poder cerrar su jornada por el camino
+  normal (ver "Autoservicio Salida Olvidada" arriba).
 - `modal-actividad`, `visor-foto` - piezas compartidas (selector de actividades en la salida, ventana flotante de
   evidencia). `modal-actividad` ahora lo reusan 3 componentes: `marcacion-kiosco`, `escaneo-sesion` y `mi-jornada`.
 - `login` (`/login`) - pantalla única (usuarios + operadores), con `AuthService` (signals: `token`/`perfil`),
@@ -326,6 +350,7 @@ gallina) - se insertó a mano por SQL directo en la base de producción de Rende
 | GET /api/asistencia/mi-qr | operador, jornada activa | Camino B paso 1: genera el QR de 90s. |
 | GET /api/asistencia/mi-estado | operador | El propio Operador consulta si ya tiene jornada EN_JORNADA hoy (lo usa mi-jornada para detectar el escaneo por polling). |
 | POST /api/asistencia/marcar-mi-codigo | operador, jornada activa | Camino A para un Operador YA logueado - solo confirma el Token de Hacienda, sin re-pedir su clave. |
+| POST /api/asistencia/marcar-salida-olvidada | operador, jornada activa | Autoservicio: el trabajador cierra su propia jornada como SALIDA_OLVIDADA cuando no puede escanear ni reingresar el código. |
 | POST /api/asistencia/marcar-qr-sesion | ADMIN, SUPERVISOR, ESCANER | Camino B paso 2: valida el QR y marca (desde `/asistencia/escanear`). |
 | PUT /api/asistencia/:id/confirmar | SUPERVISOR, ADMIN | O/X de asistencia. |
 | GET /api/asistencia/hoy | ADMIN, SUPERVISOR | Reporte del día, paginado. |

@@ -3,7 +3,7 @@ import { Operador } from '../models/operador';
 import { Asistencia } from '../models/asistencias';
 import { Actividad } from '../models';
 import { Op, literal } from 'sequelize';
-import { AsistenciaActividad } from '../models';
+import { AsistenciaActividad, RegistroActividad } from '../models';
 import { Usuario } from '../models/usuario';
 import { Hacienda } from '../models/hacienda';
 import bcrypt from 'bcryptjs';
@@ -241,6 +241,13 @@ Contexto de "donde" ocurre la marcacion: solo tiene datos cuando alguien mas con
 interface ContextoMarcacion {
     hacienda_prestamo_id?: number | null;
     admitido_por_usuario_id?: number | null;
+    /*
+    Camino B (QR de sesion): el trabajador YA registro el detalle de su jornada en el Panel de Actividades
+    (RegistroActividad, uno por labor) mientras trabajaba - pedirle otra vez "que actividades hiciste" al
+    momento de escanear la salida es redundante y una fila mas frente a quien lo escanea (Supervisor/Escaner).
+    Cuando esto viene true, la salida no exige actividades_ids (puede llegar vacio sin rechazar el 400).
+    */
+    omitirActividadRequerida?: boolean;
 }
 
 /*
@@ -275,7 +282,7 @@ const procesarMarcacion = async(
             ? (datos.actividades_ids as unknown[]).map(Number)
             : [];
 
-        if(actividadesIds.length === 0){
+        if(actividadesIds.length === 0 && !contexto.omitirActividadRequerida){
             return {
                 status: 400,
                 body: {
@@ -285,10 +292,12 @@ const procesarMarcacion = async(
             };
         }
 
-        // Validar que la actividad exista y NO este eliminada(Soft Delete)
-        const actividadExistente = await Actividad.findAll({where: { id: actividadesIds}});
-        if(actividadExistente.length !== actividadesIds.length){
-            return { status: 404, body: { message:'Una o mas actividades seleccionadas no existen o estan inactivas'} };
+        // Validar que la actividad exista y NO este eliminada(Soft Delete) - solo si vino alguna que validar.
+        if(actividadesIds.length > 0){
+            const actividadExistente = await Actividad.findAll({where: { id: actividadesIds}});
+            if(actividadExistente.length !== actividadesIds.length){
+                return { status: 404, body: { message:'Una o mas actividades seleccionadas no existen o estan inactivas'} };
+            }
         }
 
         await asistencia.update({ hora_salida:ahora, estado:'PENDIENTE_REVISION' });
@@ -470,6 +479,48 @@ export const marcarConMiCodigo = async(req:Request, res:Response):Promise<void> 
 };
 
 /*
+Autoservicio: el trabajador, desde su propio celular, marca su jornada abierta como SALIDA_OLVIDADA cuando no va a
+poder volver a un punto de escaneo ni reingresar el codigo (p.ej. sale muy tarde y ya se fue a su casa). Antes esto
+SOLO lo hacia el Supervisor en bloque al cerrar el dia (finalizarDia) - el trabajador no tenia como cerrarla el
+mismo, y se quedaba con la jornada abierta indefinidamente hasta que el Supervisor la barriera. hora_salida es
+opcional (el trabajador puede decir mas o menos a que hora se fue, igual que en el Panel de Actividades) - si no la
+manda, se usa el momento del clic. Requiere JWT de tipo 'operador' con jornada activa.
+*/
+export const marcarSalidaOlvidada = async(req:Request, res:Response):Promise<void> => {
+    try{
+        if(!req.auth || req.auth.tipo !== 'operador'){
+            res.status(403).json({ message: 'Solo un Operador/Mecanico puede marcar su propia salida.'});
+            return;
+        }
+
+        const asistencia = await Asistencia.findOne({
+            where: { operador_id: req.auth.id, estado: 'EN_JORNADA' },
+        });
+        if(!asistencia){
+            res.status(404).json({ message: 'No tienes ninguna jornada abierta hoy.'});
+            return;
+        }
+
+        const { hora_salida } = req.body;
+        let horaSalidaFinal = new Date();
+        if(hora_salida){
+            const parseada = new Date(hora_salida);
+            if(isNaN(parseada.getTime())){
+                res.status(400).json({ message: 'hora_salida no es una fecha valida.'});
+                return;
+            }
+            horaSalidaFinal = parseada;
+        }
+
+        await asistencia.update({ estado: 'SALIDA_OLVIDADA', hora_salida: horaSalidaFinal });
+
+        res.json({ message: 'Tu salida quedó marcada. Tu supervisor la revisará.', asistencia });
+    }catch(err){
+        res.status(500).json({ message: 'Error al marcar tu salida.', err});
+    }
+};
+
+/*
 Camino B, paso 1: el trabajador YA esta logueado (tiene su JWT de sesion) y pide su QR flotante de jornada para que
 alguien mas (Supervisor o Escaner) lo escanee. Requiere JWT de tipo 'operador' con jornada activa (ver
 verificarJornadaOperadorActiva en la ruta).
@@ -543,11 +594,30 @@ export const marcarConQrSesion = async(req:Request, res:Response):Promise<void> 
         const haciendaEscaner = req.auth?.hacienda_id ?? null;
         const esPrestamo = haciendaEscaner !== null && haciendaPropia !== null && haciendaPropia !== haciendaEscaner;
 
-        const contexto: ContextoMarcacion = esPrestamo
-            ? { hacienda_prestamo_id: haciendaEscaner, admitido_por_usuario_id: req.auth!.id }
-            : {};
+        const contexto: ContextoMarcacion = {
+            ...(esPrestamo ? { hacienda_prestamo_id: haciendaEscaner, admitido_por_usuario_id: req.auth!.id } : {}),
+            // El Camino B ya tiene el detalle real de la jornada en el Panel de Actividades (RegistroActividad) -
+            // no hace falta pedirle a quien escanea que elija actividades otra vez para poder cerrar la salida.
+            omitirActividadRequerida: true,
+        };
 
-        const { status, body } = await procesarMarcacion(operador, { actividades_ids, foto_ingreso }, contexto);
+        /*
+        Si el trabajador YA tiene una jornada abierta, este escaneo va a ser una SALIDA - en vez de exigir que
+        quien escanea elija actividades a mano (redundante, ya se registraron en el Panel de Actividades),
+        derivamos la lista de actividades directamente de sus RegistroActividad de hoy, para que el resumen
+        (AsistenciaActividad, lo que ve el Supervisor en su panel) no quede vacio.
+        */
+        let actividadesIdsFinal = actividades_ids;
+        const asistenciaAbierta = await Asistencia.findOne({ where: { operador_id: operador.id, estado: 'EN_JORNADA' } });
+        if(asistenciaAbierta && (!Array.isArray(actividades_ids) || actividades_ids.length === 0)){
+            const registros = await RegistroActividad.findAll({
+                where: { asistencia_id: asistenciaAbierta.id },
+                attributes: ['actividad_id'],
+            });
+            actividadesIdsFinal = [...new Set(registros.map((r) => r.actividad_id))];
+        }
+
+        const { status, body } = await procesarMarcacion(operador, { actividades_ids: actividadesIdsFinal, foto_ingreso }, contexto);
         res.status(status).json(body);
     }catch(err){
         res.status(500).json({ message: 'Error procesando la marcacion por QR de sesion.', err});

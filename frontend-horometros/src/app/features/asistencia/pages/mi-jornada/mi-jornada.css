@@ -97,3 +97,19 @@
   font-size: 0.85rem;
   width: auto;
 }
+
+.btn-link-salida {
+  background: none;
+  border: none;
+  color: #b45309;
+  font-size: 0.8rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0.25rem;
+  margin-top: 0.5rem;
+}
+
+.btn-link-salida:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

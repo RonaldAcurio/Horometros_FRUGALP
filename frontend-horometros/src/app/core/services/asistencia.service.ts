@@ -116,6 +116,12 @@ export class AsistenciaService {
         });
     }
 
+    // POST -> /api/asistencia/marcar-salida-olvidada (autoservicio: el trabajador cierra su propia jornada
+    // cuando no puede volver a un punto de escaneo ni reingresar el codigo)
+    marcarSalidaOlvidada(horaSalida?: string): Observable<{ message: string }> {
+        return this.http.post<{ message: string }>(`${this.baseUrl}/marcar-salida-olvidada`, { hora_salida: horaSalida });
+    }
+
     // GET -> /api/asistencia/mi-qr (Camino B paso 1: el propio Operador pide su QR de jornada, vence en 90s)
     generarMiQr(): Observable<{ qr_token: string; vigencia_segundos: number }> {
         return this.http.get<{ qr_token: string; vigencia_segundos: number }>(`${this.baseUrl}/mi-qr`);

@@ -23,6 +23,15 @@
       </button>
     </form>
 
+    <!-- Si ya tenía jornada abierta (es una salida) y no puede conseguir el código, autoservicio de emergencia -->
+    <button
+      *ngIf="asistenciaId && !pidiendoActividadSalida"
+      type="button"
+      class="btn-link-salida"
+      [disabled]="marcandoSalidaOlvidada"
+      (click)="marcarMiSalidaOlvidada()"
+    >¿No tienes el código o no puedes volver? Marcar salida</button>
+
     <!-- Si es una SALIDA, el backend exige elegir actividades antes de aceptar la marca -->
     <div *ngIf="pidiendoActividadSalida">
       <p class="jornada-subtitle">Antes de marcar tu salida, selecciona en qué trabajaste hoy:</p>
@@ -50,6 +59,15 @@
       <img [src]="qrCodeUrl" class="qr-flotante-img" alt="Tu código QR">
     </div>
     <p class="qr-vigencia">Se renueva en {{ segundosRestantes }}s</p>
+
+    <!-- Si es un QR de SALIDA (ya tenía jornada abierta) y no consigue que lo escaneen, autoservicio de emergencia -->
+    <button
+      *ngIf="asistenciaId"
+      type="button"
+      class="btn-link-salida"
+      [disabled]="marcandoSalidaOlvidada"
+      (click)="marcarMiSalidaOlvidada()"
+    >¿No puedes llegar a un punto de control? Marcar salida</button>
   </div>
 
   <!-- FASE: PANEL DE ACTIVIDADES (ya escaneado, jornada abierta) -->
@@ -57,7 +75,15 @@
     <div class="card">
       <div class="card-header flex justify-between items-center">
         <h5 class="card-title">🛠️ Panel de Actividades</h5>
-        <button class="btn btn-warning btn-sm" (click)="mostrarQrDeSalida()">🔚 Marcar salida</button>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="btn-link-salida"
+            [disabled]="marcandoSalidaOlvidada"
+            (click)="marcarMiSalidaOlvidada()"
+          >No podré escanear hoy</button>
+          <button class="btn btn-warning btn-sm" (click)="mostrarQrDeSalida()">🔚 Marcar salida</button>
+        </div>
       </div>
       <div class="card-body-grid" style="grid-template-columns: 1fr;">
         <form (ngSubmit)="guardarNuevoRegistro()" class="registro-form">

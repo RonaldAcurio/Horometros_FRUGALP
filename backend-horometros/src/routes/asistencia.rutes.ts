@@ -13,6 +13,7 @@ import {
     resetearClaveOperador,
     marcarConCodigo,
     marcarConMiCodigo,
+    marcarSalidaOlvidada,
     generarMiQr,
     obtenerMiEstado,
     marcarConQrSesion,
@@ -49,6 +50,10 @@ router.post('/admitir-externo',verificarAutenticacion, requireRol('SUPERVISOR','
 router.post('/marcar-codigo', marcarConCodigo);
 // Camino A para un trabajador YA logueado (pantalla "mi jornada"): solo confirma el codigo, sin re-escribir su clave.
 router.post('/marcar-mi-codigo', verificarAutenticacion, verificarJornadaOperadorActiva, marcarConMiCodigo);
+
+// Autoservicio: el trabajador marca su propia jornada como SALIDA_OLVIDADA (no puede volver a un punto de
+// escaneo ni reingresar el codigo, ej. sale muy tarde y ya se fue). Antes solo el Supervisor lo hacia en bloque.
+router.post('/marcar-salida-olvidada', verificarAutenticacion, verificarJornadaOperadorActiva, marcarSalidaOlvidada);
 
 // Camino B: el propio Operador/Mecanico (ya logueado) pide su QR de jornada, que se renueva cada 90s.
 router.get('/mi-qr', verificarAutenticacion, verificarJornadaOperadorActiva, generarMiQr);
