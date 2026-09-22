@@ -48,8 +48,13 @@ export class MiJornada implements OnInit, OnDestroy {
   asistenciaId: number | null = null;
   equipos: Equipo[] = [];
   registros: RegistroActividad[] = [];
-  nuevoRegistro = { equipo_id: null as number | null, actividad_id: null as number | null, area: '', observaciones: '' };
+  nuevoRegistro = { equipo_id: null as number | null, actividad_id: null as number | null, area: '', observaciones: '', hora_inicio: '' };
   guardandoRegistro = false;
+  // Finalizar una labor pide la hora de fin (editable) en vez de imponer "ahora mismo" - el trabajador puede
+  // estar cargando esto mas tarde, en su tiempo libre.
+  registroFinalizandoId: number | null = null;
+  horaFinEditando = '';
+  guardandoFinalizacion = false;
 
   // Poll continuo de mi-estado: detecta cuando lo escanean (entra a 'actividades') y cuando lo vuelven a
   // escanear para la salida (estado deja de ser EN_JORNADA -> jornada terminada).
@@ -217,11 +222,20 @@ export class MiJornada implements OnInit, OnDestroy {
   }
 
   // --- FASE ACTIVIDADES (Panel de Actividades) ---
+
+  // Formato que entiende <input type="datetime-local">: 'YYYY-MM-DDTHH:mm', en hora LOCAL del dispositivo
+  // (no UTC - Date.toISOString() no sirve aqui porque corta a UTC y desfasa la hora mostrada).
+  private horaLocalParaInput(fecha: Date = new Date()): string {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${fecha.getFullYear()}-${pad(fecha.getMonth() + 1)}-${pad(fecha.getDate())}T${pad(fecha.getHours())}:${pad(fecha.getMinutes())}`;
+  }
+
   private entrarAActividades(): void {
     this.fase = 'actividades';
     if (this.intervaloQr) clearInterval(this.intervaloQr);
     if (this.cuentaRegresiva) clearInterval(this.cuentaRegresiva);
     this.notificacionService.exito('¡Ya te registraron! Bienvenido a tu jornada.');
+    this.nuevoRegistro.hora_inicio = this.horaLocalParaInput();
     this.cargarDatosActividades();
   }
 
@@ -254,10 +268,11 @@ export class MiJornada implements OnInit, OnDestroy {
       actividad_id: this.nuevoRegistro.actividad_id,
       area: this.esMecanico ? this.nuevoRegistro.area : undefined,
       observaciones: this.nuevoRegistro.observaciones || undefined,
+      hora_inicio: this.nuevoRegistro.hora_inicio || undefined,
     }).subscribe({
       next: () => {
         this.notificacionService.exito('Labor registrada.');
-        this.nuevoRegistro = { equipo_id: null, actividad_id: null, area: '', observaciones: '' };
+        this.nuevoRegistro = { equipo_id: null, actividad_id: null, area: '', observaciones: '', hora_inicio: this.horaLocalParaInput() };
         this.guardandoRegistro = false;
         this.cargarRegistros();
         this.cdr.detectChanges();
@@ -270,14 +285,34 @@ export class MiJornada implements OnInit, OnDestroy {
     });
   }
 
-  finalizarRegistro(registro: RegistroActividad): void {
-    this.registroActividadService.finalizar(registro.id).subscribe({
+  // Abre el pequeño formulario inline (en la misma fila) para elegir la hora de fin, en vez de cerrarla al
+  // instante con la hora del clic - el trabajador puede estar registrando esto despues, en su tiempo libre.
+  abrirFinalizarRegistro(registro: RegistroActividad): void {
+    this.registroFinalizandoId = registro.id;
+    this.horaFinEditando = this.horaLocalParaInput();
+    this.cdr.detectChanges();
+  }
+
+  cancelarFinalizarRegistro(): void {
+    this.registroFinalizandoId = null;
+    this.cdr.detectChanges();
+  }
+
+  confirmarFinalizarRegistro(): void {
+    if (!this.registroFinalizandoId || !this.horaFinEditando) return;
+
+    this.guardandoFinalizacion = true;
+    this.registroActividadService.finalizar(this.registroFinalizandoId, undefined, this.horaFinEditando).subscribe({
       next: () => {
         this.notificacionService.exito('Labor finalizada.');
+        this.registroFinalizandoId = null;
+        this.guardandoFinalizacion = false;
         this.cargarRegistros();
+        this.cdr.detectChanges();
       },
       error: (err) => {
         this.notificacionService.error(err.error?.message || 'Error al finalizar la labor.');
+        this.guardandoFinalizacion = false;
         this.cdr.detectChanges();
       },
     });

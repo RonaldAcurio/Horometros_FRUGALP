@@ -80,10 +80,15 @@
             <input type="text" class="input-control w-full" [(ngModel)]="nuevoRegistro.area" name="area" placeholder="Ej: Taller central">
           </div>
           <div class="form-group">
+            <label class="form-label">Hora de inicio</label>
+            <input type="datetime-local" class="input-control w-full" [(ngModel)]="nuevoRegistro.hora_inicio" name="hora_inicio" required>
+            <p class="hint-text">Puedes cambiarla si estás registrando esto más tarde.</p>
+          </div>
+          <div class="form-group">
             <label class="form-label">Observaciones</label>
             <input type="text" class="input-control w-full" [(ngModel)]="nuevoRegistro.observaciones" name="observaciones">
           </div>
-          <button type="submit" class="btn btn-primary w-full" [disabled]="guardandoRegistro || !nuevoRegistro.equipo_id || !nuevoRegistro.actividad_id">
+          <button type="submit" class="btn btn-primary w-full" [disabled]="guardandoRegistro || !nuevoRegistro.equipo_id || !nuevoRegistro.actividad_id || !nuevoRegistro.hora_inicio">
             ➕ Iniciar labor
           </button>
         </form>
@@ -112,7 +117,20 @@
               <td><span class="time-badge">{{ reg.hora_inicio | date:'HH:mm':'-0500' }}</span></td>
               <td>
                 <span *ngIf="reg.hora_fin" class="time-badge">{{ reg.hora_fin | date:'HH:mm':'-0500' }}</span>
-                <button *ngIf="!reg.hora_fin" class="btn btn-secondary btn-sm" (click)="finalizarRegistro(reg)">Finalizar</button>
+
+                <!-- Sin finalizar y NO es la fila que se esta editando: solo el boton para abrir el editor -->
+                <button
+                  *ngIf="!reg.hora_fin && registroFinalizandoId !== reg.id"
+                  class="btn btn-secondary btn-sm"
+                  (click)="abrirFinalizarRegistro(reg)"
+                >Finalizar</button>
+
+                <!-- Editor inline de la hora de fin, para esta fila puntual -->
+                <div *ngIf="registroFinalizandoId === reg.id" class="finalizar-inline">
+                  <input type="datetime-local" class="input-control input-control-sm" [(ngModel)]="horaFinEditando" name="horaFin{{ reg.id }}">
+                  <button class="btn btn-primary btn-sm" [disabled]="guardandoFinalizacion || !horaFinEditando" (click)="confirmarFinalizarRegistro()">✔️</button>
+                  <button class="btn btn-secondary btn-sm" [disabled]="guardandoFinalizacion" (click)="cancelarFinalizarRegistro()">✕</button>
+                </div>
               </td>
               <td>
                 <span *ngIf="reg.hora_fin" class="badge-status status-finalizado">Cerrada</span>

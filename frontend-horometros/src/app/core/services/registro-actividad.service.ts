@@ -20,14 +20,19 @@ export class RegistroActividadService {
         return this.http.get<RegistroActividad[]>(`${this.baseUrl}?asistencia_id=${asistenciaId}`);
     }
 
+    // hora_inicio/hora_fin son opcionales - el trabajador puede registrar la labor mas tarde (en su tiempo
+    // libre) y decir a que hora la hizo, en vez de que el backend le imponga el momento exacto del clic.
     crear(datos: {
         asistencia_id: number; equipo_id: number; actividad_id: number;
-        area?: string; observaciones?: string;
+        area?: string; observaciones?: string; hora_inicio?: string;
     }): Observable<RegistroActividad> {
         return this.http.post<RegistroActividad>(this.baseUrl, datos);
     }
 
-    finalizar(id: number, observaciones?: string): Observable<{ message: string; registro: RegistroActividad }> {
-        return this.http.put<{ message: string; registro: RegistroActividad }>(`${this.baseUrl}/${id}/finalizar`, { observaciones });
+    finalizar(id: number, observaciones?: string, horaFin?: string): Observable<{ message: string; registro: RegistroActividad }> {
+        return this.http.put<{ message: string; registro: RegistroActividad }>(`${this.baseUrl}/${id}/finalizar`, {
+            observaciones,
+            hora_fin: horaFin,
+        });
     }
 }

@@ -78,3 +78,22 @@
   flex-direction: column;
   gap: 0.75rem;
 }
+
+.hint-text {
+  color: #6b7768;
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.finalizar-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.input-control-sm {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+  width: auto;
+}

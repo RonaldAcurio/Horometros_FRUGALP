@@ -106,6 +106,16 @@ solo lectura - el CRUD completo de Equipo es del módulo Horómetros, no tocado)
 `horometro_final` (OPERADOR) siguen en fase 2, no se piden en el formulario todavía (ver el propio modelo,
 `registro_actividad.ts`). El camino código **no** pasa por este panel - marca y termina, ver arriba.
 
+**`hora_inicio`/`hora_fin` de cada labor son editables, a propósito** (decisión de negocio: el trabajador puede
+estar cargando esto en su tiempo libre, después de haber hecho la labor, así que necesita poder decir "esto lo hice
+a tal hora" en vez de que el sistema le imponga el momento exacto del clic). Ambos campos son opcionales en
+`crearRegistroActividad`/`finalizarRegistroActividad` (si no vienen, caen al comportamiento de antes: la hora del
+servidor en ese instante) y se validan: `hora_fin` tiene que ser posterior a `hora_inicio` de esa misma labor, o
+el backend responde 400. **Esto es un concepto totalmente aparte** de `hora_ingreso`/`hora_salida` de la
+`Asistencia` (la jornada completa - esas las pone el QR/código al marcar entrada/salida, y las ve el Supervisor en
+su panel; si el trabajador nunca marca salida, esa jornada queda `SALIDA_OLVIDADA`, ver Tablas) - no hay que
+confundir "cuánto duró la jornada completa" con "cuánto duró CADA labor dentro de ella".
+
 ## Dos tokens que NO son lo mismo
 
 | | JWT de sesión | Token de Hacienda | QR de jornada |

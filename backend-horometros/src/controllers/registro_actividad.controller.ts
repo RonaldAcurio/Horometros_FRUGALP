@@ -20,10 +20,25 @@ const puedeOperarSobre = (req:Request, operadorIdDeLaAsistencia:number):boolean 
 //Crear una nueva labor dentro de la jornada abierta del trabajador (Panel de Actividades)
 export const crearRegistroActividad = async(req:Request, res:Response):Promise<void> => {
     try{
-        const { asistencia_id, equipo_id, actividad_id, area, seccion_id, observaciones } = req.body;
+        const { asistencia_id, equipo_id, actividad_id, area, seccion_id, observaciones, hora_inicio } = req.body;
         if(!asistencia_id || !equipo_id || !actividad_id){
             res.status(400).json({ message:'asistencia_id, equipo_id y actividad_id son obligatios.'});
             return;
+        }
+
+        /*
+        hora_inicio es OPCIONAL y editable: el trabajador puede estar registrando la labor en su tiempo libre,
+        despues de haberla hecho, asi que necesita poder decir "esto lo hice a tal hora" en vez de que el sistema
+        le imponga el momento exacto del clic. Si no la manda, se usa el momento actual (comportamiento de antes).
+        */
+        let horaInicioFinal = new Date();
+        if(hora_inicio){
+            const parseada = new Date(hora_inicio);
+            if(isNaN(parseada.getTime())){
+                res.status(400).json({ message: 'hora_inicio no es una fecha valida.'});
+                return;
+            }
+            horaInicioFinal = parseada;
         }
 
         const asistencia = await Asistencia.findByPk(Number(asistencia_id));
@@ -69,7 +84,7 @@ export const crearRegistroActividad = async(req:Request, res:Response):Promise<v
             area: area || null,
             seccion_id: seccion_id ? Number(seccion_id) : null,
             observaciones: observaciones || null,
-            hora_inicio: new Date(),
+            hora_inicio: horaInicioFinal,
         });
         
         res.status(201).json(registro);
@@ -84,7 +99,7 @@ export const crearRegistroActividad = async(req:Request, res:Response):Promise<v
 export const finalizarRegistroActividad = async(req:Request, res:Response):Promise<void> => {
     try{
         const { id } = req.params;
-        const { observaciones } = req.body;
+        const { observaciones, hora_fin } = req.body;
 
         const registro = await RegistroActividad.findByPk(Number(id));
         if(!registro){
@@ -103,8 +118,23 @@ export const finalizarRegistroActividad = async(req:Request, res:Response):Promi
             return;
         }
 
+        // hora_fin tambien es OPCIONAL y editable, mismo motivo que hora_inicio en crearRegistroActividad.
+        let horaFinFinal = new Date();
+        if(hora_fin){
+            const parseada = new Date(hora_fin);
+            if(isNaN(parseada.getTime())){
+                res.status(400).json({ message: 'hora_fin no es una fecha valida.'});
+                return;
+            }
+            if(parseada.getTime() <= registro.hora_inicio.getTime()){
+                res.status(400).json({ message: 'hora_fin debe ser posterior a la hora de inicio de la labor.'});
+                return;
+            }
+            horaFinFinal = parseada;
+        }
+
         await registro.update({
-            hora_fin: new Date(),
+            hora_fin: horaFinFinal,
             observaciones: observaciones ?? registro.observaciones,
         });
 
