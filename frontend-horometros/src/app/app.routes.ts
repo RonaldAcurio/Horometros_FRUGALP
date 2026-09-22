@@ -20,8 +20,10 @@ export const routes: Routes = [
         loadComponent: () => import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent)
     },
     {
+        // ADMIN y ASISTENTE entran (crear/listar Usuarios de oficina) - dentro de la pagina, la pestaña
+        // Haciendas/Token se oculta si el rol no es ADMIN (ver admin-panel.ts).
         path: 'admin',
-        canActivate: [authGuard, roleGuard('ADMIN')],
+        canActivate: [authGuard, roleGuard('ADMIN', 'ASISTENTE')],
         loadComponent: () => import('./features/admin/pages/admin-panel/admin-panel').then(m => m.AdminPanel)
     },
     {

@@ -19,7 +19,7 @@ de negocio ya están confirmadas, y qué falta. No es un documento para el usuar
 | Rol | Vive en | Alcance | Login |
 |---|---|---|---|
 | ADMIN | `usuarios` | Todo el sistema. Menú propio que además reproduce lo que hace SUPERVISOR y ASISTENTE. | JWT de sesión (8h) |
-| ASISTENTE | `usuarios` | Auditoría/gestión de personal, Historial de Asistencia con filtro por fecha. | JWT de sesión (8h) |
+| ASISTENTE | `usuarios` | Auditoría/gestión de personal, Historial de Asistencia con filtro por fecha. **También** crea/lista Usuarios de oficina y resetea sus claves (decisión de negocio: lo va a manejar la Asistente de gerencia) - **no** administra Haciendas/Token, eso sigue siendo solo ADMIN/SUPERVISOR. | JWT de sesión (8h) |
 | SUPERVISOR | `usuarios` | Una hacienda fija (`hacienda_id`). Valida marcaciones del día, confirma O/X, cierra jornada, escanea. | JWT de sesión (8h) |
 | **ESCANER** | `usuarios` | Cuenta de un **punto de control físico** (tablet/celular fijo en la entrada de una hacienda). Una hacienda fija. Solo puede escanear/confirmar marcaciones - no ve reportes ni administra nada. | JWT de sesión (8h) |
 | MECANICO / OPERADOR | `operadores` | Trabajador de taller/campo. `usuario`/`clave_hash` son columnas propias de `operadores` (no duplican identidad en `usuarios`, ver decisión abajo). | JWT de sesión, vigencia atada a su jornada (ver sección de sesión) |
@@ -119,7 +119,8 @@ Al lado de cada trabajador que aparece logueado hoy en su panel, el Supervisor c
    está físicamente el trabajador.
 2. Solo SUPERVISOR y ADMIN pueden admitir externos y confirmar O/X. SUPERVISOR y ESCANER pueden escanear
    (marcar-qr-sesion). Solo ADMIN/SUPERVISOR generan/invalidan el Token de Hacienda (Supervisor solo el de su
-   propia hacienda).
+   propia hacienda) y crean haciendas nuevas (esto último solo ADMIN, un Supervisor no crea haciendas). ADMIN y
+   ASISTENTE crean/listan Usuarios de oficina y resetean su clave.
 3. `finalizarDia` (Supervisor) cierra la jornada de **su hacienda**, no de las demás - cada Supervisor cierra solo la
    suya. ⚠️ Pendiente: el endpoint todavía no filtra por hacienda en el código (ver Deuda técnica).
 4. Reseteo de clave (Usuario u Operador): quien resetea fija una nueva, nunca puede "ver" la anterior (bcrypt no es
@@ -149,26 +150,38 @@ Al lado de cada trabajador que aparece logueado hoy en su panel, el Supervisor c
 ## Frontend (estado real, revisado directo del repo)
 
 Angular 22 standalone (sin NgModules), Tailwind CSS, `@zxing/ngx-scanner` (lectura de cámara) + `qrcode` (generación
-de QR), HttpClient sin interceptores todavía, testing con Vitest. Rutas por `loadComponent` (lazy), sin guards.
+de QR), HttpClient con interceptor de auth, testing con Vitest. Rutas por `loadComponent` (lazy), con guards.
 
 **Ya construido:**
-- `dashboard` - menú principal (enlaza a Asistencia/Horómetros).
+- `dashboard` - menú principal (Asistencia/Horómetros, + "Administración" si el rol es ADMIN o ASISTENTE).
 - `asistencia-menu` - submenú del módulo Asistencia.
-- `marcacion-kiosco` - el flujo clásico de escaneo de carnet físico (cámara al 40%, captura de evidencia).
+- `marcacion-kiosco` - el flujo clásico de escaneo de carnet físico (cámara al 40%, captura de evidencia). Sin guard
+  a propósito: el trabajador lo usa SIN loguearse.
 - `supervisor-panel` - validación diaria, observaciones, Finalizar Día.
-- `asistencia-panel` - Historial de Asistencia con filtro de fecha (rol Asistente).
+- `asistencia-panel` - Directorio de Operadores (+ credenciales usuario/clave/supervisor_id) e Historial de
+  Asistencia con filtro de fecha (rol Asistente).
 - `directorio-operadores` + `carnet-qr` - directorio y generación del carnet QR de cada Operador.
 - `modal-actividad`, `visor-foto` - piezas compartidas (selector de actividades en la salida, ventana flotante de evidencia).
-- Módulo Horómetros (OCR) - aparte, no tocar.
+- `login` (`/login`) - pantalla única (usuarios + operadores), con `AuthService` (signals: `token`/`perfil`),
+  `authGuard`/`guestGuard`/`roleGuard`, e interceptor que agrega el JWT a cada request y desloguea solo en un 401.
+- `admin-panel` (`/admin`, ADMIN y ASISTENTE) - pestaña **Usuarios** (crear ADMIN/ASISTENTE/SUPERVISOR/ESCANER con
+  clave, selector de hacienda solo si el cargo la necesita, resetear clave) y pestaña **Haciendas** (crear hacienda
+  nueva, generar/invalidar su Token) - esta segunda pestaña **solo visible para ADMIN**, un Asistente no la ve.
+- `NotificacionService`/`<app-toast>` y `ConfirmacionService`/`<app-confirm-modal>` (montados una vez en `app.html`) -
+  reemplazan `alert()`/`confirm()` nativos del navegador en TODO el proyecto (no tienen sentido en una app
+  empaquetada nativo). Todo campo de clave tiene su "ojito" para mostrar/ocultar.
+- Módulo Horómetros (OCR) - aparte, no tocar (⚠️ el usuario quiere sacarlo a un proyecto separado, ver Pendiente).
 
-**Lo que NO existe todavía:** ninguna pantalla de Login, ningún guard/interceptor de rutas, ningún menú diferenciado
-por rol (hoy cualquiera que entre al link ve todo). Coincide 1 a 1 con que el backend todavía tiene rutas `público*`
-(ver tabla de Endpoints) - las dos cosas se cierran juntas.
+**Detalle técnico importante para el que siga tocando componentes nuevos:** esta app necesita
+`ChangeDetectorRef.detectChanges()` explícito después de cada respuesta HTTP que mute un campo plano (no-signal) del
+componente - el zone.js de este proyecto no lo dispara solo. Es el patrón que ya usa TODO el código existente
+(`cargarOperadores`, `guardarObservacion`, etc.); si un componente nuevo lo omite, la UI se actualiza mal en
+silencio (se descubrió así un bug real: los modales de "Nuevo Usuario"/"Nuevo Operador" no se cerraban tras guardar).
+Los `signal()` (usados para toggles de UI como mostrar/ocultar clave, o los estados de `NotificacionService`/
+`ConfirmacionService`) sí se actualizan solos, sin necesitar este truco.
 
-**Deuda técnica encontrada en esta revisión:**
-- `environment.ts`/`environment.development.ts` usan la propiedad `apuUrl` (typo de `apiUrl`) - funciona porque
-  `AsistenciaService` la referencia igual, pero es un nombre confuso para servicios nuevos. Se corrige a `apiUrl`
-  cuando se toquen los environments para el Login (con su respectivo find/replace en los servicios existentes).
+**Deuda técnica heredada (ya corregida donde se indica):**
+- ~~`apuUrl`~~ → corregido a `apiUrl` en environments y en los servicios que lo usaban.
 - `package.json` tiene una dependencia `qcore` instalada que no se usa en ningún lado del código (`grep` sin
   resultados) - candidata a eliminar, no se toca hasta confirmar que de verdad no se necesita.
 - No hay `vercel.json` en el repo - el deploy en Vercel corre con auto-detección de Angular. Si Vercel necesita config
@@ -185,9 +198,9 @@ gallina) - se insertó a mano por SQL directo en la base de producción de Rende
 | Método/Ruta | Rol requerido | Qué hace |
 |---|---|---|
 | POST /api/auth/login | público | Login único (usuarios u operadores). Rechaza operador con jornada de hoy ya cerrada. |
-| POST /api/usuarios | ADMIN | Crea Usuario de oficina (incluye ESCANER). |
-| GET /api/usuarios | ADMIN | Lista usuarios (sin `clave_hash`). |
-| PUT /api/usuarios/:id/clave | ADMIN | Resetea clave de un Usuario. |
+| POST /api/usuarios | ADMIN, ASISTENTE | Crea Usuario de oficina (incluye ESCANER). |
+| GET /api/usuarios | ADMIN, ASISTENTE | Lista usuarios (sin `clave_hash`). |
+| PUT /api/usuarios/:id/clave | ADMIN, ASISTENTE | Resetea clave de un Usuario. |
 | POST /api/asistencia/operadores | público* | Crea Operador (+ credenciales opcionales). |
 | PUT /api/asistencia/operadores/:id | público* | Actualiza Operador (+ credenciales opcionales, no las borra si no vienen). |
 | GET /api/asistencia/operadores | público* | Lista operadores (sin `clave_hash`, ni el del supervisor incluido). |
@@ -203,6 +216,8 @@ gallina) - se insertó a mano por SQL directo en la base de producción de Rende
 | PUT /api/asistencia/revisar/:id | público* | Ajustes del Supervisor sobre un registro. |
 | GET /api/asistencia/:id/foto | público* | Trae solo la foto de un registro. |
 | POST /api/asistencia/admitir-externo | SUPERVISOR, ADMIN | Reclama a un trabajador prestado. |
+| GET /api/haciendas | ADMIN, SUPERVISOR | Lista haciendas (id, nombre, token vigente). |
+| POST /api/haciendas | ADMIN | Crea una hacienda nueva. |
 | POST /api/haciendas/:id/token | ADMIN, SUPERVISOR (solo la suya) | Genera/regenera el Token de Hacienda. |
 | DELETE /api/haciendas/:id/token | ADMIN, SUPERVISOR (solo la suya) | Invalida el Token antes de tiempo. |
 
@@ -226,16 +241,22 @@ junto con el Frontend de Login (ver Pendiente).
 - Cerrar las rutas `público*` con `verificarAutenticacion` una vez exista el Login en el Frontend.
 
 **Frontend** (sobre lo ya construido, ver sección de arriba)
-- Pantalla de Login única (usuarios + operadores) + `AuthService` + guard de rutas + interceptor que agregue el JWT
-  a cada request.
-- Menú Admin (accede a lo que ve Supervisor y Asistente) + pantallas para crear Usuario/Operador con credenciales.
 - UI de Camino A (teclado numérico/código) y Camino B (QR flotante que se auto-refresca cada ~90s) - el Supervisor
   elige el modo de su hacienda.
 - Botones O/X en el Panel de Supervisor, al lado de cada trabajador logueado hoy.
 - Pantalla/rol ESCANER: login simplificado para dispositivo fijo de punto de control.
-- Generar/mostrar el Token de Hacienda vigente (Supervisor/Admin).
 - Offline/sync: la app empaqueta nativo (no PWA, así que no aplica la limitación de Background Sync de iOS/Safari de
   todas formas), pero se mantiene el diseño de sync manual/periódico ya acordado para cuando no hay señal en campo.
+- **Sacar el módulo Horómetros a un proyecto aparte** (decisión del usuario, todavía no ejecutada): separar lo que es
+  exclusivo de Horómetros (componentes, servicio, modelo, la ruta `/horometros`) de lo compartido (`app.routes.ts`,
+  `app.html`, el sistema de notificaciones) sin romper Asistencia.
+- **Diseños de Figma confirmados, pendientes de construir** (el usuario los compartió, existen en su Figma):
+  - En el Directorio de Operadores (Panel Asistente/Admin): por cada operador, acciones "Ver"/"Imprimir" para
+    ver e imprimir la hoja física de actividades de ESE operador puntual, más "Descargar" (exporta a Excel, formato
+    pendiente de que el usuario lo proporcione) e "Imprimir" general - este último solo se habilita cuando el
+    Historial está filtrado a **un solo día** (imprime todas las hojas físicas de ese día de una vez); con varios
+    días combinados no se habilita, para no tener que resolver "cuántas hojas de cuántos días imprimo".
+  - Nueva pestaña para ver/agregar Equipos, Actividades y Secciones (catálogos que hoy no tienen UI de gestión).
 
 ## Flujo de trabajo de esta sesión
 

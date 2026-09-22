@@ -13,6 +13,10 @@ export class HaciendaService {
     return this.http.get<Hacienda[]>(this.baseUrl);
   }
 
+  crearHacienda(nombre: string): Observable<Hacienda> {
+    return this.http.post<Hacienda>(this.baseUrl, { nombre });
+  }
+
   generarToken(haciendaId: number): Observable<{ message: string; token_actual: string; token_expira_en: string }> {
     return this.http.post<{ message: string; token_actual: string; token_expira_en: string }>(
       `${this.baseUrl}/${haciendaId}/token`,

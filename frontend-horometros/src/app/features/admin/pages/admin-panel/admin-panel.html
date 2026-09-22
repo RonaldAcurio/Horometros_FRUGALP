@@ -11,7 +11,8 @@
     <button class="tab-btn" [class.active]="tabActual === 'usuarios'" (click)="cambiarTab('usuarios')">
       👤 Usuarios
     </button>
-    <button class="tab-btn" [class.active]="tabActual === 'haciendas'" (click)="cambiarTab('haciendas')">
+    <!-- Solo ADMIN ve/entra a Haciendas: un Asistente puede crear Usuarios pero no toca Token/Haciendas -->
+    <button *ngIf="esAdmin" class="tab-btn" [class.active]="tabActual === 'haciendas'" (click)="cambiarTab('haciendas')">
       🌾 Haciendas
     </button>
   </div>
@@ -52,10 +53,11 @@
     </div>
   </div>
 
-  <!-- PESTAÑA: HACIENDAS -->
-  <div *ngIf="tabActual === 'haciendas'" class="card">
-    <div class="card-header">
+  <!-- PESTAÑA: HACIENDAS (solo ADMIN, ver *ngIf del boton de la pestaña arriba) -->
+  <div *ngIf="tabActual === 'haciendas' && esAdmin" class="card">
+    <div class="card-header flex justify-between items-center">
       <h5 class="card-title">🌾 Haciendas y su Token de escaneo</h5>
+      <button class="btn btn-primary btn-sm" (click)="abrirModalHacienda()">➕ Nueva Hacienda</button>
     </div>
 
     <div class="table-responsive">
@@ -170,6 +172,23 @@
         <div class="flex justify-end gap-2 pt-3">
           <button type="button" (click)="cerrarModalClave()" class="btn btn-secondary">Cancelar</button>
           <button type="submit" [disabled]="!formClave.form.valid" class="btn btn-primary">Actualizar clave</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: NUEVA HACIENDA -->
+  <div class="modal-backdrop" *ngIf="mostrarModalHacienda">
+    <div class="modal-card">
+      <h3 class="modal-title">🌾 Nueva Hacienda</h3>
+      <form (ngSubmit)="guardarNuevaHacienda()" #formHacienda="ngForm" class="space-y-3 mt-3">
+        <div class="form-group">
+          <label class="form-label">Nombre *</label>
+          <input type="text" [(ngModel)]="nombreHaciendaNueva" name="nombreHacienda" required class="input-control w-full">
+        </div>
+        <div class="flex justify-end gap-2 pt-3">
+          <button type="button" (click)="cerrarModalHacienda()" class="btn btn-secondary">Cancelar</button>
+          <button type="submit" [disabled]="!formHacienda.form.valid" class="btn btn-primary">Guardar</button>
         </div>
       </form>
     </div>

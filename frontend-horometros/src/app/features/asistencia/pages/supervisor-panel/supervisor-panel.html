@@ -17,6 +17,26 @@
     </div>
   </div>
 
+  <!-- Token de MI Hacienda: cada Supervisor solo ve y genera el de la suya, no la de otros -->
+  <div class="card mt-section" *ngIf="miHacienda">
+    <div class="card-header">
+      <h5 class="card-title">🔑 Token de {{ miHacienda.nombre }}</h5>
+    </div>
+    <div class="card-body-grid" style="grid-template-columns: 1fr;">
+      <div class="flex items-center gap-3 flex-wrap">
+        <ng-container *ngIf="miHacienda.token_actual; else sinToken">
+          <span class="code-badge token-valor">{{ miHacienda.token_actual }}</span>
+          <span class="text-muted-sm">Vigente hasta {{ miHacienda.token_expira_en | date:'short' }}</span>
+        </ng-container>
+        <ng-template #sinToken>
+          <span class="text-muted-sm">Sin token activo.</span>
+        </ng-template>
+        <button class="btn btn-primary btn-sm" (click)="generarMiToken()">🔄 Generar</button>
+        <button class="btn btn-secondary btn-sm" [disabled]="!miHacienda.token_actual" (click)="invalidarMiToken()">✕ Invalidar</button>
+      </div>
+    </div>
+  </div>
+
   <div class="card mt-section">
     <div class="card-header flex justify-between items-center">
       <h5 class="card-title">

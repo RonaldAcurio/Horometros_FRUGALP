@@ -5,6 +5,7 @@ import { UsuarioService } from '../../../../core/services/usuario.service';
 import { HaciendaService } from '../../../../core/services/hacienda.service';
 import { NotificacionService } from '../../../../core/services/notificacion.service';
 import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
+import { AuthService } from '../../../../core/services/auth.service';
 import { NuevoUsuario, Usuario } from '../../../../core/models/usuario.model';
 import { Hacienda } from '../../../../core/models/hacienda.model';
 import { CargoUsuario } from '../../../../core/models/auth.model';
@@ -25,6 +26,13 @@ export class AdminPanel implements OnInit {
   private notificacionService = inject(NotificacionService);
   private confirmacionService = inject(ConfirmacionService);
   private cdr = inject(ChangeDetectorRef);
+  protected authService = inject(AuthService);
+
+  // La pestaña Haciendas (Token, crear hacienda) es exclusiva de ADMIN - un Asistente entra a esta misma
+  // pagina (para Usuarios) pero no la ve, ver admin-panel.html.
+  get esAdmin(): boolean {
+    return this.authService.tieneRol('ADMIN');
+  }
 
   tabActual: 'usuarios' | 'haciendas' = 'usuarios';
   cargosDisponibles: CargoUsuario[] = ['ADMIN', 'ASISTENTE', 'SUPERVISOR', 'ESCANER'];
@@ -45,6 +53,10 @@ export class AdminPanel implements OnInit {
   mostrarClaveReset = signal(false);
   usuarioParaResetear: Usuario | null = null;
   claveNueva = '';
+
+  // Modal: Nueva Hacienda
+  mostrarModalHacienda = false;
+  nombreHaciendaNueva = '';
 
   ngOnInit(): void {
     this.cargarUsuarios();
@@ -171,6 +183,33 @@ export class AdminPanel implements OnInit {
       },
       error: (err) => {
         this.notificacionService.error(err.error?.message || 'Error al invalidar el token.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  // --- Nueva Hacienda ---
+  abrirModalHacienda(): void {
+    this.nombreHaciendaNueva = '';
+    this.mostrarModalHacienda = true;
+  }
+
+  cerrarModalHacienda(): void {
+    this.mostrarModalHacienda = false;
+  }
+
+  guardarNuevaHacienda(): void {
+    if (!this.nombreHaciendaNueva.trim()) return;
+
+    this.haciendaService.crearHacienda(this.nombreHaciendaNueva.trim()).subscribe({
+      next: () => {
+        this.notificacionService.exito(`Hacienda "${this.nombreHaciendaNueva.trim()}" creada correctamente.`);
+        this.cargarHaciendas();
+        this.cerrarModalHacienda();
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.notificacionService.error(err.error?.message || 'Error al crear la hacienda.');
         this.cdr.detectChanges();
       },
     });

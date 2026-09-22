@@ -2,7 +2,10 @@ import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
+import { HaciendaService } from '../../../../core/services/hacienda.service';
+import { AuthService } from '../../../../core/services/auth.service';
 import { Asistencia } from '../../../../core/models/asistencia.model';
+import { Hacienda } from '../../../../core/models/hacienda.model';
 import { VisorFoto } from '../../components/visor-foto/visor-foto';
 import { NotificacionService } from '../../../../core/services/notificacion.service';
 import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
@@ -34,8 +37,14 @@ export class SupervisorPanel implements OnInit {
   observacionEditandoId: number | null=null;
   observacionTexto: string = '';
 
+  // Token de Hacienda: cada Supervisor solo ve/genera el de SU PROPIA hacienda (perfil().hacienda_id),
+  // independiente de las demas - no hay selector, no puede tocar el de otra hacienda (ver CLAUDE.md).
+  miHacienda: Hacienda | null = null;
+
   constructor(
     private asistenciaService: AsistenciaService,
+    private haciendaService: HaciendaService,
+    protected authService: AuthService,
     private cdr: ChangeDetectorRef,
     private notificacionService: NotificacionService,
     private confirmacionService: ConfirmacionService
@@ -43,6 +52,60 @@ export class SupervisorPanel implements OnInit {
 
   ngOnInit(): void {
     this.cargarAsistencias();
+    this.cargarMiHacienda();
+  }
+
+  cargarMiHacienda(): void {
+    const haciendaId = this.authService.perfil()?.hacienda_id;
+    if (!haciendaId) return;
+
+    this.haciendaService.obtenerHaciendas().subscribe({
+      next: (haciendas) => {
+        this.miHacienda = haciendas.find((h) => h.id === haciendaId) || null;
+        this.cdr.detectChanges();
+      },
+      error: (err) => console.error('Error cargando la hacienda del supervisor:', err),
+    });
+  }
+
+  generarMiToken(): void {
+    if (!this.miHacienda) return;
+
+    this.haciendaService.generarToken(this.miHacienda.id).subscribe({
+      next: (res) => {
+        this.miHacienda!.token_actual = res.token_actual;
+        this.miHacienda!.token_expira_en = res.token_expira_en;
+        this.notificacionService.exito('Token generado. Vigente 24h.');
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.notificacionService.error(err.error?.message || 'Error al generar el token.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  async invalidarMiToken(): Promise<void> {
+    if (!this.miHacienda) return;
+
+    const confirmado = await this.confirmacionService.preguntar(
+      '¿Invalidar el token actual? Los puntos de control que lo usen dejarán de poder marcar hasta que generes uno nuevo.',
+      'Invalidar token'
+    );
+    if (!confirmado) return;
+
+    this.haciendaService.invalidarToken(this.miHacienda.id).subscribe({
+      next: () => {
+        this.miHacienda!.token_actual = null;
+        this.miHacienda!.token_expira_en = null;
+        this.notificacionService.exito('Token invalidado.');
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.notificacionService.error(err.error?.message || 'Error al invalidar el token.');
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   cargarAsistencias(): void {

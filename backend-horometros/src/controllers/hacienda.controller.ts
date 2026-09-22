@@ -19,6 +19,31 @@ export const obtenerHaciendas = async(_req:Request, res:Response):Promise<void> 
 };
 
 /*
+Crea una hacienda nueva. Solo ADMIN (ver la ruta) - a diferencia de generar/invalidar Token, un Supervisor no
+crea haciendas (el solo administra la suya, que ya existe antes de que el exista como cuenta).
+*/
+export const crearHacienda = async(req:Request, res:Response):Promise<void> => {
+    try{
+        const { nombre } = req.body;
+        if(!nombre || !nombre.trim()){
+            res.status(400).json({ message: 'El nombre de la hacienda es obligatorio.'});
+            return;
+        }
+
+        const existente = await Hacienda.findOne({ where: { nombre: nombre.trim() }});
+        if(existente){
+            res.status(409).json({ message: 'Ya existe una hacienda con ese nombre.'});
+            return;
+        }
+
+        const hacienda = await Hacienda.create({ nombre: nombre.trim() });
+        res.status(201).json(hacienda);
+    }catch(err){
+        res.status(500).json({ message: 'Error al crear la hacienda.', err});
+    }
+};
+
+/*
 Gerena/regenera ek Token de Hacienda. Solo el Supervisor de esa Hacienda puede hacerlo (o un Admin, que puede tocar cualquiera). 
 No es un JWT:es una cadena aleatoria que se guarda en la BD porque cada escaneo QR la tiene que poder consultar.
 */
