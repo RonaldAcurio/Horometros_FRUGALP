@@ -42,6 +42,7 @@
             <tr>
               <th>Código</th>
               <th>Operador</th>
+              <th>Rol</th>
               <th>Acción</th>
             </tr>
           </thead>
@@ -49,12 +50,13 @@
             <tr *ngFor="let op of operadoresPaginados" (click)="seleccionarOperador(op)" class="row-hover">
               <td><strong class="code-badge">{{ op.codigo_megued || op.id }}</strong></td>
               <td class="font-medium nombre-operador">{{ op.nombre_completo }}</td>
+              <td class="text-muted-sm">{{ op.rol === 'OPERADOR' ? 'Operador' : 'Mecánico' }}</td>
               <td>
                 <button class="btn btn-secondary btn-sm">Seleccionar</button>
               </td>
             </tr>
             <tr *ngIf="operadoresFiltrados.length === 0">
-              <td colspan="3" class="table-empty">No hay operadores registrados.</td>
+              <td colspan="4" class="table-empty">No hay operadores registrados.</td>
             </tr>
           </tbody>
         </table>
@@ -93,6 +95,13 @@
               <select class="input-control" [(ngModel)]="supervisorIdSeleccionado">
                 <option [ngValue]="null">Sin asignar</option>
                 <option *ngFor="let sup of supervisores" [ngValue]="sup.id">{{ sup.nombre_completo }} — {{ sup.hacienda?.nombre }}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Rol</label>
+              <select class="input-control" [(ngModel)]="rolSeleccionado">
+                <option value="MECANICO">Mecánico</option>
+                <option value="OPERADOR">Operador</option>
               </select>
             </div>
 
@@ -233,6 +242,13 @@
           <select [(ngModel)]="nuevoOperador.supervisor_id" name="supervisor_id" class="input-control w-full">
             <option [ngValue]="null">Sin asignar</option>
             <option *ngFor="let sup of supervisores" [ngValue]="sup.id">{{ sup.nombre_completo }} — {{ sup.hacienda?.nombre }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Rol *</label>
+          <select [(ngModel)]="nuevoOperador.rol" name="rol" required class="input-control w-full">
+            <option value="MECANICO">Mecánico</option>
+            <option value="OPERADOR">Operador</option>
           </select>
         </div>
         <div>

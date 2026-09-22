@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
 import { guestGuard } from './core/guards/guest.guard';
 import { roleGuard } from './core/guards/role.guard';
+import { asistenciaRedirectGuard } from './core/guards/asistencia-redirect.guard';
 
 export const routes: Routes = [
     {
@@ -32,14 +33,16 @@ export const routes: Routes = [
         loadComponent: () => import('./features/horometros/horometros.component').then(m => m.HorometrosComponent)
     },
     {
+        // El menu de 3 tarjetas solo se ve tal cual para ADMIN - los demas roles son redirigidos
+        // directo a su propio panel por asistenciaRedirectGuard (ver ese archivo).
         path: 'asistencia',
-        canActivate: [authGuard],
+        canActivate: [authGuard, asistenciaRedirectGuard],
         loadComponent: () => import('./features/asistencia/pages/asistencia-menu/asistencia-menu').then(m => m.AsistenciaMenu)
     },
     // Rutas del Módulo de Asistencia
     {
         path: 'asistencia/asistente',
-        canActivate: [authGuard],
+        canActivate: [authGuard, roleGuard('ADMIN', 'ASISTENTE')],
         loadComponent: () => import('./features/asistencia/pages/asistencia-panel/asistencia-panel').then(m => m.AsistenciaPanel)
     },
     {
@@ -50,7 +53,7 @@ export const routes: Routes = [
     },
     {
         path: 'asistencia/supervisor',
-        canActivate: [authGuard],
+        canActivate: [authGuard, roleGuard('ADMIN', 'SUPERVISOR')],
         loadComponent: () => import('./features/asistencia/pages/supervisor-panel/supervisor-panel').then(m => m.SupervisorPanel)
     },
     // Redirección por defecto si entran a /asistencia

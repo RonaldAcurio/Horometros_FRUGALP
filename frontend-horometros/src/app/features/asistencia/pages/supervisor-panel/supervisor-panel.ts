@@ -1,6 +1,7 @@
 import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 import { HaciendaService } from '../../../../core/services/hacienda.service';
 import { AuthService } from '../../../../core/services/auth.service';
@@ -12,7 +13,7 @@ import { ConfirmacionService } from '../../../../core/services/confirmacion.serv
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule, VisorFoto],
+  imports: [CommonModule, FormsModule, RouterLink, VisorFoto],
   selector: 'app-supervisor-panel',
   styleUrl: './supervisor-panel.css',
   templateUrl: './supervisor-panel.html',

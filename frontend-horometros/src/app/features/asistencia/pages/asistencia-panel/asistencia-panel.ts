@@ -34,6 +34,7 @@ export class AsistenciaPanel implements OnInit{
   direccion: string = '';
   // A que Supervisor (y por lo tanto hacienda) pertenece de forma permanente este trabajador.
   supervisorIdSeleccionado: number | null = null;
+  rolSeleccionado: 'MECANICO' | 'OPERADOR' = 'MECANICO';
   // Credenciales: solo se usan para ASIGNAR por primera vez (si el operador ya tiene usuario, se resetea
   // la clave aparte, ver abrirModalResetClaveOperador - usuario+clave van siempre juntos).
   credencialesOperador = { usuario: '', clave: '' };
@@ -58,6 +59,7 @@ export class AsistenciaPanel implements OnInit{
     direccion: '',
     supervisor_id: null,
     usuario: '',
+    rol: 'MECANICO',
   };
   nuevoOperadorClave: string = '';
 
@@ -147,6 +149,7 @@ export class AsistenciaPanel implements OnInit{
     this.telefono = op.telefono || '';
     this.direccion = op.direccion || '';
     this.supervisorIdSeleccionado = op.supervisor_id ?? null;
+    this.rolSeleccionado = op.rol || 'MECANICO';
     this.credencialesOperador = { usuario: '', clave: '' };
     this.mostrarClaveCredenciales.set(false);
     await this.generarQR(op.id);
@@ -170,6 +173,7 @@ export class AsistenciaPanel implements OnInit{
       telefono: this.telefono,
       direccion: this.direccion,
       supervisor_id: this.supervisorIdSeleccionado,
+      rol: this.rolSeleccionado,
     };
 
     // Las credenciales solo se mandan si se estan asignando por primera vez (usuario+clave van juntos,
@@ -224,7 +228,7 @@ export class AsistenciaPanel implements OnInit{
 
   // MODAL NUEVO OPERADOR
   private operadorNuevoVacio(): Partial<Operador> {
-    return { nombre_completo: '', codigo_megued: '', cedula: '', telefono: '', direccion: '', supervisor_id: null, usuario: '' };
+    return { nombre_completo: '', codigo_megued: '', cedula: '', telefono: '', direccion: '', supervisor_id: null, usuario: '', rol: 'MECANICO' };
   }
 
   abrirModalNuevoOperador(): void {

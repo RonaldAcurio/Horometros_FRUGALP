@@ -25,6 +25,8 @@ const getFetchLocalEcuador = ():string => {
     return new Date().toLocaleDateString('sv-SE',{timeZone: 'America/Guayaquil'});
 };
 
+const ROLES_OPERADOR_VALIDOS = ['MECANICO', 'OPERADOR'];
+
 /*
 Valida el trio opcional supervisor_id/usuario/clave que puede venir al crear o actualizar un Operador.
 Devuelve null (y ya respondio el error) si algo no es valido, o el objeto listo para mezclar en Operador.create/update.
@@ -73,9 +75,13 @@ const validarCredencialesOperador = async(
 export const crearOperador = async (req:Request, res:Response):Promise<void> => {
     try{
 
-        const { nombre_completo, codigo_megued, cedula, telefono, direccion } = req.body;
+        const { nombre_completo, codigo_megued, cedula, telefono, direccion, rol } = req.body;
         if(!nombre_completo || !codigo_megued){
             res.status(400).json({message:'El nombre completo y el codigo son obligatorios'});
+            return;
+        }
+        if(rol && !ROLES_OPERADOR_VALIDOS.includes(rol)){
+            res.status(400).json({message: `rol debe ser uno de: ${ROLES_OPERADOR_VALIDOS.join(', ')}.`});
             return;
         }
 
@@ -85,9 +91,14 @@ export const crearOperador = async (req:Request, res:Response):Promise<void> => 
         const nuevoOperador = await Operador.create({
             nombre_completo,
             codigo_megued,
-            cedula,
+            // '' -> null: 'cedula' tiene UNIQUE en la BD. NULL nunca choca contra otro NULL (Postgres los trata
+            // como "desconocidos", nunca iguales entre si), pero '' si choca contra otro '' - sin esto, el
+            // segundo Operador creado sin cedula tumbaba con un 500 (SequelizeUniqueConstraintError).
+            cedula: cedula || null,
             telefono,
             direccion,
+            // Sin 'rol' en el body, se queda con el default de la BD ('MECANICO').
+            ...(rol ? { rol } : {}),
             supervisor_id: credenciales.supervisor_id,
             usuario: credenciales.usuario,
             clave_hash: credenciales.clave_hash,
@@ -105,7 +116,12 @@ export const crearOperador = async (req:Request, res:Response):Promise<void> => 
 export const actualizarOperador = async (req:Request, res:Response):Promise<void> => {
     try{
         const { id } = req.params;
-        const { cedula, telefono, direccion } = req.body;
+        const { cedula, telefono, direccion, rol } = req.body;
+
+        if(rol && !ROLES_OPERADOR_VALIDOS.includes(rol)){
+            res.status(400).json({message: `rol debe ser uno de: ${ROLES_OPERADOR_VALIDOS.join(', ')}.`});
+            return;
+        }
 
         const operador = await Operador.findByPk(Number(id));
         if(!operador){
@@ -117,10 +133,11 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
         if(!credenciales) return;
 
         await operador.update({
-            cedula,
+            cedula: cedula || null, // ver nota en crearOperador: '' choca contra otro '' en el UNIQUE, null no.
             telefono,
             direccion,
             // ?? en vez de || : si no mandan un dato nuevo, conservamos el que ya tenia (no lo borramos).
+            rol: rol ?? operador.rol,
             supervisor_id: credenciales.supervisor_id ?? operador.supervisor_id,
             usuario: credenciales.usuario ?? operador.usuario,
             clave_hash: credenciales.clave_hash ?? operador.clave_hash,

@@ -154,10 +154,18 @@ de QR), HttpClient con interceptor de auth, testing con Vitest. Rutas por `loadC
 
 **Ya construido:**
 - `dashboard` - menú principal (Asistencia/Horómetros, + "Administración" si el rol es ADMIN o ASISTENTE).
-- `asistencia-menu` - submenú del módulo Asistencia.
+- `asistencia-menu` - submenú del módulo Asistencia con las 3 tarjetas (Gestión de Personal / Punto de Marcación /
+  Panel de Supervisor). Solo lo ve tal cual el ADMIN: `/asistencia` tiene el guard `asistenciaRedirectGuard`, que
+  manda a cada otro rol directo a SU panel (SUPERVISOR → `/asistencia/supervisor`, ASISTENTE → `/asistencia/asistente`,
+  ESCANER → `/asistencia/marcacion`) sin pasar por el menú - corrige un bug real donde un SUPERVISOR podía entrar al
+  panel de la Asistente solo porque el menú no distinguía roles. Los 3 paneles además llevan `roleGuard` propio
+  (`/asistencia/asistente` → ADMIN/ASISTENTE, `/asistencia/supervisor` → ADMIN/SUPERVISOR) para que esto no dependa
+  solo de la navegación: aunque alguien escriba la URL directo, el guard de rol lo bloquea igual.
 - `marcacion-kiosco` - el flujo clásico de escaneo de carnet físico (cámara al 40%, captura de evidencia). Sin guard
-  a propósito: el trabajador lo usa SIN loguearse.
-- `supervisor-panel` - validación diaria, observaciones, Finalizar Día.
+  a propósito: el trabajador lo usa SIN loguearse. El Supervisor también llega aquí desde un botón "📷 Escanear" en
+  su propio panel (en vez de una tarjeta aparte en el menú); el botón "Menú" del header lo regresa a su panel porque
+  `/asistencia` redirige según su rol.
+- `supervisor-panel` - validación diaria, observaciones, Finalizar Día, botón "📷 Escanear" hacia el kiosco.
 - `asistencia-panel` - Directorio de Operadores (+ credenciales usuario/clave/supervisor_id) e Historial de
   Asistencia con filtro de fecha (rol Asistente).
 - `directorio-operadores` + `carnet-qr` - directorio y generación del carnet QR de cada Operador.
