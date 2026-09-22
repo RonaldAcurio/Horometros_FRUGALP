@@ -2,6 +2,7 @@ import { Router } from "express";
 import { upload } from "../middlewares/upload.middleware";
 import { analizarfotoHorometro } from "../services/gemini.service";
 import { procesarReporteHorometro, confirmarIngreso, procesarLoteHorometros } from "../controllers/horometros.controller";
+import { verificarAutenticacion } from "../middlewares/auth.middleware";
 
 const router = Router();
 
@@ -45,8 +46,10 @@ router.post('/procesar-foto', upload.single('imagen'), async (req,res): Promise<
 });
 */
 
-router.post('/procesar-foto',upload.single('imagen'), procesarReporteHorometro);
-router.post('/confirmar-ingreso',confirmarIngreso);
-router.post('/procesar-lote',upload.array('imagenes',6), procesarLoteHorometros);
+// Modulo Horometros: disponible para cualquier cuenta logueada (el dashboard no restringe por rol, ver
+// dashboard.component.html), asi que solo exige sesion valida, sin requireRol especifico.
+router.post('/procesar-foto', verificarAutenticacion, upload.single('imagen'), procesarReporteHorometro);
+router.post('/confirmar-ingreso', verificarAutenticacion, confirmarIngreso);
+router.post('/procesar-lote', verificarAutenticacion, upload.array('imagenes',6), procesarLoteHorometros);
 
 export default router;

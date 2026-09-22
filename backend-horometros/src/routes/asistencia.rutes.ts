@@ -20,17 +20,28 @@ import { verificarAutenticacion, requireRol, verificarJornadaOperadorActiva } fr
 
 const router = Router();
 
-router.post('/operadores',crearOperador);
-router.get('/operadores', obtenerOperadores);
-router.put('/operadores/:id', actualizarOperador);
-router.post('/marcar-qr', registrarMacarcoQR);
-router.get('/hoy', obtenerAsistenciaHoy);
-router.post('/finalizar-dia',finalizarDia);
-router.get('/historial',obtenerHistorial);
-router.put('/revisar/:id',revisarAsistencia);
-router.get('/:id/foto', obtenerFotoAsistencia);
-router.post('/admitir-externo',verificarAutenticacion, requireRol('SUPERVISOR','ADMIN'),admitirTrabajadorExterno);
+// Gestion de Personal (Directorio de Operadores, Historial): mismos roles que ya protegen /asistencia/asistente
+// en el frontend (ver roleGuard en app.routes.ts) - crear/editar Operador, listarlos y ver el Historial de auditoria.
+router.post('/operadores', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), crearOperador);
+router.get('/operadores', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), obtenerOperadores);
+router.put('/operadores/:id', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), actualizarOperador);
+router.get('/historial', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), obtenerHistorial);
 router.put('/operadores/:id/clave',verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), resetearClaveOperador);
+
+// Carnet fisico del kiosco: sin JWT a proposito, el trabajador lo usa SIN loguearse (ver marcacion-kiosco.ts).
+router.post('/marcar-qr', registrarMacarcoQR);
+
+// Panel de Supervisor: reporte del dia, cierre de jornada y ajustes de un registro - mismos roles que
+// /asistencia/supervisor en el frontend.
+router.get('/hoy', verificarAutenticacion, requireRol('ADMIN','SUPERVISOR'), obtenerAsistenciaHoy);
+router.post('/finalizar-dia', verificarAutenticacion, requireRol('ADMIN','SUPERVISOR'), finalizarDia);
+router.put('/revisar/:id', verificarAutenticacion, requireRol('ADMIN','SUPERVISOR'), revisarAsistencia);
+
+// "Ver Evidencia" (VisorFoto): componente compartido por Panel de Asistente y Panel de Supervisor, asi que
+// acepta los 3 roles de oficina que pueden llegar a ver un registro de asistencia.
+router.get('/:id/foto', verificarAutenticacion, requireRol('ADMIN','ASISTENTE','SUPERVISOR'), obtenerFotoAsistencia);
+
+router.post('/admitir-externo',verificarAutenticacion, requireRol('SUPERVISOR','ADMIN'),admitirTrabajadorExterno);
 
 // Camino A: hacienda sin camara, marca con usuario+clave+Token de Hacienda. No requiere JWT (la credencial ES el operador).
 router.post('/marcar-codigo', marcarConCodigo);

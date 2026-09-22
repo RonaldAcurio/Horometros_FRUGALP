@@ -209,44 +209,58 @@ gallina) - se insertó a mano por SQL directo en la base de producción de Rende
 | POST /api/usuarios | ADMIN, ASISTENTE | Crea Usuario de oficina (incluye ESCANER). |
 | GET /api/usuarios | ADMIN, ASISTENTE | Lista usuarios (sin `clave_hash`). |
 | PUT /api/usuarios/:id/clave | ADMIN, ASISTENTE | Resetea clave de un Usuario. |
-| POST /api/asistencia/operadores | público* | Crea Operador (+ credenciales opcionales). |
-| PUT /api/asistencia/operadores/:id | público* | Actualiza Operador (+ credenciales opcionales, no las borra si no vienen). |
-| GET /api/asistencia/operadores | público* | Lista operadores (sin `clave_hash`, ni el del supervisor incluido). |
+| POST /api/asistencia/operadores | ADMIN, ASISTENTE | Crea Operador (+ credenciales opcionales). |
+| PUT /api/asistencia/operadores/:id | ADMIN, ASISTENTE | Actualiza Operador (+ credenciales opcionales, no las borra si no vienen). |
+| GET /api/asistencia/operadores | ADMIN, ASISTENTE | Lista operadores (sin `clave_hash`, ni el del supervisor incluido). |
 | PUT /api/asistencia/operadores/:id/clave | ADMIN, ASISTENTE | Resetea clave de un Operador. |
-| POST /api/asistencia/marcar-qr | público* | Carnet físico clásico (entrada/salida). |
-| POST /api/asistencia/marcar-codigo | público* | Camino A: usuario+clave+Token de Hacienda. |
+| POST /api/asistencia/marcar-qr | público | Carnet físico clásico (entrada/salida) - sin JWT **a propósito**, lo usa el trabajador SIN loguearse en el kiosco. |
+| POST /api/asistencia/marcar-codigo | público | Camino A: usuario+clave+Token de Hacienda - sin JWT **a propósito**, la credencial ES el operador. |
 | GET /api/asistencia/mi-qr | operador, jornada activa | Camino B paso 1: genera el QR de 90s. |
 | POST /api/asistencia/marcar-qr-sesion | SUPERVISOR, ESCANER | Camino B paso 2: valida el QR y marca. |
 | PUT /api/asistencia/:id/confirmar | SUPERVISOR, ADMIN | O/X de asistencia. |
-| GET /api/asistencia/hoy | público* | Reporte del día, paginado. |
-| POST /api/asistencia/finalizar-dia | público* | Cierra jornada (⚠️ todavía no filtra por hacienda). |
-| GET /api/asistencia/historial | público* | Historial con filtros de fecha. |
-| PUT /api/asistencia/revisar/:id | público* | Ajustes del Supervisor sobre un registro. |
-| GET /api/asistencia/:id/foto | público* | Trae solo la foto de un registro. |
+| GET /api/asistencia/hoy | ADMIN, SUPERVISOR | Reporte del día, paginado. |
+| POST /api/asistencia/finalizar-dia | ADMIN, SUPERVISOR | Cierra jornada (⚠️ todavía no filtra por hacienda, ver Deuda técnica). |
+| GET /api/asistencia/historial | ADMIN, ASISTENTE | Historial con filtros de fecha. |
+| PUT /api/asistencia/revisar/:id | ADMIN, SUPERVISOR | Ajustes del Supervisor sobre un registro. |
+| GET /api/asistencia/:id/foto | ADMIN, ASISTENTE, SUPERVISOR | Trae solo la foto de un registro (VisorFoto, compartido por ambos paneles). |
 | POST /api/asistencia/admitir-externo | SUPERVISOR, ADMIN | Reclama a un trabajador prestado. |
-| GET /api/haciendas | ADMIN, SUPERVISOR | Lista haciendas (id, nombre, token vigente). |
+| GET /api/actividad | público | Catálogo de actividades - sin JWT **a propósito**, lo usa el kiosco (modal-actividad) al marcar salida. |
+| GET /api/actividad/:id | público | Idem, una sola actividad. |
+| POST /api/actividad/nueva | ADMIN | Crea una actividad del catálogo (sin UI todavía, ver Pendiente). |
+| PUT /api/actividad/:id | ADMIN | Edita una actividad del catálogo. |
+| DELETE /api/actividad/:id | ADMIN | Elimina una actividad del catálogo. |
+| POST /api/horometros/procesar-foto | cualquier cuenta logueada | Sube y procesa con IA una foto de reporte físico. |
+| POST /api/horometros/confirmar-ingreso | cualquier cuenta logueada | Confirma la actualización a MEGUED. |
+| POST /api/horometros/procesar-lote | cualquier cuenta logueada | Igual que arriba, hasta 6 fotos. |
+| GET /api/haciendas | ADMIN, SUPERVISOR, ASISTENTE | Lista haciendas (id, nombre, token vigente). |
 | POST /api/haciendas | ADMIN | Crea una hacienda nueva. |
 | POST /api/haciendas/:id/token | ADMIN, SUPERVISOR (solo la suya) | Genera/regenera el Token de Hacienda. |
 | DELETE /api/haciendas/:id/token | ADMIN, SUPERVISOR (solo la suya) | Invalida el Token antes de tiempo. |
 
-`*` público = todavía sin `verificarAutenticacion` en la ruta. Es así **a propósito, temporalmente**: el Frontend de
-Login todavía no existe, y exigir JWT ahí rompería el kiosco/panel que ya está funcionando en producción. Se cierra
-junto con el Frontend de Login (ver Pendiente).
+**Auditoría de accesos (cerrada):** hasta esta ronda, `operadores`, `hoy`, `finalizar-dia`, `historial`, `revisar/:id`,
+`:id/foto` (en `asistencia.rutes.ts`), las mutaciones de `actividad` y las 3 rutas de `horometros` no tenían
+`verificarAutenticacion` ni `requireRol` - cualquiera que conociera la URL podía llamarlas sin loguearse. Quedó
+documentado como deuda "temporal" desde antes del Login, pero el Login ya existe hace rato y nunca se cerró. Cada
+ruta arriba quedó con el mismo rol que ya la protegía en el frontend (roleGuard/`*ngIf` de cada panel) - no se
+inventó ningún permiso nuevo, solo se hizo cumplir en el backend lo que el frontend ya asumía. Se probó con curl
+(401 sin token, 403 con rol equivocado, pasa con el rol correcto) y con Playwright contra los 3 paneles para
+confirmar que ningún flujo real se rompió. `marcar-qr`, `marcar-codigo` y el catálogo de `actividad` (GET) siguen
+públicos **a propósito**: los usa el kiosco sin login.
 
 ## Deuda técnica heredada
 
-- `finalizarDia` no filtra por `hacienda_id`: cierra TODAS las haciendas del día a la vez. Se corrige junto con el
-  despliegue del Login (para no romper el botón "Finalizar Día" del Supervisor Panel que hoy no manda JWT).
-- Varias rutas siguen sin `verificarAutenticacion` (ver tabla de Endpoints) - se cierran en el mismo paso que el
-  Login llegue al Frontend.
+- `finalizarDia` no filtra por `hacienda_id`: un Supervisor con permiso para cerrar jornada cierra TODAS las
+  haciendas del día a la vez, no solo la suya. Ya no está bloqueado por el Login (que ya existe) - queda pendiente
+  como su propio cambio, ver Pendiente.
 - `SequelizeMeta` de este checkout tenía un hueco (migraciones aplicadas a mano sin registrar) - ya reconciliado
   localmente, pero verificar en cualquier entorno nuevo con `sequelize-cli db:migrate:status`.
 
 ## Pendiente
 
 **Backend**
-- Filtrar `finalizarDia` por `hacienda_id` (bloqueado por Login, ver arriba).
-- Cerrar las rutas `público*` con `verificarAutenticacion` una vez exista el Login en el Frontend.
+- Filtrar `finalizarDia` por `hacienda_id` del Supervisor que ejecuta el cierre (ver Deuda técnica heredada) - es un
+  hueco de alcance/autorización distinto al de `verificarAutenticacion`/`requireRol` (ya cerrado, ver Endpoints):
+  ahí el Supervisor SÍ tiene permiso para la acción, solo que la acción no respeta el límite de "su" hacienda.
 
 **Frontend** (sobre lo ya construido, ver sección de arriba)
 - UI de Camino A (teclado numérico/código) y Camino B (QR flotante que se auto-refresca cada ~90s) - el Supervisor
