@@ -28,12 +28,42 @@ const getFetchLocalEcuador = ():string => {
 const ROLES_OPERADOR_VALIDOS = ['MECANICO', 'OPERADOR'];
 
 /*
+Chequeo PREVIO de codigo_megued/cedula duplicados, antes de intentar el INSERT/UPDATE: sin esto, el choque contra
+el UNIQUE de la BD tumbaba con un 500 generico y sin informacion (el usuario solo veia "Error al crear el operador",
+sin saber cual campo chocaba ni con quien). 'idAExcluir' es el propio id al EDITAR, para no chocar contra si mismo.
+Devuelve un mensaje listo para mostrar (con el nombre de quien ya tiene ese dato), o null si no hay conflicto.
+*/
+const verificarDuplicadosOperador = async(
+    datos: { codigo_megued?: string; cedula?: string | null },
+    idAExcluir?: number
+): Promise<string | null> => {
+    if(datos.codigo_megued){
+        const where: any = { codigo_megued: datos.codigo_megued };
+        if(idAExcluir) where.id = { [Op.ne]: idAExcluir };
+        const existente = await Operador.findOne({ where });
+        if(existente){
+            return `El código MEGUED "${datos.codigo_megued}" ya está registrado a nombre de ${existente.nombre_completo}.`;
+        }
+    }
+    if(datos.cedula){
+        const where: any = { cedula: datos.cedula };
+        if(idAExcluir) where.id = { [Op.ne]: idAExcluir };
+        const existente = await Operador.findOne({ where });
+        if(existente){
+            return `La cédula "${datos.cedula}" ya está registrada a nombre de ${existente.nombre_completo}.`;
+        }
+    }
+    return null;
+};
+
+/*
 Valida el trio opcional supervisor_id/usuario/clave que puede venir al crear o actualizar un Operador.
 Devuelve null (y ya respondio el error) si algo no es valido, o el objeto listo para mezclar en Operador.create/update.
-usuario y clave van SIEMPRE juntos: no tiene sentido mandar uno sin el otro.
+usuario y clave van SIEMPRE juntos: no tiene sentido mandar uno sin el otro. 'idAExcluir' es el propio id al EDITAR,
+para no rechazar el usuario que el operador YA tenia asignado.
 */
 const validarCredencialesOperador = async(
-    req: Request, res: Response
+    req: Request, res: Response, idAExcluir?: number
 ): Promise<{ supervisor_id: number | null; usuario: string | null; clave_hash: string | null } | null> => {
     const { supervisor_id, usuario, clave } = req.body;
 
@@ -59,9 +89,12 @@ const validarCredencialesOperador = async(
             return null;
         }
         const usuarioExistente = await Usuario.findOne({ where: { usuario }});
-        const operadorConMismoUsuario = await Operador.findOne({ where: { usuario }});
+        const operadorConMismoUsuario = await Operador.findOne({
+            where: idAExcluir ? { usuario, id: { [Op.ne]: idAExcluir } } : { usuario },
+        });
         if(usuarioExistente || operadorConMismoUsuario){
-            res.status(409).json({ message: 'Ese nombre de usuario ya esta en uso.'});
+            const nombreExistente = usuarioExistente?.nombre_completo ?? operadorConMismoUsuario?.nombre_completo;
+            res.status(409).json({ message: `El usuario "${usuario}" ya está en uso por ${nombreExistente}.`});
             return null;
         }
         usuarioFinal = usuario;
@@ -69,6 +102,18 @@ const validarCredencialesOperador = async(
     }
 
     return { supervisor_id: supervisorIdFinal, usuario: usuarioFinal, clave_hash: claveHashFinal };
+};
+
+//Traduce un choque de UNIQUE que se nos haya escapado del chequeo previo (condicion de carrera) a un 409 legible,
+//en vez de exponer el error crudo de la BD (con SQL y parametros) al cliente.
+const mensajeDuplicadoGenerico = (err: any): string | null => {
+    if(err?.name !== 'SequelizeUniqueConstraintError') return null;
+    const campo = err.errors?.[0]?.path;
+    const valor = err.errors?.[0]?.value;
+    if(campo === 'codigo_megued') return `El código MEGUED "${valor}" ya está en uso.`;
+    if(campo === 'cedula') return `La cédula "${valor}" ya está en uso.`;
+    if(campo === 'usuario') return `El usuario "${valor}" ya está en uso.`;
+    return 'Ese dato ya está en uso por otro registro.';
 };
 
 //Crear un Nuevo Operador
@@ -82,6 +127,12 @@ export const crearOperador = async (req:Request, res:Response):Promise<void> => 
         }
         if(rol && !ROLES_OPERADOR_VALIDOS.includes(rol)){
             res.status(400).json({message: `rol debe ser uno de: ${ROLES_OPERADOR_VALIDOS.join(', ')}.`});
+            return;
+        }
+
+        const mensajeDuplicado = await verificarDuplicadosOperador({ codigo_megued, cedula: cedula || null });
+        if(mensajeDuplicado){
+            res.status(409).json({ message: mensajeDuplicado });
             return;
         }
 
@@ -108,7 +159,13 @@ export const crearOperador = async (req:Request, res:Response):Promise<void> => 
         res.status(201).json(perfil);
     }
     catch(err){
-        res.status(500).json({message:'Error al crear el operador',err});
+        const mensajeDuplicado = mensajeDuplicadoGenerico(err);
+        if(mensajeDuplicado){
+            res.status(409).json({ message: mensajeDuplicado });
+            return;
+        }
+        console.error('Error al crear el operador:', err);
+        res.status(500).json({message:'Error al crear el operador. Intenta de nuevo.'});
     }
 }
 
@@ -129,7 +186,13 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
             return;
         }
 
-        const credenciales = await validarCredencialesOperador(req, res);
+        const mensajeDuplicado = await verificarDuplicadosOperador({ cedula: cedula || null }, operador.id);
+        if(mensajeDuplicado){
+            res.status(409).json({ message: mensajeDuplicado });
+            return;
+        }
+
+        const credenciales = await validarCredencialesOperador(req, res, operador.id);
         if(!credenciales) return;
 
         await operador.update({
@@ -146,7 +209,13 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
         res.json({message:"Operador actualizado exitosamente", operador: perfil});
     }
     catch(err){
-        res.status(404).json({message: 'Error al actualizar el operador', err});
+        const mensajeDuplicado = mensajeDuplicadoGenerico(err);
+        if(mensajeDuplicado){
+            res.status(409).json({ message: mensajeDuplicado });
+            return;
+        }
+        console.error('Error al actualizar el operador:', err);
+        res.status(500).json({message: 'Error al actualizar el operador. Intenta de nuevo.'});
     }
 };
 

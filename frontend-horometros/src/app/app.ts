@@ -35,7 +35,13 @@ export class App {
         // Si estamos en una vista interna de asistencia (asistente, marcación o supervisor)
         if (url.startsWith('/asistencia/') && url !== '/asistencia') {
           this.menuButtonText = 'Menú';
-          this.menuButtonLink = '/asistencia';
+          /*
+          Solo ADMIN ve el menu de 3 tarjetas en /asistencia (asistenciaRedirectGuard manda a los demas
+          roles directo a su propio panel, ver app.routes.ts) - para cualquier otro rol, "Menú" apuntando
+          a /asistencia solo lo rebotaria de vuelta al mismo panel donde ya esta (no hace nada visible).
+          Por eso el resto va directo al Dashboard.
+          */
+          this.menuButtonLink = this.authService.tieneRol('ADMIN') ? '/asistencia' : '/dashboard';
         } else {
           // Para el Dashboard, Horómetros o el Menú Principal de Asistencia
           this.menuButtonText = 'Menú Principal';

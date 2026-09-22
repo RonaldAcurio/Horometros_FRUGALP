@@ -161,10 +161,13 @@ de QR), HttpClient con interceptor de auth, testing con Vitest. Rutas por `loadC
   panel de la Asistente solo porque el menú no distinguía roles. Los 3 paneles además llevan `roleGuard` propio
   (`/asistencia/asistente` → ADMIN/ASISTENTE, `/asistencia/supervisor` → ADMIN/SUPERVISOR) para que esto no dependa
   solo de la navegación: aunque alguien escriba la URL directo, el guard de rol lo bloquea igual.
+  **Botón "Menú" del header (`app.ts`):** en cualquier vista `/asistencia/*`, apunta a `/asistencia` SOLO si el rol
+  es ADMIN (ahí sí tiene sentido: vuelve al menú de 3 tarjetas). Para cualquier otro rol apunta directo a
+  `/dashboard` - si apuntara a `/asistencia`, `asistenciaRedirectGuard` lo rebotaría de inmediato al mismo panel
+  donde ya está, y el botón parecería "no hacer nada" (bug real reportado y corregido en esta misma ronda).
 - `marcacion-kiosco` - el flujo clásico de escaneo de carnet físico (cámara al 40%, captura de evidencia). Sin guard
   a propósito: el trabajador lo usa SIN loguearse. El Supervisor también llega aquí desde un botón "📷 Escanear" en
-  su propio panel (en vez de una tarjeta aparte en el menú); el botón "Menú" del header lo regresa a su panel porque
-  `/asistencia` redirige según su rol.
+  su propio panel (en vez de una tarjeta aparte en el menú).
 - `supervisor-panel` - validación diaria, observaciones, Finalizar Día, botón "📷 Escanear" hacia el kiosco.
 - `asistencia-panel` - Directorio de Operadores (+ credenciales usuario/clave/supervisor_id) e Historial de
   Asistencia con filtro de fecha (rol Asistente).
@@ -187,6 +190,15 @@ componente - el zone.js de este proyecto no lo dispara solo. Es el patrón que y
 silencio (se descubrió así un bug real: los modales de "Nuevo Usuario"/"Nuevo Operador" no se cerraban tras guardar).
 Los `signal()` (usados para toggles de UI como mostrar/ocultar clave, o los estados de `NotificacionService`/
 `ConfirmacionService`) sí se actualizan solos, sin necesitar este truco.
+
+**Otro detalle importante para quien agregue una columna UNIQUE nueva:** `crearOperador`/`actualizarOperador`
+(`codigo_megued`, `cedula`) y `crearUsuario` (`usuario`) ahora chequean el duplicado ANTES del INSERT/UPDATE
+(`verificarDuplicadosOperador`) y devuelven un 409 con un mensaje que nombra el campo, el valor y quién ya lo tiene
+(ej: `La cédula "1111111111" ya está registrada a nombre de Juan Pérez.`) - el catch general también traduce
+cualquier `SequelizeUniqueConstraintError` que se escape (condición de carrera) al mismo tipo de mensaje, en vez de
+devolver el error crudo de Sequelize/Postgres (que además exponía SQL y parámetros en la respuesta al cliente - un
+detalle de seguridad, no solo de UX). Antes de este fix, crear/editar con un dato duplicado tumbaba con un 500
+genérico sin decir cuál campo chocaba ni con quién (bug real reportado por el usuario).
 
 **Deuda técnica heredada (ya corregida donde se indica):**
 - ~~`apuUrl`~~ → corregido a `apiUrl` en environments y en los servicios que lo usaban.

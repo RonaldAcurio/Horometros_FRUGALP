@@ -49,7 +49,8 @@ export const crearUsuario = async(req:Request, res:Response):Promise<void> => {
         const usuarioExistente = await Usuario.findOne({ where: { usuario }});
         const operadorConMismoUsuario = await Operador.findOne({ where: { usuario }});
         if(usuarioExistente || operadorConMismoUsuario){
-            res.status(409).json({ message: 'Ese nombre de usuario ya esta en uso.'});
+            const nombreExistente = usuarioExistente?.nombre_completo ?? operadorConMismoUsuario?.nombre_completo;
+            res.status(409).json({ message: `El usuario "${usuario}" ya está en uso por ${nombreExistente}.`});
             return;
         }
 
@@ -74,7 +75,8 @@ export const crearUsuario = async(req:Request, res:Response):Promise<void> => {
             throw errorCreacion;
         }
     }catch(err){
-        res.status(500).json({ message: 'Error al crear el usuario.', err});
+        console.error('Error al crear el usuario:', err);
+        res.status(500).json({ message: 'Error al crear el usuario. Intenta de nuevo.'});
     }
 };
 
