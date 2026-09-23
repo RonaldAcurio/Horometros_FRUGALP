@@ -101,17 +101,15 @@ export class AsistenciaService {
     }
 
     //GET -> /api/asistencia/historial?fecha_inicio=YYYY-MM-DD&fecha_fin=YYYY-MM-DD
-    obtenerHistorial(fechaInicio?: string, fechaFin?: string, pagina:number=1, limite:number=30
+    obtenerHistorial(fechaInicio?: string, fechaFin?: string, pagina:number=1, limite:number=30, haciendaId?: number
     ): Observable<{data:Asistencia[]; total:number; pagina:number; totalPaginas:number}>{
-        let params = `?pagina=${pagina}&limite=${limite}`;
-        if(fechaInicio && fechaFin){
-            params = `?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`;
-        } else if(fechaInicio){
-            params = `?fecha_inicio=${fechaInicio}`;
-        }
+        let params = new HttpParams().set('pagina', pagina).set('limite', limite);
+        if(fechaInicio) params = params.set('fecha_inicio', fechaInicio);
+        if(fechaFin) params = params.set('fecha_fin', fechaFin);
+        if(haciendaId) params = params.set('hacienda_id', haciendaId);
 
         return this.http.get<{data:Asistencia[]; total:number; pagina:number; totalPaginas:number}>(
-            `${this.baseUrl}/historial${params}`);
+            `${this.baseUrl}/historial`, { params });
     }
 
     // GET -> /api/asistencia/:id/foto (se pide UNICAMENTE cuando el usuario hace clic en "Ver Evidencia"

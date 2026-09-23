@@ -528,33 +528,49 @@ lo confirmado:
     Directorio de Operadores - este último solo se habilita cuando el Historial está filtrado a **un solo día**
     (imprime todas las hojas físicas de ese día de una vez, de todos los operadores); con varios días combinados
     no se habilita, para no tener que resolver "cuántas hojas de cuántos días imprimo". El "Ver/Imprimir" **por
-    operador individual** ya se construyó esta ronda, ver abajo.
+    operador individual** (Directorio) y **por fila individual** (Historial, un solo día) ya se construyeron, ver
+    abajo.
   - Nueva pestaña de ADMIN para crear/editar/eliminar Equipos y Secciones (catálogos que hoy no tienen UI de
     gestión, solo lectura) - Actividades ya tiene sus 3 endpoints de mutación protegidos y listos
     (`POST/PUT/DELETE /api/actividad`, ver Endpoints), y Equipos ganó un `GET /api/equipos` de solo lectura esta
     ronda (lo necesitaba el Panel de Actividades) - falta el resto del CRUD y la pantalla.
 
-### Ver/Imprimir hoja de actividades (Directorio de Operadores)
+### Ver/Imprimir hoja de actividades (Directorio de Operadores + Historial de Asistencia)
 
-Con un operador seleccionado en la Ficha (Panel de Asistente, `/asistencia/asistente`), el botón "📄 Ver/Imprimir
-Hoja de Actividades" (`asistencia-panel.ts`, `verImprimirHojaActividades`) abre una ventana nueva con el mismo
-diseño que la hoja física "REPORTES DE LABORES DIARIOS" que el usuario compartió como foto, mismo patrón que ya
-existía para `imprimirQR()` (HTML propio + `window.print()`, sin componente de impresión aparte). Columnas:
-FECHA / MECÁNICO / EQUIPO / ÁREA / DAÑO / TIEMPO ESTIMADO / TALLER-CAMPO - la hoja física no tiene un campo
-equivalente exacto a "daño" ni a "tiempo estimado" en el modelo actual, así que se mapean del dato más cercano
-disponible: DAÑO = `RegistroActividad.observaciones` (el campo de texto libre), TIEMPO ESTIMADO = duración real
-calculada (`hora_fin - hora_inicio`, o "—" si la labor sigue abierta), TALLER-CAMPO = `Actividad.categoria`.
+`asistencia-panel.ts`, `abrirVentanaHojaActividades(op, registros, autoImprimir)` abre una ventana nueva con el
+mismo diseño que la hoja física "REPORTES DE LABORES DIARIOS" que el usuario compartió como foto, mismo patrón
+que ya existía para `imprimirQR()` (HTML propio, sin componente de impresión aparte). El Mecánico va en un
+subtítulo del encabezado (`Mecánico: <nombre> · <código>`), no como columna de la tabla, porque cada llamada es
+de un solo operador (igual que la hoja física, que solo repite Fecha por fila). Columnas de la tabla: FECHA /
+EQUIPO / ÁREA / DAÑO / TIEMPO ESTIMADO / TALLER-CAMPO - la hoja física no tiene un campo equivalente exacto a
+"daño" ni a "tiempo estimado" en el modelo actual, así que se mapean del dato más cercano disponible: DAÑO =
+`RegistroActividad.observaciones` (el campo de texto libre), TIEMPO ESTIMADO = duración real calculada
+(`hora_fin - hora_inicio`, o "—" si la labor sigue abierta), TALLER-CAMPO = `Actividad.categoria`. La ventana
+siempre trae un botón "🖨️ Imprimir" manual en pantalla (oculto en `@media print`); el parámetro `autoImprimir`
+solo controla si ADEMÁS se dispara `window.print()` al abrir.
 
-Fuente de datos: `GET /api/registro-actividades/por-operador?operador_id=X` (nuevo, distinto de
-`obtenerRegistrosPorAsistencia` que es de una sola jornada) - trae las labores de ESE operador a través de
-**varias** jornadas (join a `Asistencia` por `operador_id`, con rango de fechas opcional vía
-`fecha_inicio`/`fecha_fin` que el frontend todavía no usa - hoy siempre pide el historial completo). Mismo
-control de acceso que el resto del módulo (`puedeOperarSobre`): ADMIN/ASISTENTE/SUPERVISOR ven cualquiera, el
-propio Operador solo el suyo.
-  - Nueva pestaña de ADMIN para crear/editar/eliminar Equipos y Secciones (catálogos que hoy no tienen UI de
-    gestión, solo lectura) - Actividades ya tiene sus 3 endpoints de mutación protegidos y listos
-    (`POST/PUT/DELETE /api/actividad`, ver Endpoints), y Equipos ganó un `GET /api/equipos` de solo lectura esta
-    ronda (lo necesitaba el Panel de Actividades) - falta el resto del CRUD y la pantalla.
+Dos puntos de entrada, mismo método interno:
+- **Directorio de Operadores** (Ficha con un operador seleccionado): botón "📄 Ver/Imprimir Hoja de Actividades"
+  (`verImprimirHojaActividades`) - trae el historial COMPLETO de ese operador (todas sus jornadas, sin rango de
+  fecha) y dispara auto-impresión (`autoImprimir=true`), igual que el comportamiento original.
+- **Historial de Asistencia** (tabla con filtros de fecha/hacienda): columna "Ver/Imprimir" reemplazó a la
+  columna "Actividades" (que era redundante con lo que ya se ve en el Panel de Supervisor). Cada fila tiene
+  botones separados "👁️ Ver" (`verHojaFilaHistorial`, `autoImprimir=false`, solo abre la vista previa) e
+  "🖨️ Imprimir" (`imprimirHojaFilaHistorial`, `autoImprimir=true`) - ambos scoped a **ese día puntual** (la
+  fecha de esa fila, vía `fecha_inicio=fecha_fin=reg.fecha`), no al historial completo del operador.
+
+Fuente de datos: `GET /api/registro-actividades/por-operador?operador_id=X&fecha_inicio=Y&fecha_fin=Z` (nuevo,
+distinto de `obtenerRegistrosPorAsistencia` que es de una sola jornada) - trae las labores de ESE operador a
+través de **varias** jornadas (join a `Asistencia` por `operador_id`); `fecha_inicio`/`fecha_fin` son opcionales,
+el Directorio no los manda (historial completo) y el Historial sí (un solo día). Mismo control de acceso que el
+resto del módulo (`puedeOperarSobre`): ADMIN/ASISTENTE/SUPERVISOR ven cualquiera, el propio Operador solo el
+suyo.
+
+**Filtro por hacienda en el Historial**: nuevo `<select>` junto a los filtros de fecha, manda `hacienda_id` a
+`GET /api/asistencia/historial`. El Operador no tiene `hacienda_id` propio (vive del Supervisor al que pertenece
+de forma permanente, ver tabla de roles), así que el backend filtra vía include anidado
+`operador -> supervisor -> hacienda_id` con `required: true` en el include de `operador` cuando hay filtro (si
+no, Sequelize deja el include como LEFT JOIN y el `where` anidado del supervisor no filtra nada).
 
 ## Flujo de trabajo de esta sesión
 

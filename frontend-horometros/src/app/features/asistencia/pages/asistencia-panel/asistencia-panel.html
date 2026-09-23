@@ -169,6 +169,11 @@
         <input type="date" class="date-input" [(ngModel)]="fechaInicioFiltro">
         <label class="filter-label">Hasta:</label>
         <input type="date" class="date-input" [(ngModel)]="fechaFinFiltro">
+        <label class="filter-label">Hacienda:</label>
+        <select class="input-control" [(ngModel)]="haciendaIdFiltro">
+          <option [ngValue]="null">Todas</option>
+          <option *ngFor="let h of haciendas" [ngValue]="h.id">{{ h.nombre }}</option>
+        </select>
       </div>
       <button class="btn btn-primary btn-sm" (click)="buscarHistorial()">🔍 Buscar</button>
     </div>
@@ -183,7 +188,7 @@
               <th>Ingreso</th>
               <th>Salida</th>
               <th>Horas Trabajadas</th>
-              <th>Actividades</th>
+              <th>Ver/Imprimir</th>
               <th>Evidencia</th>
               <th>Observación</th>
             </tr>
@@ -199,12 +204,18 @@
               </td>
               <td>{{ reg.total_horas != null ? (reg.total_horas + ' h') : '—' }}</td>
               <td>
-                <span *ngIf="reg.actividades && reg.actividades.length > 0" class="text-emerald-400 font-medium">
-                  <span *ngFor="let act of reg.actividades; let last = last">
-                    {{ act.codigo_megued }}{{ last ? '' : ', ' }}
-                  </span>
-                </span>
-                <span *ngIf="!reg.actividades || reg.actividades.length === 0" class="text-muted-sm">Sin registrar</span>
+                <div class="flex gap-1">
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    [disabled]="cargandoReporteImpresion"
+                    (click)="verHojaFilaHistorial(reg)"
+                  >👁️ Ver</button>
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    [disabled]="cargandoReporteImpresion"
+                    (click)="imprimirHojaFilaHistorial(reg)"
+                  >🖨️ Imprimir</button>
+                </div>
               </td>
               <td>
                 <app-visor-foto [asistenciaId]="reg.id" [tieneFoto]="!!reg.tiene_foto"></app-visor-foto>

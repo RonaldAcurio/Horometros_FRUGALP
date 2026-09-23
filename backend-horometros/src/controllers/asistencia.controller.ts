@@ -782,7 +782,7 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
 // Historial con filtros opcionales de fechas
 export const obtenerHistorial = async(req:Request, res:Response):Promise<void> => {
     try{
-        const { fecha_inicio, fecha_fin, operador_id } = req.query;
+        const { fecha_inicio, fecha_fin, operador_id, hacienda_id } = req.query;
         const whereCondition:any = {};
 
         // Filtro por rango de fecha
@@ -813,11 +813,26 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
        const limitePagina = Math.min(100, Math.max(1, Number(req.query['limite']) || 30));
        const offset = (paginaActual -1) * limitePagina;
 
+        /*
+        Filtro opcional por hacienda: el Operador no tiene hacienda_id propio (vive del Supervisor al que
+        pertenece de forma permanente, ver CLAUDE.md), asi que se filtra via el include anidado
+        operador -> supervisor -> hacienda_id. `required: true` en 'operador' cuando hay filtro convierte el
+        include en INNER JOIN (si no, Sequelize lo deja LEFT JOIN y el where anidado no filtra nada).
+        */
+        const filtrarPorHacienda = hacienda_id !== undefined && hacienda_id !== '';
         const { rows:historial, count:total } = await Asistencia.findAndCountAll({
             where: whereCondition,
             attributes:ATRIBUTOS_SIN_FOTO,
             include:[
-                { model: Operador, as: 'operador' },
+                {
+                    model: Operador, as: 'operador',
+                    required: filtrarPorHacienda,
+                    include: [{
+                        model: Usuario, as: 'supervisor',
+                        attributes: [],
+                        ...(filtrarPorHacienda ? { where: { hacienda_id: Number(hacienda_id) } } : {}),
+                    }],
+                },
                 { model: Actividad, as: 'actividad' },
                 { model: Actividad, as: 'actividades'},
             ],

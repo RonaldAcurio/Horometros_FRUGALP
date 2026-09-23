@@ -4,7 +4,9 @@ import * as QRCode from 'qrcode';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 import { UsuarioService } from '../../../../core/services/usuario.service';
 import { RegistroActividadService } from '../../../../core/services/registro-actividad.service';
+import { HaciendaService } from '../../../../core/services/hacienda.service';
 import { Usuario } from '../../../../core/models/usuario.model';
+import { Hacienda } from '../../../../core/models/hacienda.model';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { VisorFoto } from '../../components/visor-foto/visor-foto';
@@ -69,19 +71,23 @@ export class AsistenciaPanel implements OnInit{
   historial: Asistencia[] = [];
   fechaInicioFiltro: string= '';
   fechaFinFiltro:string = '';
+  // Filtro por hacienda: el Operador no tiene hacienda propia, se filtra via su Supervisor (ver backend).
+  haciendas: Hacienda[] = [];
+  haciendaIdFiltro: number | null = null;
   //Paginacion del historial: el backend nunca manda todo el rando de fechas de una sola vez
   paginaHistorial: number = 1;
   totalPaginasHistorial: number = 1;
   totalHistorial: number = 0;
 
-  // Reporte imprimible "Ver/Imprimir" (Directorio de Operadores): carga las labores de UN operador para
-  // mostrarlas con el mismo diseño de la hoja física "REPORTES DE LABORES DIARIOS".
+  // Reporte imprimible "Ver/Imprimir" (Directorio de Operadores y fila del Historial): carga las labores de un
+  // operador para mostrarlas con el mismo diseño de la hoja física "REPORTES DE LABORES DIARIOS".
   cargandoReporteImpresion = false;
 
   constructor(
     private asistenciaService: AsistenciaService,
     private usuarioService: UsuarioService,
     private registroActividadService: RegistroActividadService,
+    private haciendaService: HaciendaService,
     private cdr: ChangeDetectorRef,
     private notificacionService: NotificacionService
   ){};
@@ -89,6 +95,14 @@ export class AsistenciaPanel implements OnInit{
   ngOnInit(): void {
     this.cargarOperadores();
     this.cargarSupervisores();
+    this.cargarHaciendas();
+  }
+
+  cargarHaciendas(): void {
+    this.haciendaService.obtenerHaciendas().subscribe({
+      next: (data) => { this.haciendas = data; this.cdr.detectChanges(); },
+      error: (err) => console.error('Error cargando haciendas:', err),
+    });
   }
 
   cargarSupervisores(): void {
@@ -297,22 +311,53 @@ export class AsistenciaPanel implements OnInit{
   }
 
   /*
-  Ver/Imprimir hoja de actividades de UN operador (Directorio de Operadores): mismo diseño de la hoja física
-  "REPORTES DE LABORES DIARIOS" que el usuario compartió (columnas FECHA/MECANICO/EQUIPO/AREA/DAÑO/TIEMPO
-  ESTIMADO/TALLER-CAMPO). Sigue el mismo patrón que imprimirQR() - ventana nueva con HTML propio y
-  window.print(), sin depender de un componente de impresión aparte.
+  Ver/Imprimir hoja de actividades: mismo diseño de la hoja física "REPORTES DE LABORES DIARIOS" que el usuario
+  compartió (columnas FECHA/MECANICO/EQUIPO/AREA/DAÑO/TIEMPO ESTIMADO/TALLER-CAMPO). Sigue el mismo patrón que
+  imprimirQR() - ventana nueva con HTML propio, sin depender de un componente de impresión aparte.
+
+  Dos puntos de entrada:
+  - Directorio de Operadores (`verImprimirHojaActividades`): historial COMPLETO de un operador (todas sus
+    jornadas), combina ver+imprimir en un solo botón - se queda igual que antes.
+  - Historial de Asistencia (`verHojaFilaHistorial`/`imprimirHojaFilaHistorial`): UN SOLO día puntual (la fila
+    clicada), con "Ver" y "Imprimir" como acciones separadas - "Ver" abre la vista previa sin disparar el
+    diálogo de impresión del navegador, "Imprimir" sí lo dispara de inmediato.
   */
   verImprimirHojaActividades(op: Operador): void {
     this.cargandoReporteImpresion = true;
     this.registroActividadService.obtenerPorOperador(op.id).subscribe({
       next: (registros) => {
         this.cargandoReporteImpresion = false;
-        this.abrirVentanaHojaActividades(op, registros);
+        this.abrirVentanaHojaActividades(op, registros, true);
         this.cdr.detectChanges();
       },
       error: (err) => {
         this.cargandoReporteImpresion = false;
         this.notificacionService.error(err.error?.message || 'Error al cargar las labores del operador.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  verHojaFilaHistorial(reg: Asistencia): void {
+    this.abrirHojaFilaHistorial(reg, false);
+  }
+
+  imprimirHojaFilaHistorial(reg: Asistencia): void {
+    this.abrirHojaFilaHistorial(reg, true);
+  }
+
+  private abrirHojaFilaHistorial(reg: Asistencia, autoImprimir: boolean): void {
+    if (!reg.operador) return;
+    this.cargandoReporteImpresion = true;
+    this.registroActividadService.obtenerPorOperador(reg.operador_id, reg.fecha, reg.fecha).subscribe({
+      next: (registros) => {
+        this.cargandoReporteImpresion = false;
+        this.abrirVentanaHojaActividades(reg.operador!, registros, autoImprimir);
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.cargandoReporteImpresion = false;
+        this.notificacionService.error(err.error?.message || 'Error al cargar las labores de ese día.');
         this.cdr.detectChanges();
       },
     });
@@ -327,15 +372,16 @@ export class AsistenciaPanel implements OnInit{
     return horas > 0 ? `${horas}h ${resto}min` : `${resto}min`;
   }
 
-  private abrirVentanaHojaActividades(op: Operador, registros: RegistroActividad[]): void {
+  private abrirVentanaHojaActividades(op: Operador, registros: RegistroActividad[], autoImprimir: boolean): void {
     const ventana = window.open('', '_blank');
     if (!ventana) return;
 
+    // Mecánico va en el encabezado (siempre es UN solo operador por llamada) - así la tabla queda más parecida
+    // a la hoja física, que solo repite Fecha por fila y escribe el nombre del mecánico una sola vez.
     const filas = registros.length > 0
       ? registros.map((reg) => `
           <tr>
             <td>${reg.asistencia?.fecha || '—'}</td>
-            <td>${op.nombre_completo}</td>
             <td>${reg.equipo ? `${reg.equipo.codigo_megued} - ${reg.equipo.nombre_equipo}` : '—'}</td>
             <td>${reg.area || '—'}</td>
             <td>${reg.observaciones || '—'}</td>
@@ -343,7 +389,7 @@ export class AsistenciaPanel implements OnInit{
             <td>${reg.actividad?.categoria || '—'}</td>
           </tr>
         `).join('')
-      : `<tr><td colspan="7" class="sin-registros">Sin labores registradas.</td></tr>`;
+      : `<tr><td colspan="6" class="sin-registros">Sin labores registradas.</td></tr>`;
 
     ventana.document.write(`
       <html>
@@ -357,16 +403,22 @@ export class AsistenciaPanel implements OnInit{
             th, td { border: 1px solid #9ca3af; padding: 6px 8px; text-align: left; }
             th { background: #f3f4f6; text-transform: uppercase; font-size: 11px; }
             .sin-registros { text-align: center; color: #6b7280; padding: 20px; }
+            .barra-acciones { margin-bottom: 16px; }
+            .barra-acciones button {
+              background: #059669; color: #fff; border: none; border-radius: 6px;
+              padding: 8px 16px; font-size: 13px; cursor: pointer;
+            }
+            @media print { .barra-acciones { display: none; } }
           </style>
         </head>
         <body>
+          <div class="barra-acciones"><button onclick="window.print()">🖨️ Imprimir</button></div>
           <h1>Reportes de Labores Diarios</h1>
-          <p class="subtitulo">${op.nombre_completo} · ${op.codigo_megued || ''}</p>
+          <p class="subtitulo">Mecánico: ${op.nombre_completo}${op.codigo_megued ? ' · ' + op.codigo_megued : ''}</p>
           <table>
             <thead>
               <tr>
                 <th>Fecha</th>
-                <th>Mecánico</th>
                 <th>Equipo</th>
                 <th>Área</th>
                 <th>Daño</th>
@@ -376,7 +428,7 @@ export class AsistenciaPanel implements OnInit{
             </thead>
             <tbody>${filas}</tbody>
           </table>
-          <script>window.print();</script>
+          ${autoImprimir ? '<script>window.print();</script>' : ''}
         </body>
       </html>
     `);
@@ -406,10 +458,11 @@ export class AsistenciaPanel implements OnInit{
 
   private cargarPaginaHistorial():void{
     this.asistenciaService.obtenerHistorial(
-      this.fechaInicioFiltro || undefined, 
+      this.fechaInicioFiltro || undefined,
       this.fechaFinFiltro || undefined,
       this.paginaHistorial,
-      30
+      30,
+      this.haciendaIdFiltro || undefined
     ).subscribe({
       next:(res) => {
         this.historial = res.data || [];
