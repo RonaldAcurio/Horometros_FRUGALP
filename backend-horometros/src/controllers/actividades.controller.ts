@@ -1,16 +1,18 @@
 import { Request, Response } from 'express'
+import { Op } from 'sequelize'
 import { Actividad } from '../models'
 
 /*
 Consultar todas las Actividades. Sin 'pagina'/'limite' en la query devuelve el arreglo completo (asi lo esperan
 el kiosco y el selector de actividades del camino codigo, que muestran TODO el catalogo como checklist). Con
 'pagina' o 'limite', responde paginado (mismo patron que 'obtenerAsistenciaHoy') - lo usa el selector del Panel
-de Actividades, cuyo catalogo puede crecer.
+de Actividades, cuyo catalogo puede crecer. 'q' opcional (solo aplica en el modo paginado) filtra por
+codigo_megued/description - lo usa el autocompletar (escribe y va apareciendo la actividad).
 */
 export const ObtenerActividades = async( req:Request, res:Response ) => {
     try{
 
-        const { categoria, pagina: paginaQuery, limite: limiteQuery } = req.query;
+        const { categoria, pagina: paginaQuery, limite: limiteQuery, q: qQuery } = req.query;
 
         const wherecategoria = categoria ? { categoria: String(categoria).toUpperCase() } : {};
 
@@ -25,9 +27,18 @@ export const ObtenerActividades = async( req:Request, res:Response ) => {
         const pagina = Math.max(1, Number(paginaQuery) || 1);
         const limite = Math.min(100, Math.max(1, Number(limiteQuery) || 20));
         const offset = (pagina - 1) * limite;
+        const q = typeof qQuery === 'string' ? qQuery.trim() : '';
+
+        const where = q ? {
+            ...wherecategoria,
+            [Op.or]: [
+                { codigo_megued: { [Op.iLike]: `%${q}%` } },
+                { description: { [Op.iLike]: `%${q}%` } },
+            ],
+        } : wherecategoria;
 
         const { rows: actividades, count: total } = await Actividad.findAndCountAll({
-            where : wherecategoria,
+            where,
             order : [['id','ASC']],
             limit: limite,
             offset,

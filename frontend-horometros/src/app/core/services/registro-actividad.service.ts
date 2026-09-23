@@ -12,12 +12,12 @@ export class RegistroActividadService {
 
     constructor(private http: HttpClient) {}
 
-    // GET -> /api/equipos?pagina=1&limite=20 - paginado (el catalogo puede crecer), lo consume el selector del
-    // Panel de Actividades con "Cargar más".
-    obtenerEquipos(pagina: number, limite: number): Observable<RespuestaPaginada<Equipo>> {
-        return this.http.get<RespuestaPaginada<Equipo>>(`${environment.apiUrl}/equipos`, {
-            params: { pagina, limite },
-        });
+    // GET -> /api/equipos?pagina=1&limite=20&q=... - paginado y filtrable por texto (codigo_megued/nombre_equipo),
+    // lo consume el autocompletar de Equipo del Panel de Actividades.
+    obtenerEquipos(pagina: number, limite: number, q?: string): Observable<RespuestaPaginada<Equipo>> {
+        let params = new HttpParams().set('pagina', pagina).set('limite', limite);
+        if (q) params = params.set('q', q);
+        return this.http.get<RespuestaPaginada<Equipo>>(`${environment.apiUrl}/equipos`, { params });
     }
 
     obtenerPorAsistencia(asistenciaId: number): Observable<RegistroActividad[]> {

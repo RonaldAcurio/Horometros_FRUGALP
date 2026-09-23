@@ -50,23 +50,33 @@ export class MiJornada implements OnInit, OnDestroy {
   registros: RegistroActividad[] = [];
 
   /*
-  Los selectores de equipo/actividad del formulario se cargan paginados (el catalogo puede crecer con el
-  tiempo) y van acumulando paginas con "Cargar más" en vez de mostrar controles de pagina - dentro de un
-  <select> nativo no tiene sentido "ir a la pagina anterior" a mitad de elegir una opcion.
+  Los selectores de equipo/actividad del formulario son autocompletar: el trabajador escribe y van apareciendo
+  las coincidencias (el catalogo puede crecer con el tiempo, no tiene sentido mostrarlo entero en un <select>).
+  Cada busqueda pide la pagina 1 filtrada por el texto (con debounce); "Cargar más" dentro de la misma búsqueda
+  acumula la siguiente página. Elegir una opción llena el id real (nuevoRegistro.equipo_id/actividad_id); el
+  texto del input es solo lo que se está buscando o lo ya elegido - cambiar el texto sin volver a elegir borra
+  la selección anterior, para no mandar un id que ya no corresponde a lo que se ve escrito.
   */
   equipos: Equipo[] = [];
+  equipoBusqueda = '';
+  mostrarOpcionesEquipo = false;
   equiposPagina = 0;
   equiposTotalPaginas = 1;
   cargandoMasEquipos = false;
+  private debounceEquipo?: ReturnType<typeof setTimeout>;
 
   // (actividadesCatalogo, declarado arriba en "Fase codigo": catalogo COMPLETO sin paginar, para el checklist
-  // de salida - ahi se necesita ver todo de una vez, no tiene el problema de escala de un <select>.)
+  // de salida - ahi se necesita ver todo de una vez, no tiene el problema de escala de un autocompletar.)
 
-  // Catalogo paginado de actividades para el selector del Panel de Actividades (independiente del de arriba).
+  // Catalogo paginado/buscable de actividades para el selector del Panel de Actividades (independiente del de
+  // arriba, mismo patron que equipos).
   actividadesCatalogoPanel: Actividad[] = [];
+  actividadBusqueda = '';
+  mostrarOpcionesActividad = false;
   actividadesPanelPagina = 0;
   actividadesPanelTotalPaginas = 1;
   cargandoMasActividadesPanel = false;
+  private debounceActividad?: ReturnType<typeof setTimeout>;
   nuevoRegistro = { equipo_id: null as number | null, actividad_id: null as number | null, area: '', observaciones: '', hora_inicio: '' };
   guardandoRegistro = false;
   // Finalizar una labor pide la hora de fin (editable) en vez de imponer "ahora mismo" - el trabajador puede
@@ -132,6 +142,8 @@ export class MiJornada implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.detenerIntervalos();
+    if (this.debounceEquipo) clearTimeout(this.debounceEquipo);
+    if (this.debounceActividad) clearTimeout(this.debounceActividad);
   }
 
   private detenerIntervalos(): void {
@@ -283,19 +295,54 @@ export class MiJornada implements OnInit, OnDestroy {
   }
 
   private cargarDatosActividades(): void {
-    this.cargarMasEquipos();
-    this.cargarMasActividadesPanel();
+    this.cargarPaginaEquipos(true);
+    this.cargarPaginaActividadesPanel(true);
     this.cargarRegistros();
   }
 
-  // "Cargar más" del selector de Equipo: acumula la siguiente página en vez de reemplazar lo ya mostrado.
+  // --- Autocompletar de Equipo ---
+
+  abrirOpcionesEquipo(): void {
+    this.mostrarOpcionesEquipo = true;
+    if (this.equipos.length === 0) this.cargarPaginaEquipos(true);
+    this.cdr.detectChanges();
+  }
+
+  // Cierra el desplegable con un pequeño retraso para que el (click) de una opción registre antes del (blur).
+  cerrarOpcionesEquipoConRetraso(): void {
+    setTimeout(() => { this.mostrarOpcionesEquipo = false; this.cdr.detectChanges(); }, 200);
+  }
+
+  onBuscarEquipo(texto: string): void {
+    this.equipoBusqueda = texto;
+    this.nuevoRegistro.equipo_id = null;
+    this.mostrarOpcionesEquipo = true;
+    if (this.debounceEquipo) clearTimeout(this.debounceEquipo);
+    this.debounceEquipo = setTimeout(() => this.cargarPaginaEquipos(true), 300);
+    this.cdr.detectChanges();
+  }
+
+  seleccionarEquipo(eq: Equipo): void {
+    this.nuevoRegistro.equipo_id = eq.id;
+    this.equipoBusqueda = `${eq.codigo_megued} - ${eq.nombre_equipo}`;
+    this.mostrarOpcionesEquipo = false;
+    this.cdr.detectChanges();
+  }
+
+  // "Cargar más" dentro de la búsqueda actual: acumula la siguiente página en vez de reemplazar.
   cargarMasEquipos(): void {
-    if (this.cargandoMasEquipos || (this.equiposPagina > 0 && this.equiposPagina >= this.equiposTotalPaginas)) return;
+    this.cargarPaginaEquipos(false);
+  }
+
+  // reemplazar=true: primera página de una búsqueda nueva (o carga inicial). false: "Cargar más" acumula.
+  private cargarPaginaEquipos(reemplazar: boolean): void {
+    if (this.cargandoMasEquipos) return;
+    if (!reemplazar && this.equiposPagina > 0 && this.equiposPagina >= this.equiposTotalPaginas) return;
     this.cargandoMasEquipos = true;
-    const siguiente = this.equiposPagina + 1;
-    this.registroActividadService.obtenerEquipos(siguiente, 20).subscribe({
+    const siguiente = reemplazar ? 1 : this.equiposPagina + 1;
+    this.registroActividadService.obtenerEquipos(siguiente, 20, this.equipoBusqueda).subscribe({
       next: (res) => {
-        this.equipos = [...this.equipos, ...res.data];
+        this.equipos = reemplazar ? res.data : [...this.equipos, ...res.data];
         this.equiposPagina = res.pagina;
         this.equiposTotalPaginas = res.totalPaginas;
         this.cargandoMasEquipos = false;
@@ -309,15 +356,47 @@ export class MiJornada implements OnInit, OnDestroy {
     });
   }
 
-  // "Cargar más" del selector de Actividad (Panel de Actividades) - catalogo independiente del checklist de
-  // salida del camino codigo, que sigue usando actividadesCatalogo (sin paginar).
+  // --- Autocompletar de Actividad (Panel de Actividades - catalogo independiente del checklist de salida del
+  // camino codigo, que sigue usando actividadesCatalogo sin paginar/buscar) ---
+
+  abrirOpcionesActividad(): void {
+    this.mostrarOpcionesActividad = true;
+    if (this.actividadesCatalogoPanel.length === 0) this.cargarPaginaActividadesPanel(true);
+    this.cdr.detectChanges();
+  }
+
+  cerrarOpcionesActividadConRetraso(): void {
+    setTimeout(() => { this.mostrarOpcionesActividad = false; this.cdr.detectChanges(); }, 200);
+  }
+
+  onBuscarActividad(texto: string): void {
+    this.actividadBusqueda = texto;
+    this.nuevoRegistro.actividad_id = null;
+    this.mostrarOpcionesActividad = true;
+    if (this.debounceActividad) clearTimeout(this.debounceActividad);
+    this.debounceActividad = setTimeout(() => this.cargarPaginaActividadesPanel(true), 300);
+    this.cdr.detectChanges();
+  }
+
+  seleccionarActividad(act: Actividad): void {
+    this.nuevoRegistro.actividad_id = act.id;
+    this.actividadBusqueda = `${act.codigo_megued} - ${act.description}`;
+    this.mostrarOpcionesActividad = false;
+    this.cdr.detectChanges();
+  }
+
   cargarMasActividadesPanel(): void {
-    if (this.cargandoMasActividadesPanel || (this.actividadesPanelPagina > 0 && this.actividadesPanelPagina >= this.actividadesPanelTotalPaginas)) return;
+    this.cargarPaginaActividadesPanel(false);
+  }
+
+  private cargarPaginaActividadesPanel(reemplazar: boolean): void {
+    if (this.cargandoMasActividadesPanel) return;
+    if (!reemplazar && this.actividadesPanelPagina > 0 && this.actividadesPanelPagina >= this.actividadesPanelTotalPaginas) return;
     this.cargandoMasActividadesPanel = true;
-    const siguiente = this.actividadesPanelPagina + 1;
-    this.asistenciaService.obtenerActividadesPaginado(siguiente, 20).subscribe({
+    const siguiente = reemplazar ? 1 : this.actividadesPanelPagina + 1;
+    this.asistenciaService.obtenerActividadesPaginado(siguiente, 20, this.actividadBusqueda).subscribe({
       next: (res) => {
-        this.actividadesCatalogoPanel = [...this.actividadesCatalogoPanel, ...res.data];
+        this.actividadesCatalogoPanel = reemplazar ? res.data : [...this.actividadesCatalogoPanel, ...res.data];
         this.actividadesPanelPagina = res.pagina;
         this.actividadesPanelTotalPaginas = res.totalPaginas;
         this.cargandoMasActividadesPanel = false;
@@ -353,6 +432,8 @@ export class MiJornada implements OnInit, OnDestroy {
       next: () => {
         this.notificacionService.exito('Labor registrada.');
         this.nuevoRegistro = { equipo_id: null, actividad_id: null, area: '', observaciones: '', hora_inicio: this.horaSoloParaInput() };
+        this.equipoBusqueda = '';
+        this.actividadBusqueda = '';
         this.guardandoRegistro = false;
         this.cargarRegistros();
         this.cdr.detectChanges();

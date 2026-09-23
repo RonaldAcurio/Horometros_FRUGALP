@@ -128,25 +128,31 @@ Los 4 caminos (kiosco, código público, código autenticado, QR de sesión) com
 entrada/salida (`procesarMarcacion` en `asistencia.controller.ts`), para no triplicar reglas como el cruce de
 medianoche.
 
-### Panel de Actividades (solo camino QR)
+### Panel de Actividades (ambos caminos, código y QR)
 
-Una vez escaneado, el trabajador entra al Panel de Actividades de su propia jornada (`mi-jornada.ts`, fase
-`actividades`): registra labores puntuales contra el catálogo de **Equipos** (`GET /api/equipos`, nuevo endpoint de
-solo lectura - el CRUD completo de Equipo es del módulo Horómetros, no tocado) y **Actividades**
-(`GET /api/actividad`), usando el modelo `RegistroActividad` que ya existía en el backend sin frontend
-(`registro_actividad.controller.ts`). Campo `area` (MECANICO) es fase 1; `seccion_id`/`horometro_inicio`/
+Una vez con la jornada abierta (código o QR, ver "Camino A"/"Camino B" arriba), el trabajador entra al Panel de
+Actividades de su propia jornada (`mi-jornada.ts`, fase `actividades`): registra labores puntuales contra el
+catálogo de **Equipos** (`GET /api/equipos`, nuevo endpoint de solo lectura - el CRUD completo de Equipo es del
+módulo Horómetros, no tocado) y **Actividades** (`GET /api/actividad`), usando el modelo `RegistroActividad` que
+ya existía en el backend sin frontend (`registro_actividad.controller.ts`). Campo `area` (MECANICO) es fase 1;
+`seccion_id`/`horometro_inicio`/`horometro_final` (OPERADOR) siguen en fase 2, no se piden en el formulario
+todavía (ver el propio modelo, `registro_actividad.ts`).
 
-**Selectores paginados**: ambos catálogos pueden crecer, así que los `<select>` de Equipo/Actividad de este panel
-cargan de a 20 y tienen un link "Cargar más" debajo que pide la siguiente página y la acumula (no tiene sentido
-"ir a la página anterior" a mitad de elegir una opción en un `<select>` nativo). `GET /api/equipos` siempre
-responde paginado (`{data, total, pagina, totalPaginas}`, mismo patrón que `obtenerAsistenciaHoy`) porque este
-selector es su único consumidor. `GET /api/actividad` es compartido (lo usan también el kiosco y el checklist de
-salida del camino código, que sí quieren ver el catálogo completo de una vez) - por eso ahí la paginación es
-opcional: sin `pagina`/`limite` en la query responde el arreglo plano de siempre, y con cualquiera de los dos
-responde paginado. `mi-jornada.ts` mantiene dos catálogos de actividades separados por esto:
-`actividadesCatalogo` (completo, checklist de salida) y `actividadesCatalogoPanel` (paginado, este selector).
-`horometro_final` (OPERADOR) siguen en fase 2, no se piden en el formulario todavía (ver el propio modelo,
-`registro_actividad.ts`). El camino código **no** pasa por este panel - marca y termina, ver arriba.
+**Selectores como autocompletar**: ambos catálogos pueden crecer, así que Equipo/Actividad de este panel no son
+un `<select>` sino un input de texto + lista desplegable (`abrirOpcionesEquipo`/`onBuscarEquipo`/
+`seleccionarEquipo` y sus equivalentes de Actividad) - el trabajador escribe y van apareciendo las coincidencias
+(con debounce de 300ms), y un link "Cargar más" al fondo de la lista trae la siguiente página de la MISMA
+búsqueda. Cambiar el texto sin volver a elegir una opción borra la selección anterior (`nuevoRegistro.equipo_id`/
+`actividad_id` vuelve a `null`), para no mandar un id que ya no corresponde a lo que se ve escrito - el botón
+"Iniciar labor" se deshabilita en ese caso. `GET /api/equipos` siempre responde paginado
+(`{data, total, pagina, totalPaginas}`, mismo patrón que `obtenerAsistenciaHoy`) y acepta `q` opcional para
+filtrar por `codigo_megued`/`nombre_equipo` (`ILIKE`) - es el único consumidor de este endpoint. `GET /api/actividad`
+es compartido (lo usan también el kiosco y el checklist de salida del camino código, que sí quieren ver el
+catálogo completo de una vez como checklist, no autocompletar) - por eso ahí la paginación (y el filtro `q`) son
+opcionales: sin `pagina`/`limite` en la query responde el arreglo plano de siempre; con cualquiera de los dos,
+paginado, y `q` (si viene) filtra por `codigo_megued`/`description`. `mi-jornada.ts` mantiene dos catálogos de
+actividades separados por esto: `actividadesCatalogo` (completo, checklist de salida) y
+`actividadesCatalogoPanel` (paginado/buscable, este selector).
 
 **`hora_inicio`/`hora_fin` de cada labor son editables, a propósito** (decisión de negocio: el trabajador puede
 estar cargando esto en su tiempo libre, después de haber hecho la labor, así que necesita poder decir "esto lo hice

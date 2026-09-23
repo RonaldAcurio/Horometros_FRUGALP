@@ -87,33 +87,65 @@
       </div>
       <div class="card-body-grid" style="grid-template-columns: 1fr;">
         <form (ngSubmit)="guardarNuevoRegistro()" class="registro-form">
-          <div class="form-group">
+          <div class="form-group autocomplete-group">
             <label class="form-label">Equipo</label>
-            <select class="input-control w-full" [(ngModel)]="nuevoRegistro.equipo_id" name="equipo_id" required>
-              <option [ngValue]="null">Selecciona un equipo</option>
-              <option *ngFor="let eq of equipos" [ngValue]="eq.id">{{ eq.codigo_megued }} - {{ eq.nombre_equipo }}</option>
-            </select>
-            <button
-              type="button"
-              class="btn-link-cargar-mas"
-              *ngIf="equiposPagina < equiposTotalPaginas"
-              [disabled]="cargandoMasEquipos"
-              (click)="cargarMasEquipos()"
-            >{{ cargandoMasEquipos ? 'Cargando...' : 'Cargar más equipos' }}</button>
+            <input
+              type="text"
+              class="input-control w-full"
+              [ngModel]="equipoBusqueda"
+              (ngModelChange)="onBuscarEquipo($event)"
+              (focus)="abrirOpcionesEquipo()"
+              (blur)="cerrarOpcionesEquipoConRetraso()"
+              name="equipo_busqueda"
+              placeholder="Escribe para buscar un equipo..."
+              autocomplete="off"
+              required
+            >
+            <div class="autocomplete-opciones" *ngIf="mostrarOpcionesEquipo">
+              <div
+                class="autocomplete-opcion"
+                *ngFor="let eq of equipos"
+                (click)="seleccionarEquipo(eq)"
+              >{{ eq.codigo_megued }} - {{ eq.nombre_equipo }}</div>
+              <div class="autocomplete-vacio" *ngIf="equipos.length === 0 && !cargandoMasEquipos">Sin resultados.</div>
+              <button
+                type="button"
+                class="btn-link-cargar-mas"
+                *ngIf="equiposPagina < equiposTotalPaginas"
+                [disabled]="cargandoMasEquipos"
+                (mousedown)="$event.preventDefault(); cargarMasEquipos()"
+              >{{ cargandoMasEquipos ? 'Cargando...' : 'Cargar más' }}</button>
+            </div>
           </div>
-          <div class="form-group">
+          <div class="form-group autocomplete-group">
             <label class="form-label">Actividad</label>
-            <select class="input-control w-full" [(ngModel)]="nuevoRegistro.actividad_id" name="actividad_id" required>
-              <option [ngValue]="null">Selecciona una actividad</option>
-              <option *ngFor="let act of actividadesCatalogoPanel" [ngValue]="act.id">{{ act.codigo_megued }} - {{ act.description }}</option>
-            </select>
-            <button
-              type="button"
-              class="btn-link-cargar-mas"
-              *ngIf="actividadesPanelPagina < actividadesPanelTotalPaginas"
-              [disabled]="cargandoMasActividadesPanel"
-              (click)="cargarMasActividadesPanel()"
-            >{{ cargandoMasActividadesPanel ? 'Cargando...' : 'Cargar más actividades' }}</button>
+            <input
+              type="text"
+              class="input-control w-full"
+              [ngModel]="actividadBusqueda"
+              (ngModelChange)="onBuscarActividad($event)"
+              (focus)="abrirOpcionesActividad()"
+              (blur)="cerrarOpcionesActividadConRetraso()"
+              name="actividad_busqueda"
+              placeholder="Escribe para buscar una actividad..."
+              autocomplete="off"
+              required
+            >
+            <div class="autocomplete-opciones" *ngIf="mostrarOpcionesActividad">
+              <div
+                class="autocomplete-opcion"
+                *ngFor="let act of actividadesCatalogoPanel"
+                (click)="seleccionarActividad(act)"
+              >{{ act.codigo_megued }} - {{ act.description }}</div>
+              <div class="autocomplete-vacio" *ngIf="actividadesCatalogoPanel.length === 0 && !cargandoMasActividadesPanel">Sin resultados.</div>
+              <button
+                type="button"
+                class="btn-link-cargar-mas"
+                *ngIf="actividadesPanelPagina < actividadesPanelTotalPaginas"
+                [disabled]="cargandoMasActividadesPanel"
+                (mousedown)="$event.preventDefault(); cargarMasActividadesPanel()"
+              >{{ cargandoMasActividadesPanel ? 'Cargando...' : 'Cargar más' }}</button>
+            </div>
           </div>
           <div class="form-group" *ngIf="esMecanico">
             <label class="form-label">OT / Área</label>

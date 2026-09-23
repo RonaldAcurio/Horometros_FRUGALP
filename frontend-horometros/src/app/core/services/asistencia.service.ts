@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, of, catchError } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { Operador, Asistencia, Actividad, RespuestaPaginada } from '../models/asistencia.model';
@@ -71,11 +71,14 @@ export class AsistenciaService {
         );
     }
 
-    // GET -> /api/actividad?pagina=1&limite=20 - paginado (mandar pagina/limite activa esa respuesta en el
-    // backend, ver actividades.controller.ts), lo consume el selector del Panel de Actividades con "Cargar más".
-    obtenerActividadesPaginado(pagina: number, limite: number): Observable<RespuestaPaginada<Actividad>> {
+    // GET -> /api/actividad?pagina=1&limite=20&q=... - paginado y filtrable por texto (mandar pagina/limite
+    // activa esa respuesta en el backend, ver actividades.controller.ts), lo consume el autocompletar de
+    // Actividad del Panel de Actividades.
+    obtenerActividadesPaginado(pagina: number, limite: number, q?: string): Observable<RespuestaPaginada<Actividad>> {
         const urlActividades = `${environment.apiUrl}/actividad`;
-        return this.http.get<RespuestaPaginada<Actividad>>(urlActividades, { params: { pagina, limite } }).pipe(
+        let params = new HttpParams().set('pagina', pagina).set('limite', limite);
+        if (q) params = params.set('q', q);
+        return this.http.get<RespuestaPaginada<Actividad>>(urlActividades, { params }).pipe(
             catchError(err => {
                 console.warn('Error al obtener actividades paginadas de /api/actividad: ', err);
                 return of({ data: [], total: 0, pagina, totalPaginas: 1 });
