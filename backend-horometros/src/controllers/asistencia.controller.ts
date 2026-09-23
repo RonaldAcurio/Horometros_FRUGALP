@@ -624,6 +624,30 @@ export const marcarConQrSesion = async(req:Request, res:Response):Promise<void> 
     }
 };
 
+/*
+Calcula si un DIA (una fecha puntual) ya esta "cerrado" en el sentido operativo: nadie sigue EN_JORNADA/
+PENDIENTE_REVISION Y todos los registros de ese dia ya fueron confirmados (O/X) por el Supervisor. Lo comparten
+obtenerAsistenciaHoy (el flag `diaCerrado` que muestra) y revisarAsistencia (que lo usa para congelar
+observaciones) - antes revisarAsistencia miraba solo el `estado` de ESE registro puntual, lo que congelaba la
+observacion de un trabajador que se autocerro (SALIDA_OLVIDADA) mucho antes de que el Supervisor terminara de
+revisar a los demas. Las observaciones tienen que poder editarse hasta que el DIA COMPLETO quede cerrado, no
+fila por fila.
+*/
+const calcularDiaCerrado = async (fecha: string): Promise<boolean> => {
+    const total = await Asistencia.count({ where: { fecha } });
+    if(total === 0) return false;
+    const totalAbiertos = await Asistencia.count({
+        where: {
+            fecha,
+            [Op.or]: [
+                { estado: { [Op.in]: ['EN_JORNADA','PENDIENTE_REVISION']} },
+                { confirmado_por_supervisor: null },
+            ],
+        },
+    });
+    return totalAbiertos === 0;
+};
+
 //Obtener reporte diario de asistencia
 export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<void> =>{
     try{
@@ -654,15 +678,11 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
         });
         /*
         El "dia cerrado" se calcula sobre TODOS los registros del dia, no solo la pagina visible- si no, el boton "CERRAR JORNADA" quedaria
-        hanilitado/deshabilido segun que pagina este mirando el supervisor, en vez del estado real del dia completo.
+        hanilitado/deshabilido segun que pagina este mirando el supervisor, en vez del estado real del dia completo
+        (ver calcularDiaCerrado arriba - no basta con que nadie siga EN_JORNADA/PENDIENTE_REVISION, tambien exige
+        que el Supervisor haya confirmado O/X a todos).
         */
-       const totalAbiertos = await Asistencia.count({
-        where: {
-            fecha: hoy,
-            estado: { [Op.in]: ['EN_JORNADA','PENDIENTE_REVISION']},
-        },
-       });
-       const diaCerrado = total > 0 && totalAbiertos === 0;
+       const diaCerrado = await calcularDiaCerrado(hoy);
 
         res.json({
             data: asistencias,
@@ -686,10 +706,29 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
         Verificamos el estado actual de la jornada antes de tocar nada: si ya queda ningun registro pendiente
         de revision, es por que el dia ya fue cerrado antes.
         */
-       const registroDelDia = await Asistencia.findAll({ where: {fecha: fechaProcesar}});
+       const registroDelDia = await Asistencia.findAll({
+            where: {fecha: fechaProcesar},
+            include: [{ model: Operador, as: 'operador', attributes: ['nombre_completo'] }],
+       });
         if(registroDelDia.length === 0 ){
             res.status(404).json({
                 message:`No hay marcaciones registradas para el ${fechaProcesar}.`
+            });
+            return;
+        }
+
+        /*
+        El cierre de dia no se puede saltar el chequeo O/X del Supervisor: si un trabajador se autocerro
+        (SALIDA_OLVIDADA) sin que el Supervisor lo haya confirmado, cerrar la jornada igual dejaria pasar
+        exactamente el caso que O/X existe para atrapar (alguien paso su codigo/QR a un companero). Se avisa
+        con nombre y apellido para que el Supervisor sepa a quien le falta revisar.
+        */
+        const sinConfirmar = registroDelDia.filter((r) => r.confirmado_por_supervisor === null);
+        if(sinConfirmar.length > 0){
+            const nombres = sinConfirmar.map((r) => r.operador?.nombre_completo || `operador #${r.operador_id}`);
+            res.status(400).json({
+                message: `Falta confirmar (O/X) la asistencia de: ${nombres.join(', ')}.`,
+                faltan_confirmar: nombres,
             });
             return;
         }
@@ -953,12 +992,13 @@ export const revisarAsistencia = async(req:Request, res:Response):Promise<void> 
         }
 
         /*
-        Datos congelados: una vez que el Supervisor cerro la jornada (FINALIZADO/SALIDA_OLVUDADA) este registro
-        ya no se puede modificar, ni siquiera la observacion.
+        Datos congelados: pero a nivel de DIA completo (ver calcularDiaCerrado), no de este registro puntual - un
+        trabajador puede autocerrarse (SALIDA_OLVIDADA) mucho antes de que el Supervisor termine de confirmar O/X
+        a los demas, y eso no debe congelar SU observacion mientras el dia sigue abierto para el resto.
         */
-       if(asistencia.estado === 'FINALIZADO' || asistencia.estado === 'SALIDA_OLVIDADA'){
+       if(await calcularDiaCerrado(asistencia.fecha)){
         res.status(400).json({
-            message:'Este registro ya fue cerrado y no se puede modificar.'
+            message:'La jornada de este día ya fue cerrada y no se puede modificar.'
         });
         return;
        }

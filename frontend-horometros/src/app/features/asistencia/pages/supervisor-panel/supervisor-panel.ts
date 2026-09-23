@@ -28,9 +28,12 @@ export class SupervisorPanel implements OnInit {
   totalHoy:number = 0;
 
   /*
-  Verdadero cuando TODOS los registros del dia (no solo la pagina visible) ya fueron cerrador por el Supervisor (FINALIZADO o SALIDA_OLVIDADA).
-  Lo calcula el backend sobre el dia completo, por eso ya NO es un getter derivado de "asistenciasHoy" -- si lo fuera, el boton "Cerrar Jornada"
-  pondria mal segun que pagina se este mirando.
+  Verdadero cuando TODOS los registros del dia (no solo la pagina visible) ya no siguen EN_JORNADA/PENDIENTE_REVISION
+  Y ademas el Supervisor ya confirmo O/X a todos (ver calcularDiaCerrado en el backend - un trabajador puede
+  autocerrarse solo, pero eso NO cuenta como "dia cerrado" sin la confirmacion). Tambien controla si se puede
+  editar la Observación de cada fila (`abrirObservacion`) - a nivel de DIA completo, no del estado de cada
+  registro puntual. Lo calcula el backend sobre el dia completo, por eso ya NO es un getter derivado de
+  "asistenciasHoy" -- si lo fuera, el boton "Cerrar Jornada" pondria mal segun que pagina se este mirando.
   */
   diaCerrado:boolean = false;
 
@@ -127,10 +130,6 @@ export class SupervisorPanel implements OnInit {
     this.cargarAsistencias();
   }
 
-  /*
-  Verdadero cuando TODOS los registros del dia mostrado ya fueron cerrados por el SUPERVUISOR(FINALIZADO o SALIDA_OLVIDADA).
-  Si no hay registro todavia, no se considera "cerrado".
-  */
  cambiarPaginaHoy(nuevaPagina:number): void{
   if(nuevaPagina >= 1 && nuevaPagina <= this.totalPaginasHoy){
     this.paginaHoy = nuevaPagina;
@@ -166,9 +165,13 @@ export class SupervisorPanel implements OnInit {
 
   //Observaciones de SUPERVISOR
   abrirObservacion(asis:Asistencia):void{
-    //Datos congelados: si el registro ya fue cerrado, no se abre el formulario de edicion
-    if(asis.estado === 'FINALIZADO' || asis.estado === 'SALIDA_OLVIDADA'){
-      this.notificacionService.advertencia('Este registro ya fue cerrado y no se puede modificar.');
+    /*
+    Datos congelados a nivel de DIA completo (this.diaCerrado, ver cargarAsistencias), no del estado de ESTE
+    registro puntual - un trabajador puede autocerrarse (SALIDA_OLVIDADA) mucho antes de que el Supervisor
+    termine de confirmar O/X a los demas, y eso no debe congelar su observacion mientras el dia sigue abierto.
+    */
+    if(this.diaCerrado){
+      this.notificacionService.advertencia('La jornada de este día ya fue cerrada y no se puede modificar.');
       return;
     }
 

@@ -235,8 +235,29 @@ Al lado de cada trabajador que aparece logueado hoy en su panel, el Supervisor c
 cada fila, **nunca deshabilitados por el estado del registro** (a propósito, ver arriba). El botón O se aplica
 directo (bajo riesgo, reversible con otro clic); el X pide confirmación con `ConfirmacionService.preguntar()`
 antes de mandar la petición, porque mueve el registro a `OBSERVANDO` y deja la nota automática. El botón de
-Observación (edición de texto libre) sigue deshabilitado si el registro ya está `FINALIZADO`/`SALIDA_OLVIDADA` -
-esa sí es edición de datos, distinta de la confirmación O/X.
+Observación (edición de texto libre) se congela a nivel de **día completo** (`diaCerrado`), no por el estado de
+cada fila puntual - ver el bloque de `calcularDiaCerrado` más abajo, es el mismo motivo que "Cerrar Jornada".
+
+**"Cerrar Jornada" exige que TODOS estén confirmados primero** - decisión de negocio (el usuario lo pidió
+explícitamente): si el cierre de día se pudiera hacer sin que el Supervisor haya revisado O/X a cada trabajador,
+el chequeo de O/X no serviría de nada - bastaría con que un trabajador se autocierre (`SALIDA_OLVIDADA`,
+autoservicio) sin que el Supervisor lo haya visto nunca para que "el día ya está cerrado" y nadie note nada raro.
+`calcularDiaCerrado(fecha)` (helper compartido en `asistencia.controller.ts`) es la fuente única de verdad: un
+día está cerrado cuando NINGÚN registro de esa fecha sigue `EN_JORNADA`/`PENDIENTE_REVISION` Y NINGUNO tiene
+`confirmado_por_supervisor: null`. Tres consumidores:
+- `diaCerrado` (`obtenerAsistenciaHoy`) - controla el botón "Cerrar Jornada" (habilitado/"🔒 Jornada Cerrada").
+  Mientras falte confirmar a alguien, el botón sigue mostrando "🔒 Cerrar Jornada" (habilitado), aunque todos los
+  trabajadores ya hayan cerrado su propia jornada.
+- `finalizarDia` valida esto ANTES de tocar nada: si hay algún registro del día con `confirmado_por_supervisor:
+  null`, responde 400 con `{ message: "Falta confirmar (O/X) la asistencia de: <nombres>.", faltan_confirmar:
+  [...] }` (nombres reales del `Operador`, vía el include de la consulta) y no cierra nada. El frontend no
+  necesitó cambios para mostrar esto - `ejecutarCierreDiario()` ya mostraba `err.error?.message` tal cual.
+- `revisarAsistencia` (edición de Observación/hora_salida) - **congelado a nivel de día completo, no por fila**:
+  antes miraba solo el `estado` de ESE registro puntual (`FINALIZADO`/`SALIDA_OLVIDADA`), lo que congelaba la
+  Observación de un trabajador que se autocerró mucho antes de que el Supervisor terminara de revisar a los
+  demás - el usuario lo reportó explícitamente ("las observaciones se tienen que cerrar solo cuando se CIERRE
+  JORNADA"). Ahora usa `calcularDiaCerrado(asistencia.fecha)`: la Observación de CUALQUIER fila sigue editable
+  mientras el día siga abierto, sin importar si esa fila en particular ya está en un estado terminal.
 
 ## Reglas de negocio confirmadas
 

@@ -1,9 +1,12 @@
-import { DataTypes, Model, CreationOptional, InferAttributes, InferCreationAttributes } from 'sequelize';
+import { DataTypes, Model, CreationOptional, InferAttributes, InferCreationAttributes, NonAttribute } from 'sequelize';
 import { sequelize } from '../config/database';
+import { Operador } from './operador';
 
 export class Asistencia extends Model<InferAttributes<Asistencia>, InferCreationAttributes<Asistencia>>{
     declare id: CreationOptional<number>;
     declare operador_id: number;
+    // Solo presente cuando el include lo trae (ver index.ts, as:'operador') - no es una columna propia.
+    declare operador?: NonAttribute<Operador>;
     declare fecha: string;
     declare hora_ingreso: Date;
     declare hora_salida: CreationOptional<Date | null>;
