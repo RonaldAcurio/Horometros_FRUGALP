@@ -153,14 +153,18 @@
           </div>
           <div class="form-group">
             <label class="form-label">Hora de inicio</label>
-            <input type="time" class="input-control w-full" [(ngModel)]="nuevoRegistro.hora_inicio" name="hora_inicio" required>
+            <div class="hora-hhmm">
+              <input type="number" class="input-control hora-hhmm-input" [(ngModel)]="horaInicioHH" name="hora_inicio_hh" min="0" max="23" placeholder="HH" required>
+              <span class="hora-hhmm-separador">:</span>
+              <input type="number" class="input-control hora-hhmm-input" [(ngModel)]="horaInicioMM" name="hora_inicio_mm" min="0" max="59" placeholder="MM" required>
+            </div>
             <p class="hint-text">Puedes cambiarla si estás registrando esto más tarde.</p>
           </div>
           <div class="form-group">
             <label class="form-label">Observaciones</label>
             <input type="text" class="input-control w-full" [(ngModel)]="nuevoRegistro.observaciones" name="observaciones">
           </div>
-          <button type="submit" class="btn btn-primary w-full" [disabled]="guardandoRegistro || !nuevoRegistro.equipo_id || !nuevoRegistro.actividad_id || !nuevoRegistro.hora_inicio">
+          <button type="submit" class="btn btn-primary w-full" [disabled]="guardandoRegistro || !nuevoRegistro.equipo_id || !nuevoRegistro.actividad_id || horaInicioHH === null || horaInicioMM === null">
             ➕ Iniciar labor
           </button>
         </form>
@@ -199,8 +203,12 @@
 
                 <!-- Editor inline de la hora de fin, para esta fila puntual -->
                 <div *ngIf="registroFinalizandoId === reg.id" class="finalizar-inline">
-                  <input type="time" class="input-control input-control-sm" [(ngModel)]="horaFinEditando" name="horaFin{{ reg.id }}">
-                  <button class="btn btn-primary btn-sm" [disabled]="guardandoFinalizacion || !horaFinEditando" (click)="confirmarFinalizarRegistro()">✔️</button>
+                  <div class="hora-hhmm">
+                    <input type="number" class="input-control input-control-sm hora-hhmm-input" [(ngModel)]="horaFinHH" name="horaFinHH{{ reg.id }}" min="0" max="23" placeholder="HH">
+                    <span class="hora-hhmm-separador">:</span>
+                    <input type="number" class="input-control input-control-sm hora-hhmm-input" [(ngModel)]="horaFinMM" name="horaFinMM{{ reg.id }}" min="0" max="59" placeholder="MM">
+                  </div>
+                  <button class="btn btn-primary btn-sm" [disabled]="guardandoFinalizacion || horaFinHH === null || horaFinMM === null" (click)="confirmarFinalizarRegistro()">✔️</button>
                   <button class="btn btn-secondary btn-sm" [disabled]="guardandoFinalizacion" (click)="cancelarFinalizarRegistro()">✕</button>
                 </div>
               </td>

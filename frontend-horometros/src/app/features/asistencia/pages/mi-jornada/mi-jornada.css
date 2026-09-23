@@ -98,6 +98,27 @@
   width: auto;
 }
 
+/*
+Hora de inicio/fin: dos <input type="number"> (HH y MM) en vez de un <input type="time"> nativo - ver el
+comentario en mi-jornada.ts sobre el bug de UX del widget compuesto. Ancho fijo y angosto a propósito: cada
+input solo tiene 1-2 dígitos, no hace falta más espacio, y mantiene el par HH:MM visualmente compacto.
+*/
+.hora-hhmm {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.hora-hhmm-input {
+  width: 4rem;
+  text-align: center;
+}
+
+.hora-hhmm-separador {
+  font-weight: 700;
+  color: #6b7768;
+}
+
 .btn-link-salida {
   background: none;
   border: none;

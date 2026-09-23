@@ -164,10 +164,20 @@ el backend responde 400. **Esto es un concepto totalmente aparte** de `hora_ingr
 su panel; si el trabajador nunca marca salida, esa jornada queda `SALIDA_OLVIDADA`, ver Tablas) - no hay que
 confundir "cuánto duró la jornada completa" con "cuánto duró CADA labor dentro de ella".
 
-Los inputs son `type="time"` (solo `HH:mm`, sin selector de fecha - la labor siempre es de HOY, no hace falta
-calendario). `mi-jornada.ts` combina ese `HH:mm` con la fecha de hoy (`horaSoloAIso`) y manda un ISO completo
-(con `Z`) al backend - **nunca el string crudo del input**. Antes se mandaba tal cual y el backend, en OTRA zona
-horaria que el dispositivo del trabajador, lo reinterpretaba mal (`new Date("...")` sin offset se lee como hora
+**Los inputs de hora son DOS `<input type="number">` (HH y MM), no un `<input type="time">` nativo** - la labor
+siempre es de HOY, no hace falta selector de fecha/calendario, y el widget nativo de hora tiene un bug de UX real
+que se encontró y confirmó con pruebas: es un control compuesto de 3 "segmentos" internos (hora/minuto/am-pm), y
+un clic en CUALQUIER punto del input NO enfoca siempre el segmento de la hora - basta con que el clic caiga sobre
+el segmento de minutos o AM/PM (muy fácil en un input ancho, donde la mayor parte del área no corresponde a
+ningún segmento útil) para que lo que se teclee después vaya a ESE segmento en vez de a la hora que el trabajador
+cree estar editando. Resultado: guarda una hora distinta a la que ve escrita, o el backend la rechaza por quedar
+antes de la hora de inicio - el usuario lo reportó como "no me deja poner la hora finalizada". Dos inputs
+separados (`horaInicioHH`/`horaInicioMM`, `horaFinHH`/`horaFinMM` en `mi-jornada.ts`), cada uno con un solo
+propósito, eliminan la ambigüedad por completo. `horaComponentesAIso(hh, mm)` combina ambos con la fecha de hoy y
+manda un ISO completo (con `Z`) al backend - **nunca el string crudo del input**. (Esto reemplaza un intento
+anterior con un solo `<input type="time">`: correcto en la conversión de zona horaria, pero seguía teniendo el
+bug de UX del widget nativo.) Antes de la conversión a ISO explícita, el backend, en OTRA zona horaria que el
+dispositivo del trabajador, reinterpretaba mal un string sin zona (`new Date("...")` sin offset se lee como hora
 local de quien lo parsea, no de quien lo escribió) y la hora guardada quedaba desfasada varias horas frente a lo
 que el trabajador realmente escribió - bug real reportado y confirmado con pruebas cruzando zonas horarias.
 

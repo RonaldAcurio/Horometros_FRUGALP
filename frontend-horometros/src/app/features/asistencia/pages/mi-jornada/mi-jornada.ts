@@ -77,12 +77,27 @@ export class MiJornada implements OnInit, OnDestroy {
   actividadesPanelTotalPaginas = 1;
   cargandoMasActividadesPanel = false;
   private debounceActividad?: ReturnType<typeof setTimeout>;
-  nuevoRegistro = { equipo_id: null as number | null, actividad_id: null as number | null, area: '', observaciones: '', hora_inicio: '' };
+  nuevoRegistro = { equipo_id: null as number | null, actividad_id: null as number | null, area: '', observaciones: '' };
   guardandoRegistro = false;
+
+  /*
+  Hora de inicio: DOS <input type="number"> (HH y MM) en vez de un <input type="time"> nativo. Se detectó un bug
+  real de UX con el widget nativo: es un control compuesto de 3 "segmentos" internos (hora/minuto/am-pm) y un
+  clic en CUALQUIER punto del input NO enfoca siempre el segmento de la hora - basta con que el clic caiga sobre
+  el segmento de minutos o AM/PM para que lo que el trabajador teclee después vaya a ESE segmento, no a la hora
+  que cree estar editando. El resultado: guarda una hora distinta a la que ve escrita, o el backend la rechaza
+  por quedar antes de la hora de inicio ("no me deja poner la hora"). Dos inputs separados, cada uno con un solo
+  propósito, eliminan la ambigüedad - confirmado con pruebas cruzando distintos puntos de clic dentro del widget
+  nativo antes de decidir este cambio.
+  */
+  horaInicioHH: number | null = null;
+  horaInicioMM: number | null = null;
+
   // Finalizar una labor pide la hora de fin (editable) en vez de imponer "ahora mismo" - el trabajador puede
-  // estar cargando esto mas tarde, en su tiempo libre.
+  // estar cargando esto mas tarde, en su tiempo libre. Mismo patrón de dos inputs HH/MM que arriba.
   registroFinalizandoId: number | null = null;
-  horaFinEditando = '';
+  horaFinHH: number | null = null;
+  horaFinMM: number | null = null;
   guardandoFinalizacion = false;
 
   // Poll continuo de mi-estado: detecta cuando lo escanean (entra a 'actividades') y cuando lo vuelven a
@@ -264,22 +279,22 @@ export class MiJornada implements OnInit, OnDestroy {
 
   // --- FASE ACTIVIDADES (Panel de Actividades) ---
 
-  // Formato que entiende <input type="time">: 'HH:mm', en hora LOCAL del dispositivo. Las labores siempre son
-  // de HOY, asi que el input no necesita fecha (ni calendario que mostrar).
-  private horaSoloParaInput(fecha: Date = new Date()): string {
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${pad(fecha.getHours())}:${pad(fecha.getMinutes())}`;
+  // HH/MM actuales (hora LOCAL del dispositivo) para precargar los inputs de Hora de inicio/fin.
+  private horaActualComponentes(fecha: Date = new Date()): { hh: number; mm: number } {
+    return { hh: fecha.getHours(), mm: fecha.getMinutes() };
   }
 
   /*
-  El valor de un <input type="time"> ("HH:mm") no lleva fecha ni zona horaria. Lo combinamos con la fecha de HOY
-  usando setHours (hora LOCAL del navegador, que es justo lo que el trabajador quiso decir) para obtener un
-  instante real, y lo mandamos como ISO (con Z) al backend - si se mandara el "HH:mm" tal cual, alla `new Date(...)`
-  lo interpretaria distinto (fecha epoch + hora local del SERVIDOR, otra zona horaria), desfasando lo guardado.
+  Combina HH/MM (de los inputs numéricos) con la fecha de HOY usando setHours (hora LOCAL del navegador, que es
+  justo lo que el trabajador quiso decir) para obtener un instante real, y lo manda como ISO (con Z) al backend -
+  si se mandara "HH:mm" tal cual, allá `new Date(...)` lo interpretaría distinto (fecha epoch + hora local del
+  SERVIDOR, otra zona horaria), desfasando lo guardado. Clampa valores fuera de rango por si el navegador no
+  valida estrictamente min/max de un <input type="number">.
   */
-  private horaSoloAIso(horaHHmm: string): string | undefined {
-    if (!horaHHmm) return undefined;
-    const [horas, minutos] = horaHHmm.split(':').map(Number);
+  private horaComponentesAIso(hh: number | null, mm: number | null): string | undefined {
+    if (hh === null || hh === undefined || mm === null || mm === undefined || isNaN(hh) || isNaN(mm)) return undefined;
+    const horas = Math.min(23, Math.max(0, Math.trunc(hh)));
+    const minutos = Math.min(59, Math.max(0, Math.trunc(mm)));
     const fecha = new Date();
     fecha.setHours(horas, minutos, 0, 0);
     return fecha.toISOString();
@@ -290,7 +305,9 @@ export class MiJornada implements OnInit, OnDestroy {
     if (this.intervaloQr) clearInterval(this.intervaloQr);
     if (this.cuentaRegresiva) clearInterval(this.cuentaRegresiva);
     this.notificacionService.exito('¡Ya te registraron! Bienvenido a tu jornada.');
-    this.nuevoRegistro.hora_inicio = this.horaSoloParaInput();
+    const { hh, mm } = this.horaActualComponentes();
+    this.horaInicioHH = hh;
+    this.horaInicioMM = mm;
     this.cargarDatosActividades();
   }
 
@@ -419,6 +436,7 @@ export class MiJornada implements OnInit, OnDestroy {
 
   guardarNuevoRegistro(): void {
     if (!this.asistenciaId || !this.nuevoRegistro.equipo_id || !this.nuevoRegistro.actividad_id) return;
+    if (this.horaInicioHH === null || this.horaInicioMM === null) return;
 
     this.guardandoRegistro = true;
     this.registroActividadService.crear({
@@ -427,11 +445,14 @@ export class MiJornada implements OnInit, OnDestroy {
       actividad_id: this.nuevoRegistro.actividad_id,
       area: this.esMecanico ? this.nuevoRegistro.area : undefined,
       observaciones: this.nuevoRegistro.observaciones || undefined,
-      hora_inicio: this.horaSoloAIso(this.nuevoRegistro.hora_inicio),
+      hora_inicio: this.horaComponentesAIso(this.horaInicioHH, this.horaInicioMM),
     }).subscribe({
       next: () => {
         this.notificacionService.exito('Labor registrada.');
-        this.nuevoRegistro = { equipo_id: null, actividad_id: null, area: '', observaciones: '', hora_inicio: this.horaSoloParaInput() };
+        this.nuevoRegistro = { equipo_id: null, actividad_id: null, area: '', observaciones: '' };
+        const { hh, mm } = this.horaActualComponentes();
+        this.horaInicioHH = hh;
+        this.horaInicioMM = mm;
         this.equipoBusqueda = '';
         this.actividadBusqueda = '';
         this.guardandoRegistro = false;
@@ -450,7 +471,9 @@ export class MiJornada implements OnInit, OnDestroy {
   // instante con la hora del clic - el trabajador puede estar registrando esto despues, en su tiempo libre.
   abrirFinalizarRegistro(registro: RegistroActividad): void {
     this.registroFinalizandoId = registro.id;
-    this.horaFinEditando = this.horaSoloParaInput();
+    const { hh, mm } = this.horaActualComponentes();
+    this.horaFinHH = hh;
+    this.horaFinMM = mm;
     this.cdr.detectChanges();
   }
 
@@ -460,10 +483,10 @@ export class MiJornada implements OnInit, OnDestroy {
   }
 
   confirmarFinalizarRegistro(): void {
-    if (!this.registroFinalizandoId || !this.horaFinEditando) return;
+    if (!this.registroFinalizandoId || this.horaFinHH === null || this.horaFinMM === null) return;
 
     this.guardandoFinalizacion = true;
-    this.registroActividadService.finalizar(this.registroFinalizandoId, undefined, this.horaSoloAIso(this.horaFinEditando)).subscribe({
+    this.registroActividadService.finalizar(this.registroFinalizandoId, undefined, this.horaComponentesAIso(this.horaFinHH, this.horaFinMM)).subscribe({
       next: () => {
         this.notificacionService.exito('Labor finalizada.');
         this.registroFinalizandoId = null;
