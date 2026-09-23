@@ -986,6 +986,14 @@ O/X del Supervisor: al lado de cada trabajador que le aparece logueado hoy en su
 de verdad vino. presente=true (O) solo deja la marca de confirmado. presente=false (X) ademas mueve el estado a
 OBSERVANDO y genera una observacion automatica, para que quede visible en Auditoria (Panel de Asistente) por que
 esa jornada no cuenta como valida. Requiere JWT con rol SUPERVISOR o ADMIN (ver ruta).
+
+A diferencia de revisarAsistencia (que SI queda bloqueado una vez FINALIZADO/SALIDA_OLVIDADA, ver arriba), esto
+NO se congela cuando el registro ya se cerro: la confirmacion del Supervisor es su observacion directa de la
+realidad (¿este trabajador vino hoy, si o no?), independiente de si el trabajador ya marco su propia salida en
+el sistema (con codigo/QR, o incluso SALIDA_OLVIDADA autoservicio). Decision de negocio: el Token de Hacienda
+puede circular entre trabajadores sin que el Supervisor lo note al momento, asi que necesita poder marcar X
+aunque la jornada de ese trabajador ya haya quedado formalmente cerrada - eso es justo lo que la reabre a
+OBSERVANDO para que quede visible en Auditoria.
 */
 export const confirmarAsistencia = async(req:Request, res:Response):Promise<void> => {
     try{
@@ -1000,10 +1008,6 @@ export const confirmarAsistencia = async(req:Request, res:Response):Promise<void
         const asistencia = await Asistencia.findByPk(Number(id));
         if(!asistencia){
             res.status(404).json({ message: 'Registro de asistencia no encontrado.'});
-            return;
-        }
-        if(asistencia.estado === 'FINALIZADO' || asistencia.estado === 'SALIDA_OLVIDADA'){
-            res.status(400).json({ message: 'Este registro ya fue cerrado y no se puede confirmar.'});
             return;
         }
 

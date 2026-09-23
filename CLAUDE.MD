@@ -224,13 +224,19 @@ Al lado de cada trabajador que aparece logueado hoy en su panel, el Supervisor c
   ("Marcado como NO presente por el supervisor"). Esto es lo que atrapa el caso de que alguien pase su código/QR a un
   compañero que no llegó a trabajar - `OBSERVANDO` también corta su sesión (ver arriba) y lo saca del Historial oficial
   (que solo muestra `FINALIZADO`/`SALIDA_OLVIDADA`).
-- No se puede confirmar un registro ya cerrado (`FINALIZADO`/`SALIDA_OLVIDADA`).
+- **A diferencia de `revisarAsistencia` (edición de observaciones/hora_salida), esto SÍ funciona aunque el registro
+  ya esté cerrado** (`FINALIZADO`/`SALIDA_OLVIDADA`) - decisión de negocio: la confirmación del Supervisor es su
+  observación directa de la realidad (¿vio o no vio a ese trabajador hoy?), independiente de si el sistema ya
+  cerró esa jornada. El Token de Hacienda puede circular entre trabajadores sin que el Supervisor lo note al
+  momento de marcar, así que necesita poder decir "esto no fue real" incluso después de cerrado - de hecho X sobre
+  un registro cerrado lo **reabre** a `OBSERVANDO`, justo el comportamiento buscado.
 
 **Frontend**: botones O/X en la columna "Confirmar" de `supervisor-panel` (`confirmarPresencia()`), al lado de
-cada fila. El botón O se aplica directo (bajo riesgo, reversible con otro clic); el X pide confirmación con
-`ConfirmacionService.preguntar()` antes de mandar la petición, porque mueve el registro a `OBSERVANDO` y deja la
-nota automática. Ambos quedan deshabilitados si el registro ya está `FINALIZADO`/`SALIDA_OLVIDADA`, igual que el
-botón de Observación.
+cada fila, **nunca deshabilitados por el estado del registro** (a propósito, ver arriba). El botón O se aplica
+directo (bajo riesgo, reversible con otro clic); el X pide confirmación con `ConfirmacionService.preguntar()`
+antes de mandar la petición, porque mueve el registro a `OBSERVANDO` y deja la nota automática. El botón de
+Observación (edición de texto libre) sigue deshabilitado si el registro ya está `FINALIZADO`/`SALIDA_OLVIDADA` -
+esa sí es edición de datos, distinta de la confirmación O/X.
 
 ## Reglas de negocio confirmadas
 

@@ -197,12 +197,17 @@ export class SupervisorPanel implements OnInit {
     this.cdr.detectChanges();
   }
 
-  // O/X: el Supervisor confirma si el trabajador que aparece logueado hoy realmente vino. O (presente) es
-  // reversible y de bajo riesgo, se aplica directo. X (ausente) mueve el registro a OBSERVANDO y deja una nota
-  // automática (ver backend) - por eso pide confirmación antes.
+  /*
+  O/X: el Supervisor confirma si el trabajador que aparece logueado hoy realmente vino. A diferencia del botón de
+  Observación (que sí se bloquea una vez cerrado el registro), esto funciona aunque la jornada ya esté
+  FINALIZADO/SALIDA_OLVIDADA - el Supervisor está confirmando su observación directa de la realidad (vio o no vio
+  a ese trabajador hoy), independiente de si el sistema ya cerró esa jornada. El Token de Hacienda puede circular
+  entre trabajadores sin que el Supervisor lo note al momento de marcar, así que necesita poder decir "esto no fue
+  real" incluso después de cerrado (ver backend). O (presente) es reversible y de bajo riesgo, se aplica directo.
+  X (ausente) mueve el registro a OBSERVANDO y deja una nota automática (ver backend) - por eso pide confirmación
+  antes.
+  */
   async confirmarPresencia(asis: Asistencia, presente: boolean): Promise<void> {
-    if (asis.estado === 'FINALIZADO' || asis.estado === 'SALIDA_OLVIDADA') return;
-
     if (!presente) {
       const confirmado = await this.confirmacionService.preguntar(
         `¿Confirmas que ${asis.operador?.nombre_completo || 'este trabajador'} NO vino hoy? Esto lo marca como OBSERVANDO.`,
