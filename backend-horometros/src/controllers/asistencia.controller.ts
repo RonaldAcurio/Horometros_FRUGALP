@@ -314,7 +314,7 @@ const procesarMarcacion = async(
             status: 200,
             body: {
                 tipo: 'SALIDA',
-                message:`Hasta Luego! Salida registrada a las ${ahora.toLocaleTimeString('es-EC')}`,
+                message:`Hasta Luego! Salida registrada a las ${ahora.toLocaleTimeString('es-EC', { timeZone: 'America/Guayaquil' })}`,
                 operador: operador.nombre_completo,
                 asistencia,
             },
@@ -351,7 +351,7 @@ const procesarMarcacion = async(
         status: 200,
         body: {
             tipo:'ENTRADA',
-            message: `Bienvenido! Entrada registrada a las ${ahora.toLocaleTimeString('es-EC')}`,
+            message: `Bienvenido! Entrada registrada a las ${ahora.toLocaleTimeString('es-EC', { timeZone: 'America/Guayaquil' })}`,
             operador: operador.nombre_completo,
             asistencia,
         },

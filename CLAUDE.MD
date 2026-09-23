@@ -67,11 +67,21 @@ Dos variantes del mismo núcleo (comparten `procesarMarcacion`):
 - `POST /api/asistencia/marcar-mi-codigo` (autenticado, tipo `operador`): la pantalla **"mi jornada"** del propio
   trabajador (`mi-jornada.ts`, fase `codigo`) - ya se logueó con usuario+clave una sola vez (`POST /api/auth/login`),
   así que aquí solo confirma el Token de Hacienda, sin volver a escribir su clave. Marca al instante (entrada o
-  salida, `procesarMarcacion` decide cuál según si ya tiene jornada abierta) y **no lleva a ningún panel** - muestra
-  una pantalla de confirmación (fase `terminado`) con un botón explícito "Cerrar sesión". Antes se cerraba sola la
-  sesión con un `setTimeout` de 4s, pero eso se sentía como un error/redirect inesperado al login - se quitó a favor
-  de que el propio trabajador decida cuándo cerrar (mismo criterio en las 3 fases que llegan a `terminado`: código,
-  detección de salida por QR, y salida olvidada).
+  salida, `procesarMarcacion` decide cuál según si ya tiene jornada abierta y lo dice explícito en la respuesta,
+  `tipo: 'ENTRADA' | 'SALIDA'`).
+  - **ENTRADA**: lleva al Panel de Actividades (`entrarAActividades()`), **igual que el camino QR** - el código
+    solo reemplaza la forma de marcar presencia, no le quita al trabajador la posibilidad de registrar sus
+    labores del día. (Antes terminaba la sesión de inmediato tras la entrada, sin dejarlo entrar al panel - el
+    usuario reportó esto como que "no lo dejaba trabajar", se corrigió esta ronda.)
+  - **SALIDA**: sigue terminando la jornada de una vez (fase `terminado`, con un botón explícito "Cerrar sesión" -
+    antes se cerraba sola la sesión con un `setTimeout` de 4s, se sentía como un error/redirect inesperado al
+    login, se quitó a favor de que el propio trabajador decida cuándo cerrar; mismo criterio en las 3 fases que
+    llegan a `terminado`: código, detección de salida por QR, y salida olvidada). Se dispara con el botón
+    "🔚 Marcar salida" del Panel de Actividades (`marcarSalida()`, que por código vuelve a **pedir el código desde
+    cero** - no reutiliza el de la entrada, porque el código prueba presencia física en el momento, tanto a la
+    entrada como a la salida - y por QR vuelve a mostrar el QR flotante). Un refresco de página con jornada ya
+    abierta (código o QR) siempre vuelve al Panel de Actividades, nunca fuerza la pantalla de salida - la salida
+    es una acción explícita del trabajador, no algo que se infiera solo por volver a abrir la pantalla.
 
 Si el trabajador marca en una hacienda que no es la suya, el sistema lo autoadmite bajo el Supervisor de esa
 hacienda (reemplaza "admitir externo" para este camino, porque el Token ya probó la presencia física).
@@ -154,6 +164,14 @@ calendario). `mi-jornada.ts` combina ese `HH:mm` con la fecha de hoy (`horaSoloA
 horaria que el dispositivo del trabajador, lo reinterpretaba mal (`new Date("...")` sin offset se lee como hora
 local de quien lo parsea, no de quien lo escribió) y la hora guardada quedaba desfasada varias horas frente a lo
 que el trabajador realmente escribió - bug real reportado y confirmado con pruebas cruzando zonas horarias.
+
+**Bug relacionado pero distinto** (mismo reporte del usuario, "la fecha con la zona horaria"): los mensajes
+`"Bienvenido! Entrada registrada a las..."` / `"Hasta Luego! Salida registrada a las..."` que arma
+`procesarMarcacion` (asistencia.controller.ts) usaban `ahora.toLocaleTimeString('es-EC')` **sin** `timeZone`, que
+solo fija el idioma/formato del texto, no la zona horaria - sin eso, `toLocaleTimeString` usa la zona horaria del
+SERVIDOR (Render corre en UTC), no la de Ecuador. Un trabajador marcando a las 7am Ecuador veía "Entrada
+registrada a las 12:00 p.m." Se corrigió agregando `{ timeZone: 'America/Guayaquil' }` (mismo patrón que
+`getFetchLocalEcuador`/`getFechaLocalEcuador`, que sí lo tenían bien desde antes).
 
 ## Dos tokens que NO son lo mismo
 
@@ -286,23 +304,26 @@ cualquier rol logueado entraba) - ESCANER y MECANICO/OPERADOR nunca tuvieron nec
   Asistencia con filtro de fecha (rol Asistente).
 - `mi-jornada` (`/mi-jornada`, rol MECANICO/OPERADOR únicamente) - pantalla única y cautiva (sin botón "Menú": no
   hay a dónde más ir). 3 fases internas según el estado real, nunca las 3 a la vez:
-  1. **`codigo`** (hacienda con Token vigente): input de código, confirma con `marcar-mi-codigo`. Si el backend
-     responde pidiendo actividad (ya tenía jornada abierta = es una salida), muestra el mismo selector de
-     actividades que el kiosco y reintenta. Al confirmar, pasa a fase `terminado`: mensaje de cierre + botón
+  1. **`codigo`** (hacienda con Token vigente): input de código, confirma con `marcar-mi-codigo`. La respuesta
+     dice `tipo: 'ENTRADA' | 'SALIDA'` - con ENTRADA pasa directo al Panel de Actividades (fase `actividades`,
+     ver abajo); con SALIDA (el backend respondió pidiendo actividad porque ya tenía jornada abierta) muestra el
+     mismo selector de actividades que el kiosco, confirma, y pasa a fase `terminado`: mensaje de cierre + botón
      explícito "Cerrar sesión" (ya no hay logout automático, ver arriba en Camino A).
   2. **`qr`**: QR flotante que se auto-regenera cada 80s (vence a los 90s) + cuenta regresiva visible. Hace
      **polling de `GET /api/asistencia/mi-estado` cada 5s** para detectar que lo escanearon, sin que el trabajador
      tenga que hacer nada.
-  3. **`actividades`** (Panel de Actividades, solo camino QR): formulario para iniciar una labor (equipo +
-     actividad + área si es MECANICO + hora de inicio editable + observaciones) y tabla de labores del día con
-     botón "Finalizar" por labor (abre un editor inline con la hora de fin, también editable - ninguna de las 2
-     horas se le impone al trabajador, puede estar cargando esto más tarde). Botón "🔚 Marcar salida" vuelve a
-     mostrar el QR (fase `qr` de nuevo) para que lo vuelvan a escanear - el mismo polling de estado detecta la
-     salida y pasa a fase `terminado` (botón explícito "Cerrar sesión", ver arriba). Esa salida **ya no pide
-     elegir actividades** (ver "Camino B" arriba).
+  3. **`actividades`** (Panel de Actividades, **ambos caminos** - código y QR): formulario para iniciar una labor
+     (equipo + actividad + área si es MECANICO + hora de inicio editable, solo `time` sin calendario + observaciones)
+     y tabla de labores del día con botón "Finalizar" por labor (editor inline con la hora de fin, también editable
+     - ninguna de las 2 horas se le impone al trabajador, puede estar cargando esto más tarde). Botón
+     "🔚 Marcar salida" (`marcarSalida()`) según el camino: código vuelve a fase `codigo` a pedir el código desde
+     cero (no reutiliza el de la entrada); QR vuelve a mostrar el QR flotante (fase `qr`) para que lo vuelvan a
+     escanear - el mismo polling de estado detecta la salida y pasa a fase `terminado`. Ninguna de las 2 salidas
+     pide elegir actividades otra vez salvo que el backend lo exija (código: siempre; QR: nunca, ver "Camino B").
   Al entrar (`ngOnInit`), consulta `mi-estado` ANTES de decidir la fase inicial - si el trabajador ya tenía una
-  jornada abierta (refrescó la página, o se desconectó y volvió), no muestra el QR/código de entrada por error
-  antes de corregirse solo; salta directo a la fase que corresponde.
+  jornada abierta (refrescó la página, entrada nueva, o se desconectó y volvió), **siempre** va directo al Panel
+  de Actividades, sin importar el camino - la salida es una acción explícita del trabajador (el botón de arriba),
+  nunca algo que se infiera solo por volver a abrir la pantalla.
   **Autoservicio "Salida Olvidada"**: link discreto en las fases `qr` (solo si ya es una salida), `codigo` (solo
   si ya es una salida) y `actividades`, para cuando el trabajador no va a poder cerrar su jornada por el camino
   normal (ver "Autoservicio Salida Olvidada" arriba).

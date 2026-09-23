@@ -105,14 +105,12 @@ export class MiJornada implements OnInit, OnDestroy {
       next: (res) => {
         if (res.en_jornada) {
           this.asistenciaId = res.asistencia_id;
-          if (this.requiereCodigo) {
-            // Camino codigo: ya marco entrada, lo que sigue es confirmar el codigo de salida directamente.
-            this.fase = 'codigo';
-            this.pidiendoActividadSalida = false;
-            this.cargarCatalogoActividades();
-          } else {
-            this.entrarAActividades();
-          }
+          /*
+          Jornada YA abierta (entrada nueva o refresco de pagina, código o QR): siempre al Panel de Actividades.
+          La salida es una accion explicita del trabajador (boton "Marcar salida"), no algo que se infiera solo
+          por volver a abrir la pantalla - igual para los dos caminos.
+          */
+          this.entrarAActividades();
         } else if (this.requiereCodigo) {
           this.fase = 'codigo';
           this.cargarCatalogoActividades();
@@ -158,9 +156,21 @@ export class MiJornada implements OnInit, OnDestroy {
       next: (res) => {
         this.procesandoCodigo = false;
         this.pidiendoActividadSalida = false;
-        this.mensajeFinal = res.message || 'Marcación registrada.';
-        this.fase = 'terminado';
-        this.detenerIntervalos();
+        /*
+        La ENTRADA por código lleva al Panel de Actividades, igual que el camino QR - el código solo reemplaza
+        la forma de marcar presencia, no le quita al trabajador la posibilidad de registrar sus labores del día.
+        La SALIDA (tipo === 'SALIDA', ya seleccionó actividades arriba) sigue terminando la jornada de una vez,
+        como el kiosco de siempre.
+        */
+        if (res.tipo === 'ENTRADA') {
+          this.asistenciaId = res.asistencia?.id ?? null;
+          this.notificacionService.exito(res.message || 'Entrada registrada.');
+          this.entrarAActividades();
+        } else {
+          this.mensajeFinal = res.message || 'Marcación registrada.';
+          this.fase = 'terminado';
+          this.detenerIntervalos();
+        }
         this.cdr.detectChanges();
       },
       error: (err) => {
@@ -388,9 +398,28 @@ export class MiJornada implements OnInit, OnDestroy {
     });
   }
 
+  /*
+  Termina la jornada desde el Panel de Actividades - el camino depende de cómo entró el trabajador: código
+  vuelve a PEDIR el código de nuevo (no reutiliza el de la entrada - el código prueba presencia física en el
+  momento, tanto a la entrada como a la salida) y luego elegir actividades si el backend lo exige; QR vuelve a
+  mostrar el QR flotante para que lo escaneen. Nunca se mezclan los dos caminos dentro de una misma jornada.
+  */
+  marcarSalida(): void {
+    if (this.requiereCodigo) {
+      this.fase = 'codigo';
+      this.pidiendoActividadSalida = false;
+      this.codigoIngresado = '';
+      this.errorCodigo = '';
+      this.actividadesSeleccionadasSalida = [];
+      this.cargarCatalogoActividades();
+    } else {
+      this.mostrarQrDeSalida();
+    }
+  }
+
   // Vuelve a mostrar el QR flotante para que lo escaneen y quede registrada la salida (obligatorio, no hay otra
   // forma de terminar la jornada).
-  mostrarQrDeSalida(): void {
+  private mostrarQrDeSalida(): void {
     this.fase = 'qr';
     this.iniciarFlujoQr();
   }
