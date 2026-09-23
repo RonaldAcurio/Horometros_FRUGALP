@@ -426,3 +426,33 @@ html, body {
   flex-wrap: wrap;
   gap: 0.5rem;
 }
+
+/*
+Impresion de una ventana flotante (ej. Ver/Imprimir Hoja de Actividades, asistencia-panel.ts): al imprimir,
+oculta TODO lo demas de la pantalla (sidebar, tabs, backdrop) y deja visible solo el nodo marcado con
+.imprimible, reposicionado para ocupar la hoja completa. Los botones que no deben salir en el papel (cerrar,
+imprimir) llevan .no-imprimir.
+*/
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .imprimible,
+  .imprimible * {
+    visibility: visible;
+  }
+
+  .imprimible {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    max-height: none;
+    box-shadow: none;
+  }
+
+  .imprimible .no-imprimir {
+    display: none;
+  }
+}

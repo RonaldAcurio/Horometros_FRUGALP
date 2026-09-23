@@ -186,3 +186,99 @@
   font-size: 0.8rem;
   cursor: help;
 }
+
+/* Modal "Ver/Imprimir Hoja de Actividades" - imita la hoja física siempre en blanco/negro, sin importar el
+   tema del resto del panel (misma idea que una hoja impresa). Ver también @media print en styles.css. */
+.hoja-actividades-card {
+  max-width: 55rem;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  background-color: #ffffff;
+  color: #1f2937;
+}
+
+.hoja-actividades-cerrar {
+  position: absolute;
+  top: -0.75rem;
+  right: -0.75rem;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: none;
+  background-color: #7a1f3d;
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hoja-actividades-barra {
+  margin-bottom: 1rem;
+}
+
+.hoja-actividades-titulo {
+  font-size: 1.1rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin: 0 0 0.5rem;
+  color: #1f2937;
+}
+
+.hoja-actividades-encabezado {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.hoja-actividades-mecanico {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: #1f2937;
+}
+
+.hoja-actividades-fecha {
+  font-size: 0.9rem;
+  color: #4b5563;
+}
+
+.hoja-actividades-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.hoja-actividades-tabla th,
+.hoja-actividades-tabla td {
+  border: 1px solid #9ca3af;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+
+.hoja-actividades-tabla th {
+  background: #f3f4f6;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  color: #1f2937;
+}
+
+.hoja-actividades-vacio {
+  text-align: center;
+  color: #6b7280;
+  padding: 1.25rem;
+}
+
+.hoja-actividades-observaciones {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #9ca3af;
+  font-size: 0.85rem;
+  color: #1f2937;
+}
+
+.hoja-actividades-observaciones p {
+  margin: 0.25rem 0 0;
+  color: #374151;
+}

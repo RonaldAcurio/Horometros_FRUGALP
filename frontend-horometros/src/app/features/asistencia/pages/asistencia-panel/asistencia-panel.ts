@@ -80,8 +80,18 @@ export class AsistenciaPanel implements OnInit{
   totalHistorial: number = 0;
 
   // Reporte imprimible "Ver/Imprimir" (Directorio de Operadores y fila del Historial): carga las labores de un
-  // operador para mostrarlas con el mismo diseño de la hoja física "REPORTES DE LABORES DIARIOS".
+  // operador para mostrarlas con el mismo diseño de la hoja física "REPORTES DE LABORES DIARIOS". Se muestra
+  // en una ventana flotante (mismo patrón que "Ver Evidencia") en vez de una pestaña nueva - la app va a quedar
+  // empaquetada, así que todo tiene que vivir dentro de la misma pantalla.
   cargandoReporteImpresion = false;
+  mostrarModalHoja: boolean = false;
+  hojaOperador: Operador | null = null;
+  hojaRegistros: RegistroActividad[] = [];
+  // Cuando la hoja es de UN solo día (fila del Historial) la fecha va junto al nombre del operador y se
+  // ocultan la columna Fecha de la tabla y trae la observación del Supervisor de esa jornada. Cuando es el
+  // historial completo del Directorio (varios días) queda null y la tabla vuelve a mostrar Fecha por fila.
+  hojaFechaUnica: string | null = null;
+  hojaObservacionesSupervisor: string | null = null;
 
   constructor(
     private asistenciaService: AsistenciaService,
@@ -312,23 +322,25 @@ export class AsistenciaPanel implements OnInit{
 
   /*
   Ver/Imprimir hoja de actividades: mismo diseño de la hoja física "REPORTES DE LABORES DIARIOS" que el usuario
-  compartió (columnas FECHA/MECANICO/EQUIPO/AREA/DAÑO/TIEMPO ESTIMADO/TALLER-CAMPO). Sigue el mismo patrón que
-  imprimirQR() - ventana nueva con HTML propio, sin depender de un componente de impresión aparte.
+  compartió, pero como ventana FLOTANTE dentro de la misma pantalla (mismo patrón que "Ver Evidencia",
+  visor-foto.ts) en vez de una pestaña nueva - la app va empaquetada, así que abrir un link/ventana del
+  navegador aparte no tiene sentido ahí. Imprimir usa la propia ventana (window.print()) con el resto de la
+  pantalla oculto vía CSS de impresión (ver .imprimible en styles.css), no un documento aparte.
 
   Dos puntos de entrada:
   - Directorio de Operadores (`verImprimirHojaActividades`): historial COMPLETO de un operador (todas sus
-    jornadas), combina ver+imprimir en un solo botón - se queda igual que antes.
+    jornadas, varias fechas posibles) - combina ver+imprimir en un solo botón, se queda igual que antes.
   - Historial de Asistencia (`verHojaFilaHistorial`/`imprimirHojaFilaHistorial`): UN SOLO día puntual (la fila
-    clicada), con "Ver" y "Imprimir" como acciones separadas - "Ver" abre la vista previa sin disparar el
-    diálogo de impresión del navegador, "Imprimir" sí lo dispara de inmediato.
+    clicada) - "Ver" abre la vista previa sin imprimir, "Imprimir" además dispara la impresión. Al ser un solo
+    día la fecha se muestra junto al nombre del operador (no repetida por fila) y se agrega el pie con la
+    observación que el Supervisor haya dejado sobre esa jornada.
   */
   verImprimirHojaActividades(op: Operador): void {
     this.cargandoReporteImpresion = true;
     this.registroActividadService.obtenerPorOperador(op.id).subscribe({
       next: (registros) => {
         this.cargandoReporteImpresion = false;
-        this.abrirVentanaHojaActividades(op, registros, true);
-        this.cdr.detectChanges();
+        this.abrirHojaActividades(op, registros, { autoImprimir: true });
       },
       error: (err) => {
         this.cargandoReporteImpresion = false;
@@ -352,8 +364,11 @@ export class AsistenciaPanel implements OnInit{
     this.registroActividadService.obtenerPorOperador(reg.operador_id, reg.fecha, reg.fecha).subscribe({
       next: (registros) => {
         this.cargandoReporteImpresion = false;
-        this.abrirVentanaHojaActividades(reg.operador!, registros, autoImprimir);
-        this.cdr.detectChanges();
+        this.abrirHojaActividades(reg.operador!, registros, {
+          fechaUnica: reg.fecha,
+          observacionesSupervisor: reg.observaciones ?? null,
+          autoImprimir,
+        });
       },
       error: (err) => {
         this.cargandoReporteImpresion = false;
@@ -363,7 +378,7 @@ export class AsistenciaPanel implements OnInit{
     });
   }
 
-  private duracionLabor(reg: RegistroActividad): string {
+  duracionLabor(reg: RegistroActividad): string {
     if (!reg.hora_fin) return '—';
     const minutos = Math.round((new Date(reg.hora_fin).getTime() - new Date(reg.hora_inicio).getTime()) / 60000);
     if (minutos < 0) return '—';
@@ -372,67 +387,35 @@ export class AsistenciaPanel implements OnInit{
     return horas > 0 ? `${horas}h ${resto}min` : `${resto}min`;
   }
 
-  private abrirVentanaHojaActividades(op: Operador, registros: RegistroActividad[], autoImprimir: boolean): void {
-    const ventana = window.open('', '_blank');
-    if (!ventana) return;
+  private abrirHojaActividades(
+    op: Operador,
+    registros: RegistroActividad[],
+    opciones: { fechaUnica?: string; observacionesSupervisor?: string | null; autoImprimir: boolean }
+  ): void {
+    this.hojaOperador = op;
+    this.hojaRegistros = registros;
+    this.hojaFechaUnica = opciones.fechaUnica ?? null;
+    this.hojaObservacionesSupervisor = opciones.observacionesSupervisor ?? null;
+    this.mostrarModalHoja = true;
+    this.cdr.detectChanges();
 
-    // Mecánico va en el encabezado (siempre es UN solo operador por llamada) - así la tabla queda más parecida
-    // a la hoja física, que solo repite Fecha por fila y escribe el nombre del mecánico una sola vez.
-    const filas = registros.length > 0
-      ? registros.map((reg) => `
-          <tr>
-            <td>${reg.asistencia?.fecha || '—'}</td>
-            <td>${reg.equipo ? `${reg.equipo.codigo_megued} - ${reg.equipo.nombre_equipo}` : '—'}</td>
-            <td>${reg.area || '—'}</td>
-            <td>${reg.observaciones || '—'}</td>
-            <td>${this.duracionLabor(reg)}</td>
-            <td>${reg.actividad?.categoria || '—'}</td>
-          </tr>
-        `).join('')
-      : `<tr><td colspan="6" class="sin-registros">Sin labores registradas.</td></tr>`;
+    // El print tiene que dispararse despues de que el modal ya este pintado en el DOM.
+    if (opciones.autoImprimir) {
+      setTimeout(() => this.imprimirHoja(), 150);
+    }
+  }
 
-    ventana.document.write(`
-      <html>
-        <head>
-          <title>Reporte de Labores - ${op.nombre_completo}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 24px; color: #1f2937; }
-            h1 { font-size: 18px; text-transform: uppercase; margin-bottom: 4px; }
-            .subtitulo { color: #4b5563; margin-bottom: 20px; }
-            table { width: 100%; border-collapse: collapse; font-size: 13px; }
-            th, td { border: 1px solid #9ca3af; padding: 6px 8px; text-align: left; }
-            th { background: #f3f4f6; text-transform: uppercase; font-size: 11px; }
-            .sin-registros { text-align: center; color: #6b7280; padding: 20px; }
-            .barra-acciones { margin-bottom: 16px; }
-            .barra-acciones button {
-              background: #059669; color: #fff; border: none; border-radius: 6px;
-              padding: 8px 16px; font-size: 13px; cursor: pointer;
-            }
-            @media print { .barra-acciones { display: none; } }
-          </style>
-        </head>
-        <body>
-          <div class="barra-acciones"><button onclick="window.print()">🖨️ Imprimir</button></div>
-          <h1>Reportes de Labores Diarios</h1>
-          <p class="subtitulo">Mecánico: ${op.nombre_completo}${op.codigo_megued ? ' · ' + op.codigo_megued : ''}</p>
-          <table>
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Equipo</th>
-                <th>Área</th>
-                <th>Daño</th>
-                <th>Tiempo estimado</th>
-                <th>Taller/Campo</th>
-              </tr>
-            </thead>
-            <tbody>${filas}</tbody>
-          </table>
-          ${autoImprimir ? '<script>window.print();</script>' : ''}
-        </body>
-      </html>
-    `);
-    ventana.document.close();
+  imprimirHoja(): void {
+    window.print();
+  }
+
+  cerrarModalHoja(): void {
+    this.mostrarModalHoja = false;
+    this.hojaOperador = null;
+    this.hojaRegistros = [];
+    this.hojaFechaUnica = null;
+    this.hojaObservacionesSupervisor = null;
+    this.cdr.detectChanges();
   }
 
   cambiarTab(tab:'directorio' | 'historial'):void{

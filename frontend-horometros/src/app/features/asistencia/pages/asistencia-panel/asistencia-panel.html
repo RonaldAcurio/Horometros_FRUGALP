@@ -325,4 +325,56 @@
       </form>
     </div>
   </div>
+
+  <!-- MODAL: VER/IMPRIMIR HOJA DE ACTIVIDADES (Directorio y fila del Historial) - flotante, no pestaña nueva,
+       porque la app va empaquetada. Al imprimir, styles.css oculta el resto de la pantalla y deja visible
+       solo .imprimible (ver @media print en styles.css). -->
+  <div class="modal-backdrop" *ngIf="mostrarModalHoja" (click)="cerrarModalHoja()">
+    <div class="modal-card hoja-actividades-card imprimible" (click)="$event.stopPropagation()">
+      <button type="button" class="hoja-actividades-cerrar no-imprimir" (click)="cerrarModalHoja()">✕</button>
+
+      <div class="hoja-actividades-barra no-imprimir">
+        <button type="button" class="btn btn-primary btn-sm" (click)="imprimirHoja()">🖨️ Imprimir</button>
+      </div>
+
+      <h2 class="hoja-actividades-titulo">Reportes de Labores Diarios</h2>
+      <div class="hoja-actividades-encabezado">
+        <span class="hoja-actividades-mecanico">
+          Mecánico: {{ hojaOperador?.nombre_completo }}<ng-container *ngIf="hojaOperador?.codigo_megued"> · {{ hojaOperador?.codigo_megued }}</ng-container>
+        </span>
+        <span *ngIf="hojaFechaUnica" class="hoja-actividades-fecha">Fecha: {{ hojaFechaUnica }}</span>
+      </div>
+
+      <table class="hoja-actividades-tabla">
+        <thead>
+          <tr>
+            <th *ngIf="!hojaFechaUnica">Fecha</th>
+            <th>Equipo</th>
+            <th>OT</th>
+            <th>Daño</th>
+            <th>Tiempo estimado</th>
+            <th>Taller/Campo</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let reg of hojaRegistros">
+            <td *ngIf="!hojaFechaUnica">{{ reg.asistencia?.fecha || '—' }}</td>
+            <td>{{ reg.equipo ? (reg.equipo.codigo_megued + ' - ' + reg.equipo.nombre_equipo) : '—' }}</td>
+            <td>{{ reg.area || '—' }}</td>
+            <td>{{ reg.observaciones || '—' }}</td>
+            <td>{{ duracionLabor(reg) }}</td>
+            <td>{{ reg.actividad?.categoria || '—' }}</td>
+          </tr>
+          <tr *ngIf="hojaRegistros.length === 0">
+            <td [attr.colspan]="hojaFechaUnica ? 5 : 6" class="hoja-actividades-vacio">Sin labores registradas.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="hoja-actividades-observaciones" *ngIf="hojaFechaUnica">
+        <strong>Observaciones del Supervisor:</strong>
+        <p>{{ hojaObservacionesSupervisor || 'Sin observaciones.' }}</p>
+      </div>
+    </div>
+  </div>
 </div>

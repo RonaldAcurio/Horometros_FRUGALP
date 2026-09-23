@@ -7,6 +7,8 @@ export class RegistroActividad extends Model<InferAttributes<RegistroActividad>,
     declare equipo_id: number;
     declare actividad_id: number;
     // ----------------------------------------Campos uso exclusivo de Mecanicos (por ahora)----------------------------------------
+    // OT (Orden de Trabajo): la columna se sigue llamando "area" por compatibilidad, pero "area" como tal ya no
+    // se usa - el dato que guarda es el numero/codigo de OT (decision del usuario, ver CLAUDE.md).
     declare area: CreationOptional<string | null>;
     //-----------------------------------------Campos uso exclusivo de Operador (fase 2, hoy quedan en NULL)------------------------
     declare seccion_id: CreationOptional<number | null>;

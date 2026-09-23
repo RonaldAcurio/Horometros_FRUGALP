@@ -537,27 +537,43 @@ lo confirmado:
 
 ### Ver/Imprimir hoja de actividades (Directorio de Operadores + Historial de Asistencia)
 
-`asistencia-panel.ts`, `abrirVentanaHojaActividades(op, registros, autoImprimir)` abre una ventana nueva con el
-mismo diseño que la hoja física "REPORTES DE LABORES DIARIOS" que el usuario compartió como foto, mismo patrón
-que ya existía para `imprimirQR()` (HTML propio, sin componente de impresión aparte). El Mecánico va en un
-subtítulo del encabezado (`Mecánico: <nombre> · <código>`), no como columna de la tabla, porque cada llamada es
-de un solo operador (igual que la hoja física, que solo repite Fecha por fila). Columnas de la tabla: FECHA /
-EQUIPO / ÁREA / DAÑO / TIEMPO ESTIMADO / TALLER-CAMPO - la hoja física no tiene un campo equivalente exacto a
-"daño" ni a "tiempo estimado" en el modelo actual, así que se mapean del dato más cercano disponible: DAÑO =
-`RegistroActividad.observaciones` (el campo de texto libre), TIEMPO ESTIMADO = duración real calculada
-(`hora_fin - hora_inicio`, o "—" si la labor sigue abierta), TALLER-CAMPO = `Actividad.categoria`. La ventana
-siempre trae un botón "🖨️ Imprimir" manual en pantalla (oculto en `@media print`); el parámetro `autoImprimir`
-solo controla si ADEMÁS se dispara `window.print()` al abrir.
+`asistencia-panel.ts`, `abrirHojaActividades(op, registros, opciones)` abre una **ventana flotante dentro de la
+misma pantalla** (`mostrarModalHoja`, mismo patrón que "Ver Evidencia" en `visor-foto.ts`: `.modal-backdrop` +
+`.modal-card`) con el mismo diseño que la hoja física "REPORTES DE LABORES DIARIOS" que el usuario compartió
+como foto - **no** una pestaña/ventana nueva del navegador (`window.open`), a diferencia de `imprimirQR()`: la
+app va empaquetada, así que un link separado no tiene sentido ahí, todo tiene que vivir en la misma pantalla.
+Imprimir llama a `window.print()` sobre la propia página: `styles.css` (`@media print`) oculta con
+`visibility: hidden` todo lo que no sea el nodo `.imprimible` (el propio `.modal-card`) y lo reposiciona a
+`position: absolute` para que ocupe toda la hoja - los botones de Cerrar/Imprimir llevan `.no-imprimir` para no
+salir en el papel. Esta técnica de impresión (clase `.imprimible` + `.no-imprimir` en el global `styles.css`) es
+reutilizable para cualquier otro modal que a futuro necesite "imprimir solo esto".
 
-Dos puntos de entrada, mismo método interno:
+El Mecánico va en un subtítulo del encabezado en negrita y letra más grande (`.hoja-actividades-mecanico`:
+`Mecánico: <nombre> · <código>`), no como columna de la tabla, porque cada llamada es de un solo operador (igual
+que la hoja física, que solo repite Fecha por fila). Columnas de la tabla: EQUIPO / OT / DAÑO / TIEMPO ESTIMADO /
+TALLER-CAMPO. La hoja física no tiene un campo equivalente exacto a "daño" ni a "tiempo estimado" en el modelo
+actual, así que se mapean del dato más cercano disponible: DAÑO = `RegistroActividad.observaciones` (el campo de
+texto libre), TIEMPO ESTIMADO = duración real calculada (`hora_fin - hora_inicio`, o "—" si la labor sigue
+abierta), TALLER-CAMPO = `Actividad.categoria`. **OT** = `RegistroActividad.area` (decisión del usuario esta
+ronda: la columna sigue llamándose `area` en la base de datos, pero "área" como concepto ya no se usa - lo que
+guarda es el número/código de Orden de Trabajo del mecánico; la etiqueta en Panel de Actividades, `mi-jornada.html`,
+también cambió de "OT / Área" a solo "OT").
+
+Dos puntos de entrada, mismo método interno (`abrirHojaActividades`):
 - **Directorio de Operadores** (Ficha con un operador seleccionado): botón "📄 Ver/Imprimir Hoja de Actividades"
-  (`verImprimirHojaActividades`) - trae el historial COMPLETO de ese operador (todas sus jornadas, sin rango de
-  fecha) y dispara auto-impresión (`autoImprimir=true`), igual que el comportamiento original.
+  (`verImprimirHojaActividades`) - trae el historial COMPLETO de ese operador (todas sus jornadas, varias fechas
+  posibles) y dispara auto-impresión, igual que el comportamiento original. Como abarca varios días, la tabla SÍ
+  mantiene la columna Fecha por fila y NO se muestra el pie de observaciones del Supervisor (no hay una sola
+  jornada a la que asociarlas).
 - **Historial de Asistencia** (tabla con filtros de fecha/hacienda): columna "Ver/Imprimir" reemplazó a la
   columna "Actividades" (que era redundante con lo que ya se ve en el Panel de Supervisor). Cada fila tiene
-  botones separados "👁️ Ver" (`verHojaFilaHistorial`, `autoImprimir=false`, solo abre la vista previa) e
-  "🖨️ Imprimir" (`imprimirHojaFilaHistorial`, `autoImprimir=true`) - ambos scoped a **ese día puntual** (la
-  fecha de esa fila, vía `fecha_inicio=fecha_fin=reg.fecha`), no al historial completo del operador.
+  botones separados "👁️ Ver" (`verHojaFilaHistorial`, solo abre la vista previa) e "🖨️ Imprimir"
+  (`imprimirHojaFilaHistorial`, además dispara la impresión) - ambos scoped a **ese día puntual** (la fecha de
+  esa fila, vía `fecha_inicio=fecha_fin=reg.fecha`), no al historial completo del operador. Al ser un solo día:
+  la Fecha se muestra junto al nombre del operador en el encabezado en vez de repetirse por fila (se oculta la
+  columna Fecha de la tabla), y se agrega un pie "Observaciones del Supervisor" con
+  `Asistencia.observaciones` de esa jornada (el mismo campo que ya se edita en el Panel de Supervisor,
+  `revisarAsistencia`) - "Sin observaciones." si viene vacío.
 
 Fuente de datos: `GET /api/registro-actividades/por-operador?operador_id=X&fecha_inicio=Y&fecha_fin=Z` (nuevo,
 distinto de `obtenerRegistrosPorAsistencia` que es de una sola jornada) - trae las labores de ESE operador a
