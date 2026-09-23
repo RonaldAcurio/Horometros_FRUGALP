@@ -93,13 +93,27 @@
               <option [ngValue]="null">Selecciona un equipo</option>
               <option *ngFor="let eq of equipos" [ngValue]="eq.id">{{ eq.codigo_megued }} - {{ eq.nombre_equipo }}</option>
             </select>
+            <button
+              type="button"
+              class="btn-link-cargar-mas"
+              *ngIf="equiposPagina < equiposTotalPaginas"
+              [disabled]="cargandoMasEquipos"
+              (click)="cargarMasEquipos()"
+            >{{ cargandoMasEquipos ? 'Cargando...' : 'Cargar más equipos' }}</button>
           </div>
           <div class="form-group">
             <label class="form-label">Actividad</label>
             <select class="input-control w-full" [(ngModel)]="nuevoRegistro.actividad_id" name="actividad_id" required>
               <option [ngValue]="null">Selecciona una actividad</option>
-              <option *ngFor="let act of actividadesCatalogo" [ngValue]="act.id">{{ act.codigo_megued }} - {{ act.description }}</option>
+              <option *ngFor="let act of actividadesCatalogoPanel" [ngValue]="act.id">{{ act.codigo_megued }} - {{ act.description }}</option>
             </select>
+            <button
+              type="button"
+              class="btn-link-cargar-mas"
+              *ngIf="actividadesPanelPagina < actividadesPanelTotalPaginas"
+              [disabled]="cargandoMasActividadesPanel"
+              (click)="cargarMasActividadesPanel()"
+            >{{ cargandoMasActividadesPanel ? 'Cargando...' : 'Cargar más actividades' }}</button>
           </div>
           <div class="form-group" *ngIf="esMecanico">
             <label class="form-label">OT / Área</label>
@@ -107,7 +121,7 @@
           </div>
           <div class="form-group">
             <label class="form-label">Hora de inicio</label>
-            <input type="datetime-local" class="input-control w-full" [(ngModel)]="nuevoRegistro.hora_inicio" name="hora_inicio" required>
+            <input type="time" class="input-control w-full" [(ngModel)]="nuevoRegistro.hora_inicio" name="hora_inicio" required>
             <p class="hint-text">Puedes cambiarla si estás registrando esto más tarde.</p>
           </div>
           <div class="form-group">
@@ -153,7 +167,7 @@
 
                 <!-- Editor inline de la hora de fin, para esta fila puntual -->
                 <div *ngIf="registroFinalizandoId === reg.id" class="finalizar-inline">
-                  <input type="datetime-local" class="input-control input-control-sm" [(ngModel)]="horaFinEditando" name="horaFin{{ reg.id }}">
+                  <input type="time" class="input-control input-control-sm" [(ngModel)]="horaFinEditando" name="horaFin{{ reg.id }}">
                   <button class="btn btn-primary btn-sm" [disabled]="guardandoFinalizacion || !horaFinEditando" (click)="confirmarFinalizarRegistro()">✔️</button>
                   <button class="btn btn-secondary btn-sm" [disabled]="guardandoFinalizacion" (click)="cancelarFinalizarRegistro()">✕</button>
                 </div>
@@ -175,7 +189,8 @@
   <!-- FASE: TERMINADO -->
   <div class="card jornada-card" *ngIf="fase === 'terminado'">
     <h2 class="jornada-title">✅ {{ mensajeFinal }}</h2>
-    <p class="jornada-subtitle">Cerrando tu sesión...</p>
+    <p class="jornada-subtitle">Ya puedes cerrar tu sesión.</p>
+    <button type="button" class="btn btn-primary" (click)="cerrarSesion()">Cerrar sesión</button>
   </div>
 
   <div class="card jornada-card" *ngIf="fase === 'cargando'">

@@ -1,8 +1,9 @@
 import { Component, ChangeDetectorRef, OnInit, signal } from '@angular/core';
-import { Operador, Asistencia } from '../../../../core/models/asistencia.model';
+import { Operador, Asistencia, RegistroActividad } from '../../../../core/models/asistencia.model';
 import * as QRCode from 'qrcode';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 import { UsuarioService } from '../../../../core/services/usuario.service';
+import { RegistroActividadService } from '../../../../core/services/registro-actividad.service';
 import { Usuario } from '../../../../core/models/usuario.model';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
@@ -73,9 +74,14 @@ export class AsistenciaPanel implements OnInit{
   totalPaginasHistorial: number = 1;
   totalHistorial: number = 0;
 
+  // Reporte imprimible "Ver/Imprimir" (Directorio de Operadores): carga las labores de UN operador para
+  // mostrarlas con el mismo diseño de la hoja física "REPORTES DE LABORES DIARIOS".
+  cargandoReporteImpresion = false;
+
   constructor(
     private asistenciaService: AsistenciaService,
     private usuarioService: UsuarioService,
+    private registroActividadService: RegistroActividadService,
     private cdr: ChangeDetectorRef,
     private notificacionService: NotificacionService
   ){};
@@ -288,6 +294,93 @@ export class AsistenciaPanel implements OnInit{
       `);
       ventanaImpresion.document.close();
     }
+  }
+
+  /*
+  Ver/Imprimir hoja de actividades de UN operador (Directorio de Operadores): mismo diseño de la hoja física
+  "REPORTES DE LABORES DIARIOS" que el usuario compartió (columnas FECHA/MECANICO/EQUIPO/AREA/DAÑO/TIEMPO
+  ESTIMADO/TALLER-CAMPO). Sigue el mismo patrón que imprimirQR() - ventana nueva con HTML propio y
+  window.print(), sin depender de un componente de impresión aparte.
+  */
+  verImprimirHojaActividades(op: Operador): void {
+    this.cargandoReporteImpresion = true;
+    this.registroActividadService.obtenerPorOperador(op.id).subscribe({
+      next: (registros) => {
+        this.cargandoReporteImpresion = false;
+        this.abrirVentanaHojaActividades(op, registros);
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.cargandoReporteImpresion = false;
+        this.notificacionService.error(err.error?.message || 'Error al cargar las labores del operador.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  private duracionLabor(reg: RegistroActividad): string {
+    if (!reg.hora_fin) return '—';
+    const minutos = Math.round((new Date(reg.hora_fin).getTime() - new Date(reg.hora_inicio).getTime()) / 60000);
+    if (minutos < 0) return '—';
+    const horas = Math.floor(minutos / 60);
+    const resto = minutos % 60;
+    return horas > 0 ? `${horas}h ${resto}min` : `${resto}min`;
+  }
+
+  private abrirVentanaHojaActividades(op: Operador, registros: RegistroActividad[]): void {
+    const ventana = window.open('', '_blank');
+    if (!ventana) return;
+
+    const filas = registros.length > 0
+      ? registros.map((reg) => `
+          <tr>
+            <td>${reg.asistencia?.fecha || '—'}</td>
+            <td>${op.nombre_completo}</td>
+            <td>${reg.equipo ? `${reg.equipo.codigo_megued} - ${reg.equipo.nombre_equipo}` : '—'}</td>
+            <td>${reg.area || '—'}</td>
+            <td>${reg.observaciones || '—'}</td>
+            <td>${this.duracionLabor(reg)}</td>
+            <td>${reg.actividad?.categoria || '—'}</td>
+          </tr>
+        `).join('')
+      : `<tr><td colspan="7" class="sin-registros">Sin labores registradas.</td></tr>`;
+
+    ventana.document.write(`
+      <html>
+        <head>
+          <title>Reporte de Labores - ${op.nombre_completo}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; color: #1f2937; }
+            h1 { font-size: 18px; text-transform: uppercase; margin-bottom: 4px; }
+            .subtitulo { color: #4b5563; margin-bottom: 20px; }
+            table { width: 100%; border-collapse: collapse; font-size: 13px; }
+            th, td { border: 1px solid #9ca3af; padding: 6px 8px; text-align: left; }
+            th { background: #f3f4f6; text-transform: uppercase; font-size: 11px; }
+            .sin-registros { text-align: center; color: #6b7280; padding: 20px; }
+          </style>
+        </head>
+        <body>
+          <h1>Reportes de Labores Diarios</h1>
+          <p class="subtitulo">${op.nombre_completo} · ${op.codigo_megued || ''}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Mecánico</th>
+                <th>Equipo</th>
+                <th>Área</th>
+                <th>Daño</th>
+                <th>Tiempo estimado</th>
+                <th>Taller/Campo</th>
+              </tr>
+            </thead>
+            <tbody>${filas}</tbody>
+          </table>
+          <script>window.print();</script>
+        </body>
+      </html>
+    `);
+    ventana.document.close();
   }
 
   cambiarTab(tab:'directorio' | 'historial'):void{

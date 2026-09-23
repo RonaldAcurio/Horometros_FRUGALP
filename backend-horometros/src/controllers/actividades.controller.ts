@@ -1,20 +1,39 @@
 import { Request, Response } from 'express'
 import { Actividad } from '../models'
 
-// Consultar todas las ACtividades utilizadno nuestro ORM
+/*
+Consultar todas las Actividades. Sin 'pagina'/'limite' en la query devuelve el arreglo completo (asi lo esperan
+el kiosco y el selector de actividades del camino codigo, que muestran TODO el catalogo como checklist). Con
+'pagina' o 'limite', responde paginado (mismo patron que 'obtenerAsistenciaHoy') - lo usa el selector del Panel
+de Actividades, cuyo catalogo puede crecer.
+*/
 export const ObtenerActividades = async( req:Request, res:Response ) => {
     try{
 
-        const { categoria } = req.query;
-        
+        const { categoria, pagina: paginaQuery, limite: limiteQuery } = req.query;
+
         const wherecategoria = categoria ? { categoria: String(categoria).toUpperCase() } : {};
 
-        const actividades = await Actividad.findAll({
+        if(paginaQuery === undefined && limiteQuery === undefined){
+            const actividades = await Actividad.findAll({
+                where : wherecategoria,
+                order : [['id','ASC']]
+            });
+            return res.status(200).json(actividades);
+        }
+
+        const pagina = Math.max(1, Number(paginaQuery) || 1);
+        const limite = Math.min(100, Math.max(1, Number(limiteQuery) || 20));
+        const offset = (pagina - 1) * limite;
+
+        const { rows: actividades, count: total } = await Actividad.findAndCountAll({
             where : wherecategoria,
-            order : [['id','ASC']]
+            order : [['id','ASC']],
+            limit: limite,
+            offset,
         });
 
-        return res.status(200).json(actividades);
+        return res.status(200).json({ data: actividades, total, pagina, totalPaginas: Math.ceil(total / limite) || 1 });
 
     } catch(err){
         return res.status(500).json({ message:'No se pudo procesar su solicitud', err });

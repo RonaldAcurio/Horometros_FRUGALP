@@ -196,4 +196,27 @@ export class SupervisorPanel implements OnInit {
     this.observacionTexto = '';
     this.cdr.detectChanges();
   }
+
+  // O/X: el Supervisor confirma si el trabajador que aparece logueado hoy realmente vino. O (presente) es
+  // reversible y de bajo riesgo, se aplica directo. X (ausente) mueve el registro a OBSERVANDO y deja una nota
+  // automática (ver backend) - por eso pide confirmación antes.
+  async confirmarPresencia(asis: Asistencia, presente: boolean): Promise<void> {
+    if (asis.estado === 'FINALIZADO' || asis.estado === 'SALIDA_OLVIDADA') return;
+
+    if (!presente) {
+      const confirmado = await this.confirmacionService.preguntar(
+        `¿Confirmas que ${asis.operador?.nombre_completo || 'este trabajador'} NO vino hoy? Esto lo marca como OBSERVANDO.`,
+        'Marcar como NO presente'
+      );
+      if (!confirmado) return;
+    }
+
+    this.asistenciaService.confirmarAsistencia(asis.id, presente).subscribe({
+      next: () => {
+        this.notificacionService.exito('Confirmación registrada.');
+        this.cargarAsistencias();
+      },
+      error: (err) => this.notificacionService.error(err.error?.message || 'Error al confirmar la asistencia.'),
+    });
+  }
 }

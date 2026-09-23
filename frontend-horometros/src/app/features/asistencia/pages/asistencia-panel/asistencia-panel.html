@@ -142,6 +142,13 @@
             <button class="btn btn-secondary w-full mt-2" (click)="imprimirQR()">
               🖨️ Imprimir Carnet
             </button>
+            <button
+              class="btn btn-secondary w-full mt-2"
+              [disabled]="cargandoReporteImpresion"
+              (click)="verImprimirHojaActividades(operadorSeleccionado)"
+            >
+              {{ cargandoReporteImpresion ? 'Cargando...' : '📄 Ver/Imprimir Hoja de Actividades' }}
+            </button>
           </div>
         </div>
       </div>

@@ -113,3 +113,19 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+.btn-link-cargar-mas {
+  background: none;
+  border: none;
+  color: #059669;
+  font-size: 0.78rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0.2rem 0;
+  display: block;
+}
+
+.btn-link-cargar-mas:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

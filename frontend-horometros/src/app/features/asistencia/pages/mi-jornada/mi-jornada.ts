@@ -47,8 +47,26 @@ export class MiJornada implements OnInit, OnDestroy {
 
   // --- Fase actividades ---
   asistenciaId: number | null = null;
-  equipos: Equipo[] = [];
   registros: RegistroActividad[] = [];
+
+  /*
+  Los selectores de equipo/actividad del formulario se cargan paginados (el catalogo puede crecer con el
+  tiempo) y van acumulando paginas con "Cargar más" en vez de mostrar controles de pagina - dentro de un
+  <select> nativo no tiene sentido "ir a la pagina anterior" a mitad de elegir una opcion.
+  */
+  equipos: Equipo[] = [];
+  equiposPagina = 0;
+  equiposTotalPaginas = 1;
+  cargandoMasEquipos = false;
+
+  // (actividadesCatalogo, declarado arriba en "Fase codigo": catalogo COMPLETO sin paginar, para el checklist
+  // de salida - ahi se necesita ver todo de una vez, no tiene el problema de escala de un <select>.)
+
+  // Catalogo paginado de actividades para el selector del Panel de Actividades (independiente del de arriba).
+  actividadesCatalogoPanel: Actividad[] = [];
+  actividadesPanelPagina = 0;
+  actividadesPanelTotalPaginas = 1;
+  cargandoMasActividadesPanel = false;
   nuevoRegistro = { equipo_id: null as number | null, actividad_id: null as number | null, area: '', observaciones: '', hora_inicio: '' };
   guardandoRegistro = false;
   // Finalizar una labor pide la hora de fin (editable) en vez de imponer "ahora mismo" - el trabajador puede
@@ -142,8 +160,8 @@ export class MiJornada implements OnInit, OnDestroy {
         this.pidiendoActividadSalida = false;
         this.mensajeFinal = res.message || 'Marcación registrada.';
         this.fase = 'terminado';
+        this.detenerIntervalos();
         this.cdr.detectChanges();
-        setTimeout(() => this.authService.logout(), 4000);
       },
       error: (err) => {
         this.procesandoCodigo = false;
@@ -216,7 +234,6 @@ export class MiJornada implements OnInit, OnDestroy {
           this.fase = 'terminado';
           this.detenerIntervalos();
           this.cdr.detectChanges();
-          setTimeout(() => this.authService.logout(), 4000);
         }
       },
       error: (err) => console.error('Error consultando mi estado:', err),
@@ -225,11 +242,25 @@ export class MiJornada implements OnInit, OnDestroy {
 
   // --- FASE ACTIVIDADES (Panel de Actividades) ---
 
-  // Formato que entiende <input type="datetime-local">: 'YYYY-MM-DDTHH:mm', en hora LOCAL del dispositivo
-  // (no UTC - Date.toISOString() no sirve aqui porque corta a UTC y desfasa la hora mostrada).
-  private horaLocalParaInput(fecha: Date = new Date()): string {
+  // Formato que entiende <input type="time">: 'HH:mm', en hora LOCAL del dispositivo. Las labores siempre son
+  // de HOY, asi que el input no necesita fecha (ni calendario que mostrar).
+  private horaSoloParaInput(fecha: Date = new Date()): string {
     const pad = (n: number) => String(n).padStart(2, '0');
-    return `${fecha.getFullYear()}-${pad(fecha.getMonth() + 1)}-${pad(fecha.getDate())}T${pad(fecha.getHours())}:${pad(fecha.getMinutes())}`;
+    return `${pad(fecha.getHours())}:${pad(fecha.getMinutes())}`;
+  }
+
+  /*
+  El valor de un <input type="time"> ("HH:mm") no lleva fecha ni zona horaria. Lo combinamos con la fecha de HOY
+  usando setHours (hora LOCAL del navegador, que es justo lo que el trabajador quiso decir) para obtener un
+  instante real, y lo mandamos como ISO (con Z) al backend - si se mandara el "HH:mm" tal cual, alla `new Date(...)`
+  lo interpretaria distinto (fecha epoch + hora local del SERVIDOR, otra zona horaria), desfasando lo guardado.
+  */
+  private horaSoloAIso(horaHHmm: string): string | undefined {
+    if (!horaHHmm) return undefined;
+    const [horas, minutos] = horaHHmm.split(':').map(Number);
+    const fecha = new Date();
+    fecha.setHours(horas, minutos, 0, 0);
+    return fecha.toISOString();
   }
 
   private entrarAActividades(): void {
@@ -237,19 +268,56 @@ export class MiJornada implements OnInit, OnDestroy {
     if (this.intervaloQr) clearInterval(this.intervaloQr);
     if (this.cuentaRegresiva) clearInterval(this.cuentaRegresiva);
     this.notificacionService.exito('¡Ya te registraron! Bienvenido a tu jornada.');
-    this.nuevoRegistro.hora_inicio = this.horaLocalParaInput();
+    this.nuevoRegistro.hora_inicio = this.horaSoloParaInput();
     this.cargarDatosActividades();
   }
 
   private cargarDatosActividades(): void {
-    this.registroActividadService.obtenerEquipos().subscribe({
-      next: (data) => { this.equipos = data; this.cdr.detectChanges(); },
-      error: (err) => console.error('Error cargando equipos:', err),
-    });
-    this.asistenciaService.obtenerActividades().subscribe({
-      next: (data) => { this.actividadesCatalogo = Array.isArray(data) ? data : []; this.cdr.detectChanges(); },
-    });
+    this.cargarMasEquipos();
+    this.cargarMasActividadesPanel();
     this.cargarRegistros();
+  }
+
+  // "Cargar más" del selector de Equipo: acumula la siguiente página en vez de reemplazar lo ya mostrado.
+  cargarMasEquipos(): void {
+    if (this.cargandoMasEquipos || (this.equiposPagina > 0 && this.equiposPagina >= this.equiposTotalPaginas)) return;
+    this.cargandoMasEquipos = true;
+    const siguiente = this.equiposPagina + 1;
+    this.registroActividadService.obtenerEquipos(siguiente, 20).subscribe({
+      next: (res) => {
+        this.equipos = [...this.equipos, ...res.data];
+        this.equiposPagina = res.pagina;
+        this.equiposTotalPaginas = res.totalPaginas;
+        this.cargandoMasEquipos = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('Error cargando equipos:', err);
+        this.cargandoMasEquipos = false;
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  // "Cargar más" del selector de Actividad (Panel de Actividades) - catalogo independiente del checklist de
+  // salida del camino codigo, que sigue usando actividadesCatalogo (sin paginar).
+  cargarMasActividadesPanel(): void {
+    if (this.cargandoMasActividadesPanel || (this.actividadesPanelPagina > 0 && this.actividadesPanelPagina >= this.actividadesPanelTotalPaginas)) return;
+    this.cargandoMasActividadesPanel = true;
+    const siguiente = this.actividadesPanelPagina + 1;
+    this.asistenciaService.obtenerActividadesPaginado(siguiente, 20).subscribe({
+      next: (res) => {
+        this.actividadesCatalogoPanel = [...this.actividadesCatalogoPanel, ...res.data];
+        this.actividadesPanelPagina = res.pagina;
+        this.actividadesPanelTotalPaginas = res.totalPaginas;
+        this.cargandoMasActividadesPanel = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.cargandoMasActividadesPanel = false;
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   private cargarRegistros(): void {
@@ -270,11 +338,11 @@ export class MiJornada implements OnInit, OnDestroy {
       actividad_id: this.nuevoRegistro.actividad_id,
       area: this.esMecanico ? this.nuevoRegistro.area : undefined,
       observaciones: this.nuevoRegistro.observaciones || undefined,
-      hora_inicio: this.nuevoRegistro.hora_inicio || undefined,
+      hora_inicio: this.horaSoloAIso(this.nuevoRegistro.hora_inicio),
     }).subscribe({
       next: () => {
         this.notificacionService.exito('Labor registrada.');
-        this.nuevoRegistro = { equipo_id: null, actividad_id: null, area: '', observaciones: '', hora_inicio: this.horaLocalParaInput() };
+        this.nuevoRegistro = { equipo_id: null, actividad_id: null, area: '', observaciones: '', hora_inicio: this.horaSoloParaInput() };
         this.guardandoRegistro = false;
         this.cargarRegistros();
         this.cdr.detectChanges();
@@ -291,7 +359,7 @@ export class MiJornada implements OnInit, OnDestroy {
   // instante con la hora del clic - el trabajador puede estar registrando esto despues, en su tiempo libre.
   abrirFinalizarRegistro(registro: RegistroActividad): void {
     this.registroFinalizandoId = registro.id;
-    this.horaFinEditando = this.horaLocalParaInput();
+    this.horaFinEditando = this.horaSoloParaInput();
     this.cdr.detectChanges();
   }
 
@@ -304,7 +372,7 @@ export class MiJornada implements OnInit, OnDestroy {
     if (!this.registroFinalizandoId || !this.horaFinEditando) return;
 
     this.guardandoFinalizacion = true;
-    this.registroActividadService.finalizar(this.registroFinalizandoId, undefined, this.horaFinEditando).subscribe({
+    this.registroActividadService.finalizar(this.registroFinalizandoId, undefined, this.horaSoloAIso(this.horaFinEditando)).subscribe({
       next: () => {
         this.notificacionService.exito('Labor finalizada.');
         this.registroFinalizandoId = null;
@@ -348,7 +416,6 @@ export class MiJornada implements OnInit, OnDestroy {
         this.fase = 'terminado';
         this.detenerIntervalos();
         this.cdr.detectChanges();
-        setTimeout(() => this.authService.logout(), 4000);
       },
       error: (err) => {
         this.notificacionService.error(err.error?.message || 'No se pudo marcar tu salida.');
@@ -356,5 +423,9 @@ export class MiJornada implements OnInit, OnDestroy {
         this.cdr.detectChanges();
       },
     });
+  }
+
+  cerrarSesion(): void {
+    this.authService.logout();
   }
 }

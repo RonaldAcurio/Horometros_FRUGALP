@@ -55,6 +55,7 @@
             <th>Actividades</th>
             <th>Evidencia</th>
             <th>Estado</th>
+            <th>Confirmar</th>
             <th>Observación</th>
           </tr>
         </thead>
@@ -82,11 +83,29 @@
               <span [ngClass]="{
                 'badge-status status-jornada': asis.estado === 'EN_JORNADA',
                 'badge-status status-finalizado': asis.estado === 'FINALIZADO',
-                'badge-status status-revision': asis.estado === 'PENDIENTE_REVISION',
+                'badge-status status-revision': asis.estado === 'PENDIENTE_REVISION' || asis.estado === 'OBSERVANDO',
                 'badge-status status-olvidada': asis.estado === 'SALIDA_OLVIDADA'
               }">
                 {{ asis.estado }}
               </span>
+            </td>
+            <td>
+              <div class="flex gap-1">
+                <button
+                  class="btn btn-sm"
+                  [ngClass]="asis.confirmado_por_supervisor === true ? 'btn-primary' : 'btn-secondary'"
+                  [disabled]="asis.estado === 'FINALIZADO' || asis.estado === 'SALIDA_OLVIDADA'"
+                  (click)="confirmarPresencia(asis, true)"
+                  title="Confirmar que sí vino"
+                >O</button>
+                <button
+                  class="btn btn-sm"
+                  [ngClass]="asis.confirmado_por_supervisor === false ? 'btn-warning' : 'btn-secondary'"
+                  [disabled]="asis.estado === 'FINALIZADO' || asis.estado === 'SALIDA_OLVIDADA'"
+                  (click)="confirmarPresencia(asis, false)"
+                  title="Marcar que NO vino"
+                >X</button>
+              </div>
             </td>
             <td>
               <button
@@ -99,7 +118,7 @@
             </td>
           </tr>
           <tr *ngIf="asistenciasHoy.length === 0">
-            <td colspan="8" class="table-empty">No hay marcaciones registradas.</td>
+            <td colspan="9" class="table-empty">No hay marcaciones registradas.</td>
           </tr>
         </tbody>
       </table>

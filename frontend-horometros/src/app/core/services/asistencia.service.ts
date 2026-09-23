@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, of, catchError } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { Operador, Asistencia } from '../models/asistencia.model';
+import { Operador, Asistencia, Actividad, RespuestaPaginada } from '../models/asistencia.model';
 
 @Injectable({
     providedIn: 'root'
@@ -53,6 +53,12 @@ export class AsistenciaService {
         return this.http.put(`${this.baseUrl}/revisar/${id}`, datos);
     }
 
+    // PUT -> /api/asistencia/:id/confirmar (O/X del Supervisor: presente=true confirma, presente=false marca
+    // ausente y pasa el registro a OBSERVANDO con una nota automática, ver backend).
+    confirmarAsistencia(id: number, presente: boolean): Observable<any> {
+        return this.http.put(`${this.baseUrl}/${id}/confirmar`, { presente });
+    }
+
     // GET -> /api/actividades (Catálogo de actividades para la salida)
     // Nota: como está en la raíz de /api, construimos la URL reemplazando la ruta base
     obtenerActividades(): Observable<any[]> {
@@ -61,6 +67,18 @@ export class AsistenciaService {
             catchError(err => {
                 console.warn('Error al obtener actividades de /api/actividad: ',err);
                 return of([]);//Retorna [] para que NO rompa las demas llamadas
+            })
+        );
+    }
+
+    // GET -> /api/actividad?pagina=1&limite=20 - paginado (mandar pagina/limite activa esa respuesta en el
+    // backend, ver actividades.controller.ts), lo consume el selector del Panel de Actividades con "Cargar más".
+    obtenerActividadesPaginado(pagina: number, limite: number): Observable<RespuestaPaginada<Actividad>> {
+        const urlActividades = `${environment.apiUrl}/actividad`;
+        return this.http.get<RespuestaPaginada<Actividad>>(urlActividades, { params: { pagina, limite } }).pipe(
+            catchError(err => {
+                console.warn('Error al obtener actividades paginadas de /api/actividad: ', err);
+                return of({ data: [], total: 0, pagina, totalPaginas: 1 });
             })
         );
     }

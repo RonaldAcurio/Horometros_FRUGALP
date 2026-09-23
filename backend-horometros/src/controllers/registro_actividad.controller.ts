@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { Op } from "sequelize";
 import { RegistroActividad } from "../models/registro_actividad";
 import { Asistencia } from "../models/asistencias";
 import { Equipo } from "../models/equipo";
@@ -180,5 +181,49 @@ export const obtenerRegistrosPorAsistencia = async (req:Request, res:Response):P
     } catch(err){
         res.status(500).json({ message: 'Error al obtener los registros de actividad.',err});
 
+    }
+};
+
+/*
+Historial de labores de UN operador a traves de VARIAS jornadas (a diferencia de obtenerRegistrosPorAsistencia,
+que es de una sola) - lo usa el reporte imprimible "Ver/Imprimir" del Panel de Asistente (Directorio de
+Operadores), que muestra el mismo diseno que la hoja fisica "REPORTES DE LABORES DIARIOS". Rango de fechas
+opcional para no traer toda la vida laboral del trabajador de una sola vez.
+*/
+export const obtenerRegistrosPorOperador = async (req:Request, res:Response):Promise<void> => {
+    try{
+        const operadorId = req.query['operador_id'];
+        if(!operadorId){
+            res.status(400).json({ message:'El parametro operador_id es obligatorio.'});
+            return;
+        }
+        if(!puedeOperarSobre(req, Number(operadorId))){
+            res.status(403).json({ message:'No puedes ver las actividades de otro trabajador.'});
+            return;
+        }
+
+        const { fecha_inicio, fecha_fin } = req.query;
+        const whereAsistencia: Record<string, unknown> = { operador_id: Number(operadorId) };
+        if(fecha_inicio || fecha_fin){
+            const rangoFecha: Partial<Record<typeof Op.gte | typeof Op.lte, unknown>> = {};
+            if(fecha_inicio) rangoFecha[Op.gte] = fecha_inicio;
+            if(fecha_fin) rangoFecha[Op.lte] = fecha_fin;
+            whereAsistencia.fecha = rangoFecha;
+        }
+
+        const registros = await RegistroActividad.findAll({
+            include:[
+                {model: Equipo, as:'equipo'},
+                {model: Actividad, as:'actividad'},
+                {model: Seccion, as: 'seccion'},
+                {model: Asistencia, as: 'asistencia', where: whereAsistencia, attributes: ['id','fecha','operador_id']},
+            ],
+            order: [[{ model: Asistencia, as: 'asistencia' }, 'fecha', 'ASC'], ['hora_inicio','ASC']],
+        });
+
+        res.json(registros);
+
+    } catch(err){
+        res.status(500).json({ message: 'Error al obtener el historial de labores del operador.', err});
     }
 };

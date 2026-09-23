@@ -67,8 +67,11 @@ Dos variantes del mismo núcleo (comparten `procesarMarcacion`):
 - `POST /api/asistencia/marcar-mi-codigo` (autenticado, tipo `operador`): la pantalla **"mi jornada"** del propio
   trabajador (`mi-jornada.ts`, fase `codigo`) - ya se logueó con usuario+clave una sola vez (`POST /api/auth/login`),
   así que aquí solo confirma el Token de Hacienda, sin volver a escribir su clave. Marca al instante (entrada o
-  salida, `procesarMarcacion` decide cuál según si ya tiene jornada abierta) y **no lleva a ningún panel** - se
-  cierra sola la sesión (`AuthService.logout()`) unos segundos después de la confirmación.
+  salida, `procesarMarcacion` decide cuál según si ya tiene jornada abierta) y **no lleva a ningún panel** - muestra
+  una pantalla de confirmación (fase `terminado`) con un botón explícito "Cerrar sesión". Antes se cerraba sola la
+  sesión con un `setTimeout` de 4s, pero eso se sentía como un error/redirect inesperado al login - se quitó a favor
+  de que el propio trabajador decida cuándo cerrar (mismo criterio en las 3 fases que llegan a `terminado`: código,
+  detección de salida por QR, y salida olvidada).
 
 Si el trabajador marca en una hacienda que no es la suya, el sistema lo autoadmite bajo el Supervisor de esa
 hacienda (reemplaza "admitir externo" para este camino, porque el Token ya probó la presencia física).
@@ -122,6 +125,16 @@ Una vez escaneado, el trabajador entra al Panel de Actividades de su propia jorn
 solo lectura - el CRUD completo de Equipo es del módulo Horómetros, no tocado) y **Actividades**
 (`GET /api/actividad`), usando el modelo `RegistroActividad` que ya existía en el backend sin frontend
 (`registro_actividad.controller.ts`). Campo `area` (MECANICO) es fase 1; `seccion_id`/`horometro_inicio`/
+
+**Selectores paginados**: ambos catálogos pueden crecer, así que los `<select>` de Equipo/Actividad de este panel
+cargan de a 20 y tienen un link "Cargar más" debajo que pide la siguiente página y la acumula (no tiene sentido
+"ir a la página anterior" a mitad de elegir una opción en un `<select>` nativo). `GET /api/equipos` siempre
+responde paginado (`{data, total, pagina, totalPaginas}`, mismo patrón que `obtenerAsistenciaHoy`) porque este
+selector es su único consumidor. `GET /api/actividad` es compartido (lo usan también el kiosco y el checklist de
+salida del camino código, que sí quieren ver el catálogo completo de una vez) - por eso ahí la paginación es
+opcional: sin `pagina`/`limite` en la query responde el arreglo plano de siempre, y con cualquiera de los dos
+responde paginado. `mi-jornada.ts` mantiene dos catálogos de actividades separados por esto:
+`actividadesCatalogo` (completo, checklist de salida) y `actividadesCatalogoPanel` (paginado, este selector).
 `horometro_final` (OPERADOR) siguen en fase 2, no se piden en el formulario todavía (ver el propio modelo,
 `registro_actividad.ts`). El camino código **no** pasa por este panel - marca y termina, ver arriba.
 
@@ -134,6 +147,13 @@ el backend responde 400. **Esto es un concepto totalmente aparte** de `hora_ingr
 `Asistencia` (la jornada completa - esas las pone el QR/código al marcar entrada/salida, y las ve el Supervisor en
 su panel; si el trabajador nunca marca salida, esa jornada queda `SALIDA_OLVIDADA`, ver Tablas) - no hay que
 confundir "cuánto duró la jornada completa" con "cuánto duró CADA labor dentro de ella".
+
+Los inputs son `type="time"` (solo `HH:mm`, sin selector de fecha - la labor siempre es de HOY, no hace falta
+calendario). `mi-jornada.ts` combina ese `HH:mm` con la fecha de hoy (`horaSoloAIso`) y manda un ISO completo
+(con `Z`) al backend - **nunca el string crudo del input**. Antes se mandaba tal cual y el backend, en OTRA zona
+horaria que el dispositivo del trabajador, lo reinterpretaba mal (`new Date("...")` sin offset se lee como hora
+local de quien lo parsea, no de quien lo escribió) y la hora guardada quedaba desfasada varias horas frente a lo
+que el trabajador realmente escribió - bug real reportado y confirmado con pruebas cruzando zonas horarias.
 
 ## Dos tokens que NO son lo mismo
 
@@ -171,6 +191,12 @@ Al lado de cada trabajador que aparece logueado hoy en su panel, el Supervisor c
   compañero que no llegó a trabajar - `OBSERVANDO` también corta su sesión (ver arriba) y lo saca del Historial oficial
   (que solo muestra `FINALIZADO`/`SALIDA_OLVIDADA`).
 - No se puede confirmar un registro ya cerrado (`FINALIZADO`/`SALIDA_OLVIDADA`).
+
+**Frontend**: botones O/X en la columna "Confirmar" de `supervisor-panel` (`confirmarPresencia()`), al lado de
+cada fila. El botón O se aplica directo (bajo riesgo, reversible con otro clic); el X pide confirmación con
+`ConfirmacionService.preguntar()` antes de mandar la petición, porque mueve el registro a `OBSERVANDO` y deja la
+nota automática. Ambos quedan deshabilitados si el registro ya está `FINALIZADO`/`SALIDA_OLVIDADA`, igual que el
+botón de Observación.
 
 ## Reglas de negocio confirmadas
 
@@ -262,7 +288,8 @@ cualquier rol logueado entraba) - ESCANER y MECANICO/OPERADOR nunca tuvieron nec
   hay a dónde más ir). 3 fases internas según el estado real, nunca las 3 a la vez:
   1. **`codigo`** (hacienda con Token vigente): input de código, confirma con `marcar-mi-codigo`. Si el backend
      responde pidiendo actividad (ya tenía jornada abierta = es una salida), muestra el mismo selector de
-     actividades que el kiosco y reintenta. Al confirmar, mensaje de cierre y logout automático a los 4s.
+     actividades que el kiosco y reintenta. Al confirmar, pasa a fase `terminado`: mensaje de cierre + botón
+     explícito "Cerrar sesión" (ya no hay logout automático, ver arriba en Camino A).
   2. **`qr`**: QR flotante que se auto-regenera cada 80s (vence a los 90s) + cuenta regresiva visible. Hace
      **polling de `GET /api/asistencia/mi-estado` cada 5s** para detectar que lo escanearon, sin que el trabajador
      tenga que hacer nada.
@@ -271,7 +298,8 @@ cualquier rol logueado entraba) - ESCANER y MECANICO/OPERADOR nunca tuvieron nec
      botón "Finalizar" por labor (abre un editor inline con la hora de fin, también editable - ninguna de las 2
      horas se le impone al trabajador, puede estar cargando esto más tarde). Botón "🔚 Marcar salida" vuelve a
      mostrar el QR (fase `qr` de nuevo) para que lo vuelvan a escanear - el mismo polling de estado detecta la
-     salida y cierra sesión sola. Esa salida **ya no pide elegir actividades** (ver "Camino B" arriba).
+     salida y pasa a fase `terminado` (botón explícito "Cerrar sesión", ver arriba). Esa salida **ya no pide
+     elegir actividades** (ver "Camino B" arriba).
   Al entrar (`ngOnInit`), consulta `mi-estado` ANTES de decidir la fase inicial - si el trabajador ya tenía una
   jornada abierta (refrescó la página, o se desconectó y volvió), no muestra el QR/código de entrada por error
   antes de corregirse solo; salta directo a la fase que corresponde.
@@ -359,11 +387,12 @@ gallina) - se insertó a mano por SQL directo en la base de producción de Rende
 | PUT /api/asistencia/revisar/:id | ADMIN, SUPERVISOR | Ajustes del Supervisor sobre un registro. |
 | GET /api/asistencia/:id/foto | ADMIN, ASISTENTE, SUPERVISOR | Trae solo la foto de un registro (VisorFoto, compartido por ambos paneles). |
 | POST /api/asistencia/admitir-externo | SUPERVISOR, ADMIN | Reclama a un trabajador prestado. |
-| GET /api/actividad | público | Catálogo de actividades - sin JWT **a propósito**, lo usa el kiosco (modal-actividad) al marcar salida. |
+| GET /api/actividad | público | Catálogo de actividades - sin JWT **a propósito**, lo usa el kiosco (modal-actividad) al marcar salida. Sin `pagina`/`limite` en la query responde el arreglo completo (de siempre); con cualquiera de los dos, paginado (lo usa el selector del Panel de Actividades). |
 | GET /api/actividad/:id | público | Idem, una sola actividad. |
 | POST /api/actividad/nueva | ADMIN | Crea una actividad del catálogo (sin UI todavía, ver Pendiente). |
 | PUT /api/actividad/:id | ADMIN | Edita una actividad del catálogo. |
 | DELETE /api/actividad/:id | ADMIN | Elimina una actividad del catálogo. |
+| GET /api/equipos | cualquier cuenta logueada | Catálogo de Equipos (solo lectura, el CRUD es de Horómetros) - siempre paginado (`pagina`/`limite`, default 1/20), lo usa el selector del Panel de Actividades. |
 | POST /api/horometros/procesar-foto | cualquier cuenta logueada | Sube y procesa con IA una foto de reporte físico. |
 | POST /api/horometros/confirmar-ingreso | cualquier cuenta logueada | Confirma la actualización a MEGUED. |
 | POST /api/horometros/procesar-lote | cualquier cuenta logueada | Igual que arriba, hasta 6 fotos. |
@@ -425,21 +454,39 @@ lo confirmado:
   ahí el Supervisor SÍ tiene permiso para la acción, solo que la acción no respeta el límite de "su" hacienda.
 
 **Frontend** (sobre lo ya construido, ver sección de arriba)
-- Botones O/X en el Panel de Supervisor, al lado de cada trabajador logueado hoy (el backend
-  `PUT /api/asistencia/:id/confirmar` ya existe y está protegido, ver Endpoints - solo falta el botón en el frontend).
 - Offline/sync: la app empaqueta nativo (no PWA, así que no aplica la limitación de Background Sync de iOS/Safari de
   todas formas), pero se mantiene el diseño de sync manual/periódico ya acordado para cuando no hay señal en campo.
 - **Sacar el módulo Horómetros a un proyecto aparte** (decisión del usuario, todavía no ejecutada): separar lo que es
   exclusivo de Horómetros (componentes, servicio, modelo, la ruta `/horometros`) de lo compartido (`app.routes.ts`,
   `app.html`, el sistema de notificaciones) sin romper Asistencia.
 - **Diseños de Figma confirmados, pendientes de construir** (el usuario los compartió, existen en su Figma):
-  - En el Directorio de Operadores (Panel Asistente/Admin): por cada operador, acciones "Ver"/"Imprimir" para
-    ver e imprimir la hoja física de actividades de ESE operador puntual, más "Descargar" (exporta a Excel, formato
-    pendiente de que el usuario lo proporcione) e "Imprimir" general - este último solo se habilita cuando el
-    Historial está filtrado a **un solo día** (imprime todas las hojas físicas de ese día de una vez); con varios
-    días combinados no se habilita, para no tener que resolver "cuántas hojas de cuántos días imprimo". Nota: el
-    componente `carnet-qr` que existía para esto se borró en la auditoría de código suelto de esta ronda (estaba
-    huérfano, sin cablear a nada) - al construir esta feature, evaluar desde cero en vez de asumir que sigue ahí.
+  - "Descargar" (exporta a Excel, formato pendiente de que el usuario lo proporcione) e "Imprimir" general en el
+    Directorio de Operadores - este último solo se habilita cuando el Historial está filtrado a **un solo día**
+    (imprime todas las hojas físicas de ese día de una vez, de todos los operadores); con varios días combinados
+    no se habilita, para no tener que resolver "cuántas hojas de cuántos días imprimo". El "Ver/Imprimir" **por
+    operador individual** ya se construyó esta ronda, ver abajo.
+  - Nueva pestaña de ADMIN para crear/editar/eliminar Equipos y Secciones (catálogos que hoy no tienen UI de
+    gestión, solo lectura) - Actividades ya tiene sus 3 endpoints de mutación protegidos y listos
+    (`POST/PUT/DELETE /api/actividad`, ver Endpoints), y Equipos ganó un `GET /api/equipos` de solo lectura esta
+    ronda (lo necesitaba el Panel de Actividades) - falta el resto del CRUD y la pantalla.
+
+### Ver/Imprimir hoja de actividades (Directorio de Operadores)
+
+Con un operador seleccionado en la Ficha (Panel de Asistente, `/asistencia/asistente`), el botón "📄 Ver/Imprimir
+Hoja de Actividades" (`asistencia-panel.ts`, `verImprimirHojaActividades`) abre una ventana nueva con el mismo
+diseño que la hoja física "REPORTES DE LABORES DIARIOS" que el usuario compartió como foto, mismo patrón que ya
+existía para `imprimirQR()` (HTML propio + `window.print()`, sin componente de impresión aparte). Columnas:
+FECHA / MECÁNICO / EQUIPO / ÁREA / DAÑO / TIEMPO ESTIMADO / TALLER-CAMPO - la hoja física no tiene un campo
+equivalente exacto a "daño" ni a "tiempo estimado" en el modelo actual, así que se mapean del dato más cercano
+disponible: DAÑO = `RegistroActividad.observaciones` (el campo de texto libre), TIEMPO ESTIMADO = duración real
+calculada (`hora_fin - hora_inicio`, o "—" si la labor sigue abierta), TALLER-CAMPO = `Actividad.categoria`.
+
+Fuente de datos: `GET /api/registro-actividades/por-operador?operador_id=X` (nuevo, distinto de
+`obtenerRegistrosPorAsistencia` que es de una sola jornada) - trae las labores de ESE operador a través de
+**varias** jornadas (join a `Asistencia` por `operador_id`, con rango de fechas opcional vía
+`fecha_inicio`/`fecha_fin` que el frontend todavía no usa - hoy siempre pide el historial completo). Mismo
+control de acceso que el resto del módulo (`puedeOperarSobre`): ADMIN/ASISTENTE/SUPERVISOR ven cualquiera, el
+propio Operador solo el suyo.
   - Nueva pestaña de ADMIN para crear/editar/eliminar Equipos y Secciones (catálogos que hoy no tienen UI de
     gestión, solo lectura) - Actividades ya tiene sus 3 endpoints de mutación protegidos y listos
     (`POST/PUT/DELETE /api/actividad`, ver Endpoints), y Equipos ganó un `GET /api/equipos` de solo lectura esta
