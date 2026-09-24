@@ -625,6 +625,17 @@ por fila. Ambas comparten roles con Operador (`requireRol('ADMIN','ASISTENTE')`)
 endpoints de mutación protegidos solo para ADMIN desde antes (sin UI), se amplió a incluir ASISTENTE ya que ahí
 es donde vive esta pantalla.
 
+**Buscador en tiempo real, sin botón "Buscar"** (`onBuscarEquiposTab`/`onBuscarActividadesTab`, debounce de
+300ms con `setTimeout`+`clearTimeout` - mismo valor y patrón que ya usaba el autocompletar de Equipo/Actividad
+del Panel de Actividades, ver `mi-jornada.ts`): cada tecla reinicia el temporizador y solo dispara UNA petición
+al backend cuando el usuario deja de escribir, en vez de pedir que aprieten un botón o Enter. Se revisó **todo**
+el resto de la app buscando el mismo problema (un buscador que solo funciona con clic/Enter): el Directorio de
+Operadores y el autocompletar de Equipo/Actividad del Panel de Actividades YA eran en tiempo real desde antes (el
+primero filtra en memoria sobre la lista ya cargada, sin ni siquiera necesitar debounce; el segundo ya tenía este
+mismo patrón de debounce). El único filtro que se dejó con botón explícito es el del Historial (fechas +
+hacienda) - no es una caja de texto que se escribe letra por letra, es un formulario compuesto (2 fechas + un
+select), así que no aplica la misma solución.
+
 **"Eliminar" es siempre soft-delete (`paranoid`), nunca borra la fila.** Se extendió el mismo patrón que ya
 tenía `Actividad`/`Seccion` a `Equipo` y `Operador` (migración `20260924010000-agregar-softdelete-equipos-operadores`,
 agrega `createdAt`/`updatedAt`/`deletedAt` a ambas tablas). Con `paranoid:true`, Sequelize excluye automáticamente

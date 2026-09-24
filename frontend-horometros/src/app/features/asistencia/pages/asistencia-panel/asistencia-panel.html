@@ -254,15 +254,12 @@
         <input
           type="text"
           [(ngModel)]="equipoBusquedaTab"
-          (keyup.enter)="buscarEquiposTab()"
+          (ngModelChange)="onBuscarEquiposTab()"
           placeholder="🔍 Buscar por código o nombre..."
           class="input-control"
         />
       </div>
-      <div class="flex gap-2">
-        <button class="btn btn-primary btn-sm" (click)="buscarEquiposTab()">🔍 Buscar</button>
-        <button class="btn btn-primary btn-sm" (click)="abrirModalNuevoEquipo()">➕ Nuevo Equipo</button>
-      </div>
+      <button class="btn btn-primary btn-sm" (click)="abrirModalNuevoEquipo()">➕ Nuevo Equipo</button>
     </div>
 
     <div class="card">
@@ -309,15 +306,12 @@
         <input
           type="text"
           [(ngModel)]="actividadBusquedaTab"
-          (keyup.enter)="buscarActividadesTab()"
+          (ngModelChange)="onBuscarActividadesTab()"
           placeholder="🔍 Buscar por código o descripción..."
           class="input-control"
         />
       </div>
-      <div class="flex gap-2">
-        <button class="btn btn-primary btn-sm" (click)="buscarActividadesTab()">🔍 Buscar</button>
-        <button class="btn btn-primary btn-sm" (click)="abrirModalNuevaActividad()">➕ Nueva Actividad</button>
-      </div>
+      <button class="btn btn-primary btn-sm" (click)="abrirModalNuevaActividad()">➕ Nueva Actividad</button>
     </div>
 
     <div class="card">

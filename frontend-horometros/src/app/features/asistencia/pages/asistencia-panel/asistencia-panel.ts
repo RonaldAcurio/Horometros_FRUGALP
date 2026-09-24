@@ -96,7 +96,8 @@ export class AsistenciaPanel implements OnInit{
   hojaObservacionesSupervisor: string | null = null;
 
   // Pestaña "Equipo" (catálogo de maquinaria): mismo patrón de lista+búsqueda+paginación que ya usa el
-  // autocompletar del Panel de Actividades, pero con +Agregar/Editar/Eliminar (soft-delete) via modal.
+  // autocompletar del Panel de Actividades, pero con +Agregar/Editar/Eliminar (soft-delete) via modal. La
+  // búsqueda es en tiempo real (con debounce, ver onBuscarEquiposTab) - no hace falta apretar "Buscar".
   equipos: Equipo[] = [];
   equipoBusquedaTab: string = '';
   paginaEquiposTab: number = 1;
@@ -105,14 +106,16 @@ export class AsistenciaPanel implements OnInit{
   mostrarModalEquipo: boolean = false;
   equipoEditando: Equipo | null = null;
   formEquipo = { codigo_megued: '', nombre_equipo: '' };
+  private debounceEquiposTab?: ReturnType<typeof setTimeout>;
 
-  // Pestaña "Actividad" (catálogo de labores): mismo patrón.
+  // Pestaña "Actividad" (catálogo de labores): mismo patrón, búsqueda también en tiempo real.
   actividadesTab: Actividad[] = [];
   actividadBusquedaTab: string = '';
   paginaActividadesTab: number = 1;
   totalPaginasActividadesTab: number = 1;
   totalActividadesTab: number = 0;
   mostrarModalActividad: boolean = false;
+  private debounceActividadesTab?: ReturnType<typeof setTimeout>;
   actividadEditando: Actividad | null = null;
   formActividad: { codigo_megued: string; description: string; categoria: 'TALLER' | 'CAMPO' } = { codigo_megued: '', description: '', categoria: 'TALLER' };
 
@@ -514,6 +517,13 @@ export class AsistenciaPanel implements OnInit{
 
   // ==================== PESTAÑA "EQUIPO" ====================
 
+  // Búsqueda en tiempo real: cada tecla reinicia el debounce (300ms, mismo valor que el autocompletar de
+  // Equipo/Actividad del Panel de Actividades, ver mi-jornada.ts) en vez de esperar a que aprieten "Buscar".
+  onBuscarEquiposTab(): void {
+    if (this.debounceEquiposTab) clearTimeout(this.debounceEquiposTab);
+    this.debounceEquiposTab = setTimeout(() => this.buscarEquiposTab(), 300);
+  }
+
   buscarEquiposTab(): void {
     this.paginaEquiposTab = 1;
     this.cargarPaginaEquiposTab();
@@ -597,6 +607,11 @@ export class AsistenciaPanel implements OnInit{
   }
 
   // ==================== PESTAÑA "ACTIVIDAD" ====================
+
+  onBuscarActividadesTab(): void {
+    if (this.debounceActividadesTab) clearTimeout(this.debounceActividadesTab);
+    this.debounceActividadesTab = setTimeout(() => this.buscarActividadesTab(), 300);
+  }
 
   buscarActividadesTab(): void {
     this.paginaActividadesTab = 1;
