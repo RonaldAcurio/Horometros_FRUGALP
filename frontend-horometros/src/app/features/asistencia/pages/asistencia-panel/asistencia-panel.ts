@@ -403,8 +403,10 @@ export class AsistenciaPanel implements OnInit{
     junto al nombre del operador (no repetida por fila) y se agrega el pie con la observación que el Supervisor
     haya dejado sobre esa jornada.
   - `imprimirHojasRangoHistorial`: TODOS los operadores distintos que aparecen en la tabla del Historial ya
-    filtrada por un rango Desde/Hasta - une la hoja de cada uno en la misma ventana, con salto de página entre
-    operador y operador, siempre con Fecha por fila (puede haber varios días por persona).
+    filtrada por un rango Desde/Hasta - une la hoja de cada uno en la misma ventana, siempre con Fecha por fila
+    (puede haber varios días por persona). El contenido fluye normal al imprimir (caben varios operadores
+    cortos por hoja para no desperdiciar papel), pero cada operador nunca se parte a la mitad entre una hoja y
+    la siguiente (ver break-inside:avoid en el @media print de asistencia-panel.css).
   */
   verHojaFilaHistorial(reg: Asistencia): void {
     this.abrirHojaFilaHistorial(reg, false);

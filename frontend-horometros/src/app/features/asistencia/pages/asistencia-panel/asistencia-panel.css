@@ -311,7 +311,7 @@ los bordes, y su propio padding + fondo opaco para no dejar ver el contenido de 
 }
 
 /* Impresión de varios operadores en una sola ventana (imprimirHojasRangoHistorial): separa cada bloque en
-   pantalla y fuerza salto de página entre uno y otro al imprimir, para que cada operador salga en su propia hoja. */
+   pantalla con una línea punteada. */
 .hoja-actividades-grupo + .hoja-actividades-grupo {
   margin-top: 1.5rem;
   padding-top: 1.5rem;
@@ -328,9 +328,18 @@ barra de desplazamiento en la vista previa en vez de dejar fluir el contenido en
 por el que .hoja-actividades-barra-superior (con .no-imprimir) no se ocultaba al imprimir pese a tener esa
 clase. Se fuerza todo explicitamente aqui, en el propio @media print de este componente, para que gane siempre.
 */
+/*
+Aprovechar el papel: en vez de forzar un salto de página después de CADA operador (desperdiciaba hoja cuando
+"Sin labores registradas" o pocas filas), se deja que el contenido fluya normal - así caben 2, 3 o los que
+alcancen por hoja cuando son cortos - pero break-inside:avoid en cada grupo le dice al motor de impresión que
+NUNCA parta la tabla de un operador a la mitad: si no cabe completa en lo que queda de la hoja actual, ese
+grupo entero (no solo la fila que sobraba) se va a la siguiente. page-break-inside es el alias viejo, se deja
+igual por si el motor de impresión no reconoce el nombre moderno.
+*/
 @media print {
-  .hoja-actividades-salto-pagina {
-    page-break-before: always;
+  .hoja-actividades-grupo {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   .hoja-actividades-card {

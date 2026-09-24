@@ -514,12 +514,12 @@
       </div>
 
       <!-- Un bloque por operador - normalmente 1 (fila del Historial), o varios cuando viene de "Imprimir
-           Hojas del rango" (uno por cada operador distinto de la tabla filtrada), con salto de página entre
-           uno y otro al imprimir. -->
+           Hojas del rango" (uno por cada operador distinto de la tabla filtrada). Al imprimir, el contenido
+           fluye normal (caben varios operadores cortos por hoja) pero cada bloque nunca se parte a la mitad
+           entre una hoja y la siguiente (ver break-inside:avoid en el @media print de este componente). -->
       <div
-        *ngFor="let grupo of hojaGrupos; let first = first"
+        *ngFor="let grupo of hojaGrupos"
         class="hoja-actividades-grupo"
-        [class.hoja-actividades-salto-pagina]="!first"
       >
         <h2 class="hoja-actividades-titulo">Reportes de Labores Diarios</h2>
         <div class="hoja-actividades-encabezado">

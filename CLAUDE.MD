@@ -581,8 +581,8 @@ reutilizable para cualquier otro modal que a futuro necesite "imprimir solo esto
 su propio bloque (`.hoja-actividades-grupo`) con el Mecánico en un subtítulo en negrita y letra más grande
 (`.hoja-actividades-mecanico`: `Mecánico: <nombre> · <código>`), no como columna de la tabla - igual que la hoja
 física, que solo repite Fecha por fila y escribe el mecánico una sola vez. Cuando hay más de un grupo (impresión
-por rango, ver abajo), cada uno arranca en su propia página al imprimir (`.hoja-actividades-salto-pagina`,
-`page-break-before` solo en `@media print`) y se separa con una línea punteada en pantalla. Columnas de la
+por rango, ver abajo), se separa con una línea punteada en pantalla; al imprimir el contenido fluye normal en
+vez de forzar una página nueva por operador (ver "Empaquetado de páginas al imprimir" más abajo). Columnas de la
 tabla: EQUIPO / OT / DAÑO / TIEMPO ESTIMADO / TALLER-CAMPO. La hoja física no tiene un campo equivalente exacto a
 "daño" ni a "tiempo estimado" en el modelo actual, así que se mapean del dato más cercano disponible: DAÑO =
 `RegistroActividad.observaciones` (el campo de texto libre), TIEMPO ESTIMADO = duración real calculada
@@ -605,9 +605,10 @@ imprimir la hoja tiene que tener la fecha, no imprimir todo de una sola vez" - v
   **todos los operadores distintos que aparecen en la página actual de la tabla ya filtrada** (no todo el rango
   si hay más páginas - es deliberado, ver Pendiente si algún día hace falta cubrir todas las páginas) y les
   arma un grupo a cada uno con `forkJoin` (`registroActividadService.obtenerPorOperador(id, fechaInicioFiltro,
-  fechaFinFiltro)`), todos en la misma ventana con salto de página entre uno y otro. Como es un rango (puede
-  haber varios días por persona), la Fecha se mantiene por fila y no hay pie de observaciones (no hay una sola
-  jornada a la que asociarlas cuando son varios operadores/días a la vez).
+  fechaFinFiltro)`), todos en la misma ventana (ver "Empaquetado de páginas al imprimir" más abajo para cómo se
+  reparten entre hojas). Como es un rango (puede haber varios días por persona), la Fecha se mantiene por fila y
+  no hay pie de observaciones (no hay una sola jornada a la que asociarlas cuando son varios operadores/días a
+  la vez).
 
 Fuente de datos: `GET /api/registro-actividades/por-operador?operador_id=X&fecha_inicio=Y&fecha_fin=Z` - trae
 las labores de ESE operador a través de **varias** jornadas (join a `Asistencia` por `operador_id`);
@@ -701,6 +702,20 @@ fallaron de formas distintas y vale la pena no repetirlas):
    `display: flex`. Se reafirma explícitamente en el propio `@media print` de `asistencia-panel.css` (mismo
    patrón que los otros overrides `!important` de esta sección) - cualquier otro `display: flex/grid` que se
    agregue después DENTRO de `.imprimible` en este componente va a necesitar el mismo tipo de reafirmación.
+
+**Empaquetado de páginas al imprimir (no desperdiciar papel)**: "Imprimir Hojas del rango" imprime N operadores
+en la misma ventana, cada uno en su propio `.hoja-actividades-grupo`. La primera versión forzaba
+`page-break-before: always` en cada grupo salvo el primero (`.hoja-actividades-salto-pagina`) - una hoja física
+por operador sin excepción, aunque el operador no tuviera labores registradas ese día (tabla de una sola fila
+"Sin labores registradas"). El usuario lo pidió cambiar: quería que operadores cortos compartan hoja para no
+desperdiciar papel, pero que un operador con muchas actividades (tabla alta) nunca se parta a la mitad entre una
+hoja y la siguiente. Se reemplazó por `break-inside: avoid` (+ `page-break-inside: avoid`, alias viejo por si el
+motor de impresión no reconoce el nombre moderno) en `.hoja-actividades-grupo`, dejando que el contenido fluya
+normal entre páginas: el motor de impresión va llenando cada hoja con los grupos que alcancen completos, y si un
+grupo no cabe entero en lo que queda de la página actual, lo manda entero a la siguiente en vez de cortarlo.
+Verificado con Playwright: 6 operadores cortos (1 fila, "Sin labores registradas") + 1 operador con 12 filas
+generaron un PDF de 2 páginas (antes hubieran sido 7, una por operador) - los cortos se agruparon varios por
+hoja y el largo no se partió.
 
 **Pendiente, fuera del control de la app**: el navegador (Chrome) agrega su propio encabezado/pie de página al
 imprimir (fecha, título de la pestaña, URL, número de página) - es la casilla "Headers and footers" del propio
