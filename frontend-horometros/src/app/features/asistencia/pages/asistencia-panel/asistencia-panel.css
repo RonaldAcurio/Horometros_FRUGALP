@@ -205,21 +205,42 @@
 }
 
 .hoja-actividades-cerrar {
-  position: absolute;
-  top: -0.75rem;
-  right: -0.75rem;
   width: 2rem;
   height: 2rem;
+  flex-shrink: 0;
   border-radius: 50%;
   border: none;
   background-color: #7a1f3d;
   color: white;
   font-weight: 700;
   cursor: pointer;
+  line-height: 1;
 }
 
-.hoja-actividades-barra {
-  margin-bottom: 1rem;
+.hoja-actividades-cerrar:hover {
+  background-color: #5c1730;
+}
+
+/*
+Barra pegada (sticky) arriba de la tarjeta con scroll interno: antes el botón "✕" flotaba con
+position:absolute fuera de los márgenes de la tarjeta y el propio overflow-y:auto de la tarjeta lo recortaba a
+la mitad apenas había contenido para desplazar. Ahora vive DENTRO del flujo normal, pegado al tope mientras se
+hace scroll (position:sticky), con margen negativo para "comerse" el padding de la tarjeta y quedar a ras de
+los bordes, y su propio padding + fondo opaco para no dejar ver el contenido de abajo al desplazarse.
+*/
+.hoja-actividades-barra-superior {
+  position: sticky;
+  top: -1.5rem;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: -1.5rem -1.5rem 1rem -1.5rem;
+  padding: 1rem 1.5rem;
+  background-color: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+  border-radius: 0.75rem 0.75rem 0 0;
 }
 
 .hoja-actividades-titulo {
@@ -297,9 +318,28 @@
   border-top: 2px dashed #9ca3af;
 }
 
+/*
+Fix del scroll interno al imprimir: styles.css (@media print, .imprimible) ya pone max-height:none, pero
+.hoja-actividades-card (mas abajo) tambien fija max-height:90vh/overflow-y:auto fuera de cualquier media query.
+La encapsulacion de estilos de Angular le agrega a cada selector de este archivo un atributo [_ngcontent-xxx],
+lo que sube la especificidad de esta regla (clase+atributo) al nivel de ".imprimible .no-imprimir" (dos clases)
+del global styles.css - y como esta hoja carga despues en el bundle, gana ELLA incluso imprimiendo: se veia con
+barra de desplazamiento en la vista previa en vez de dejar fluir el contenido en varias paginas. Mismo motivo
+por el que .hoja-actividades-barra-superior (con .no-imprimir) no se ocultaba al imprimir pese a tener esa
+clase. Se fuerza todo explicitamente aqui, en el propio @media print de este componente, para que gane siempre.
+*/
 @media print {
   .hoja-actividades-salto-pagina {
     page-break-before: always;
+  }
+
+  .hoja-actividades-card {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .hoja-actividades-barra-superior {
+    display: none !important;
   }
 }
 
@@ -310,6 +350,10 @@
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
+}
+
+.historial-operador-titulo {
+  margin: 0;
 }
 
 /*

@@ -650,6 +650,36 @@ modal futuro que reuse estos patrones):
    para todos, 50) - se agregó una clase `.modal-backdrop-anidado` (z-index: 60) al backdrop de la hoja para
    que siempre quede arriba, que es el único caso real de anidamiento que existe hoy en este panel.
 
+**Barra superior pegada (sticky) en vez de botón flotante, y dos bugs de impresión más** (ronda siguiente, tras
+feedback visual del usuario): el botón "✕" con `position: absolute` quedaba recortado a la mitad por el propio
+`overflow-y: auto` de la tarjeta apenas había contenido para hacer scroll (un elemento posicionado fuera del
+padding-box de un contenedor con overflow no-visible se recorta con él). Se reemplazó por
+`.hoja-actividades-barra-superior`/misma clase en `.historial-operador-card`: una barra `position: sticky;
+top: -1.5rem` con margen negativo que "cancela" el padding de `.modal-card` y queda a ras de los bordes,
+fondo opaco y borde inferior - Imprimir/Cerrar (o Título/Cerrar en el de Historial) quedan siempre visibles
+sin importar cuánto se baje, en vez de flotar fuera de la tarjeta.
+
+De paso, dos bugs de impresión reales, mismo origen: la **encapsulación de estilos de Angular** le agrega a
+cada selector de un archivo de componente un atributo `[_ngcontent-xxx]`, lo que sube su especificidad al
+nivel de un selector de dos clases del global `styles.css` (ej. `.imprimible .no-imprimir`) - y como el CSS del
+componente carga después en el bundle, gana él aunque el global esté pensado para imprimir. Por eso:
+1. `.hoja-actividades-card` (con `max-height: 90vh; overflow-y: auto` fuera de cualquier media query) le ganaba
+   al `max-height: none` que `styles.css` ya ponía en `@media print .imprimible` - la vista previa de impresión
+   mostraba el contenido con SU PROPIA barra de desplazamiento en vez de dejarlo fluir en varias páginas
+   (se veía como "una captura de cada hoja").
+2. `.hoja-actividades-barra-superior` (con clase `.no-imprimir`) no se ocultaba al imprimir pese a que
+   `styles.css` ya la apunta con `.imprimible .no-imprimir { display: none; }`.
+Ambos se resolvieron agregando el override directamente en el propio `@media print` de `asistencia-panel.css`
+(`max-height: none !important; overflow: visible !important;` y `display: none !important;` respectivamente) -
+mismo archivo, especificidad ya no importa porque `!important` fuerza la prioridad.
+
+**Pendiente, fuera del control de la app**: el navegador (Chrome) agrega su propio encabezado/pie de página al
+imprimir (fecha, título de la pestaña, URL, número de página) - es la casilla "Headers and footers" del propio
+diálogo de impresión del navegador, NO algo que CSS/JS de la página pueda desactivar (es una protección
+deliberada del navegador para que una página no pueda ocultarle al usuario qué URL está imprimiendo). Quien
+imprima tiene que desmarcar esa casilla manualmente en "Más ajustes" del diálogo de impresión si no quiere que
+la URL salga en el papel - no hay forma de forzarlo desde el código.
+
 **Filtro por hacienda en el Historial**: nuevo `<select>` junto a los filtros de fecha, manda `hacienda_id` a
 `GET /api/asistencia/historial`. El Operador no tiene `hacienda_id` propio (vive del Supervisor al que pertenece
 de forma permanente, ver tabla de roles), así que el backend filtra vía include anidado

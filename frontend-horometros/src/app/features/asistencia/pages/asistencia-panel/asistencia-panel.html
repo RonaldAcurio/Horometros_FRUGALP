@@ -505,10 +505,12 @@
        el orden en el HTML (ver .modal-backdrop-anidado en asistencia-panel.css). -->
   <div class="modal-backdrop modal-backdrop-anidado" *ngIf="mostrarModalHoja" (click)="cerrarModalHoja()">
     <div class="modal-card hoja-actividades-card imprimible" (click)="$event.stopPropagation()">
-      <button type="button" class="hoja-actividades-cerrar no-imprimir" (click)="cerrarModalHoja()">✕</button>
-
-      <div class="hoja-actividades-barra no-imprimir">
+      <!-- Barra superior PEGADA (sticky) al desplazar el contenido - Imprimir/Cerrar siempre visibles sin
+           importar cuánto se baje, en vez del botón flotando encima de la tarjeta (se recortaba con el
+           scroll interno, ver nota en CLAUDE.md). -->
+      <div class="hoja-actividades-barra-superior no-imprimir">
         <button type="button" class="btn btn-primary btn-sm" (click)="imprimirHoja()">🖨️ Imprimir</button>
+        <button type="button" class="hoja-actividades-cerrar" (click)="cerrarModalHoja()">✕</button>
       </div>
 
       <!-- Un bloque por operador - normalmente 1 (fila del Historial), o varios cuando viene de "Imprimir
@@ -565,8 +567,11 @@
        Historial general, ya filtrado a este operador (reutiliza GET /historial con operador_id). -->
   <div class="modal-backdrop" *ngIf="mostrarModalHistorialOperador" (click)="cerrarModalHistorialOperador()">
     <div class="modal-card historial-operador-card" (click)="$event.stopPropagation()">
-      <button type="button" class="hoja-actividades-cerrar" (click)="cerrarModalHistorialOperador()">✕</button>
-      <h3 class="modal-title">📅 Historial de Asistencia: {{ historialOperadorSel?.nombre_completo }}</h3>
+      <!-- Barra superior PEGADA (sticky) - título y Cerrar siempre visibles al bajar en la tabla. -->
+      <div class="hoja-actividades-barra-superior">
+        <h3 class="modal-title historial-operador-titulo">📅 Historial de Asistencia: {{ historialOperadorSel?.nombre_completo }}</h3>
+        <button type="button" class="hoja-actividades-cerrar" (click)="cerrarModalHistorialOperador()">✕</button>
+      </div>
 
       <div class="filter-card">
         <div class="filter-group">
