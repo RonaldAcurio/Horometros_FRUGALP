@@ -564,10 +564,10 @@ lo confirmado:
     construyeron esta ronda como pestañas del Panel de Asistente (ver abajo, "Gestión de Equipo/Actividad +
     soft-delete"). Secciones sigue sin CRUD ni pantalla (fase 2, hoy no se usa - ver modelo `registro_actividad.ts`).
 
-### Ver/Imprimir hoja de actividades (Directorio de Operadores + Historial de Asistencia)
+### Ver/Imprimir hoja de actividades (Historial de Asistencia)
 
-`asistencia-panel.ts`, `abrirHojaActividades(op, registros, opciones)` abre una **ventana flotante dentro de la
-misma pantalla** (`mostrarModalHoja`, mismo patrón que "Ver Evidencia" en `visor-foto.ts`: `.modal-backdrop` +
+`asistencia-panel.ts`, `abrirHojaActividades(grupos, opciones)` abre una **ventana flotante dentro de la misma
+pantalla** (`mostrarModalHoja`, mismo patrón que "Ver Evidencia" en `visor-foto.ts`: `.modal-backdrop` +
 `.modal-card`) con el mismo diseño que la hoja física "REPORTES DE LABORES DIARIOS" que el usuario compartió
 como foto - **no** una pestaña/ventana nueva del navegador (`window.open`), a diferencia de `imprimirQR()`: la
 app va empaquetada, así que un link separado no tiene sentido ahí, todo tiene que vivir en la misma pantalla.
@@ -577,39 +577,78 @@ Imprimir llama a `window.print()` sobre la propia página: `styles.css` (`@media
 salir en el papel. Esta técnica de impresión (clase `.imprimible` + `.no-imprimir` en el global `styles.css`) es
 reutilizable para cualquier otro modal que a futuro necesite "imprimir solo esto".
 
-El Mecánico va en un subtítulo del encabezado en negrita y letra más grande (`.hoja-actividades-mecanico`:
-`Mecánico: <nombre> · <código>`), no como columna de la tabla, porque cada llamada es de un solo operador (igual
-que la hoja física, que solo repite Fecha por fila). Columnas de la tabla: EQUIPO / OT / DAÑO / TIEMPO ESTIMADO /
-TALLER-CAMPO. La hoja física no tiene un campo equivalente exacto a "daño" ni a "tiempo estimado" en el modelo
-actual, así que se mapean del dato más cercano disponible: DAÑO = `RegistroActividad.observaciones` (el campo de
-texto libre), TIEMPO ESTIMADO = duración real calculada (`hora_fin - hora_inicio`, o "—" si la labor sigue
-abierta), TALLER-CAMPO = `Actividad.categoria`. **OT** = `RegistroActividad.area` (decisión del usuario esta
-ronda: la columna sigue llamándose `area` en la base de datos, pero "área" como concepto ya no se usa - lo que
-guarda es el número/código de Orden de Trabajo del mecánico; la etiqueta en Panel de Actividades, `mi-jornada.html`,
-también cambió de "OT / Área" a solo "OT").
+`grupos: { operador: Operador; registros: RegistroActividad[] }[]` - un grupo por operador. Cada uno se pinta en
+su propio bloque (`.hoja-actividades-grupo`) con el Mecánico en un subtítulo en negrita y letra más grande
+(`.hoja-actividades-mecanico`: `Mecánico: <nombre> · <código>`), no como columna de la tabla - igual que la hoja
+física, que solo repite Fecha por fila y escribe el mecánico una sola vez. Cuando hay más de un grupo (impresión
+por rango, ver abajo), cada uno arranca en su propia página al imprimir (`.hoja-actividades-salto-pagina`,
+`page-break-before` solo en `@media print`) y se separa con una línea punteada en pantalla. Columnas de la
+tabla: EQUIPO / OT / DAÑO / TIEMPO ESTIMADO / TALLER-CAMPO. La hoja física no tiene un campo equivalente exacto a
+"daño" ni a "tiempo estimado" en el modelo actual, así que se mapean del dato más cercano disponible: DAÑO =
+`RegistroActividad.observaciones` (el campo de texto libre), TIEMPO ESTIMADO = duración real calculada
+(`hora_fin - hora_inicio`, o "—" si la labor sigue abierta), TALLER-CAMPO = `Actividad.categoria`. **OT** =
+`RegistroActividad.area` (decisión del usuario de una ronda anterior: la columna sigue llamándose `area` en la
+base de datos, pero "área" como concepto ya no se usa - lo que guarda es el número/código de Orden de Trabajo
+del mecánico).
 
-Dos puntos de entrada, mismo método interno (`abrirHojaActividades`):
-- **Directorio de Operadores** (Ficha con un operador seleccionado): botón "📄 Ver/Imprimir Hoja de Actividades"
-  (`verImprimirHojaActividades`) - trae el historial COMPLETO de ese operador (todas sus jornadas, varias fechas
-  posibles) y dispara auto-impresión, igual que el comportamiento original. Como abarca varios días, la tabla SÍ
-  mantiene la columna Fecha por fila y NO se muestra el pie de observaciones del Supervisor (no hay una sola
-  jornada a la que asociarlas).
-- **Historial de Asistencia** (tabla con filtros de fecha/hacienda): columna "Ver/Imprimir" reemplazó a la
-  columna "Actividades" (que era redundante con lo que ya se ve en el Panel de Supervisor). Cada fila tiene
-  botones separados "👁️ Ver" (`verHojaFilaHistorial`, solo abre la vista previa) e "🖨️ Imprimir"
-  (`imprimirHojaFilaHistorial`, además dispara la impresión) - ambos scoped a **ese día puntual** (la fecha de
-  esa fila, vía `fecha_inicio=fecha_fin=reg.fecha`), no al historial completo del operador. Al ser un solo día:
-  la Fecha se muestra junto al nombre del operador en el encabezado en vez de repetirse por fila (se oculta la
-  columna Fecha de la tabla), y se agrega un pie "Observaciones del Supervisor" con
-  `Asistencia.observaciones` de esa jornada (el mismo campo que ya se edita en el Panel de Supervisor,
-  `revisarAsistencia`) - "Sin observaciones." si viene vacío.
+Dos puntos de entrada, mismo método interno (`abrirHojaActividades`) - **ya no existe** un botón en la Ficha del
+Directorio que imprima el historial COMPLETO de un operador sin acotar fecha (el usuario lo pidió quitar: "para
+imprimir la hoja tiene que tener la fecha, no imprimir todo de una sola vez" - ver más abajo qué lo reemplazó):
+- **Fila del Historial** (`verHojaFilaHistorial`/`imprimirHojaFilaHistorial`): UN SOLO grupo, scoped a **ese día
+  puntual** (`fecha_inicio=fecha_fin=reg.fecha`). "Ver" abre la vista previa sin imprimir, "Imprimir" además
+  dispara la impresión. Al ser un solo día: la Fecha se muestra junto al nombre del operador en el encabezado en
+  vez de repetirse por fila (se oculta la columna Fecha de la tabla), y se agrega un pie "Observaciones del
+  Supervisor" con `Asistencia.observaciones` de esa jornada (el mismo campo que ya se edita en el Panel de
+  Supervisor, `revisarAsistencia`) - "Sin observaciones." si viene vacío.
+- **"🖨️ Imprimir Hojas del rango"** (`imprimirHojasRangoHistorial`, botón al final de la tabla del Historial,
+  junto a la paginación): solo se habilita cuando el filtro Desde/Hasta del Historial está completo. Junta a
+  **todos los operadores distintos que aparecen en la página actual de la tabla ya filtrada** (no todo el rango
+  si hay más páginas - es deliberado, ver Pendiente si algún día hace falta cubrir todas las páginas) y les
+  arma un grupo a cada uno con `forkJoin` (`registroActividadService.obtenerPorOperador(id, fechaInicioFiltro,
+  fechaFinFiltro)`), todos en la misma ventana con salto de página entre uno y otro. Como es un rango (puede
+  haber varios días por persona), la Fecha se mantiene por fila y no hay pie de observaciones (no hay una sola
+  jornada a la que asociarlas cuando son varios operadores/días a la vez).
 
-Fuente de datos: `GET /api/registro-actividades/por-operador?operador_id=X&fecha_inicio=Y&fecha_fin=Z` (nuevo,
-distinto de `obtenerRegistrosPorAsistencia` que es de una sola jornada) - trae las labores de ESE operador a
-través de **varias** jornadas (join a `Asistencia` por `operador_id`); `fecha_inicio`/`fecha_fin` son opcionales,
-el Directorio no los manda (historial completo) y el Historial sí (un solo día). Mismo control de acceso que el
-resto del módulo (`puedeOperarSobre`): ADMIN/ASISTENTE/SUPERVISOR ven cualquiera, el propio Operador solo el
-suyo.
+Fuente de datos: `GET /api/registro-actividades/por-operador?operador_id=X&fecha_inicio=Y&fecha_fin=Z` - trae
+las labores de ESE operador a través de **varias** jornadas (join a `Asistencia` por `operador_id`);
+`fecha_inicio`/`fecha_fin` opcionales. Mismo control de acceso que el resto del módulo (`puedeOperarSobre`):
+ADMIN/ASISTENTE/SUPERVISOR ven cualquiera, el propio Operador solo el suyo.
+
+### Historial de Asistencia de UN operador (modal desde la Ficha)
+
+Reemplaza al viejo botón de la Ficha. Botón "📅 Ver Historial de Asistencia" (junto a "🖨️ Imprimir Carnet", que
+se queda igual - sigue siendo la única forma de generar un carnet físico nuevo, necesario para el kiosco) abre
+un modal (`.historial-operador-card`, `abrirModalHistorialOperador`) con la **misma tabla que la pestaña
+Historial general** (Fecha/Ingreso/Salida/Horas/Ver-Imprimir/Evidencia/Observación, reutilizando
+`verHojaFilaHistorial`/`imprimirHojaFilaHistorial`/`<app-visor-foto>` tal cual), menos la columna Operador (ya
+va en el título del modal) - con su propio filtro Desde/Hasta y paginación (`limite=10`), ya acotado a ese
+operador. No hay backend nuevo: `AsistenciaService.obtenerHistorial()` ganó un parámetro `operadorId` opcional
+que solo agrega `?operador_id=` a la query - el filtro por `operador_id` ya existía en `obtenerHistorial`
+(`asistencia.controller.ts`) desde antes, no tenía UI que lo aprovechara.
+
+Es honestamente decorativo en cuanto a "escanear" el QR - el botón abre el modal directo con el `operador_id`
+que ya se tiene a mano (el operador seleccionado en la Ficha), sin cámara ni lector real. Decisión explícita del
+usuario: le da una función real al carnet QR dentro del panel de la Asistente (hoy no tenía ninguna más allá de
+imprimirse), sin la complejidad/riesgo de intentar que el QR físico sirva para saltarse el login (ver discusión
+de por qué esa idea no encajaba con la arquitectura: el login es la puerta obligatoria de la app).
+
+**Dos bugs reales encontrados y corregidos al construir este modal** (no specific a él, aplican a cualquier
+modal futuro que reuse estos patrones):
+1. `cerrarModalHistorialOperador()` no llamaba a `this.cdr.detectChanges()` - el modal "se cerraba" en el
+   estado del componente pero seguía visible en pantalla hasta el próximo evento async. Mismo quirk de siempre:
+   *toda* mutación de estado en un handler síncrono necesita su `detectChanges()` explícito en esta app.
+2. `.modal-card` (global, `styles.css`) nunca tuvo `position: relative`, a diferencia del `.visor-foto-card`
+   original del que se copió el patrón del botón "✕" (`position: absolute; top: -0.75rem; right: -0.75rem`).
+   Sin un ancestro posicionado más cercano, ese botón se anclaba contra `.modal-backdrop` (que es
+   `position: fixed; inset: 0`, o sea el viewport completo) en vez de la esquina de la tarjeta - quedaba
+   flotando en la esquina de la PANTALLA, no de la tarjeta. Afectaba a cualquier modal que reusara ese botón
+   (`.hoja-actividades-card` incluido) y se notó recién con dos modales abiertos a la vez (el de Historial +
+   la hoja abierta encima), porque ahí sí se superponían/bloqueaban. Se agregó `position: relative` a
+   `.modal-card` en el global `styles.css` - corrige ambos casos con un solo cambio.
+   De paso, cuando dos `.modal-backdrop` conviven a la vez (la hoja se puede abrir ENCIMA del modal de
+   Historial), el de más arriba en el HTML pintaba encima sin importar cuál se abrió después (mismo z-index
+   para todos, 50) - se agregó una clase `.modal-backdrop-anidado` (z-index: 60) al backdrop de la hoja para
+   que siempre quede arriba, que es el único caso real de anidamiento que existe hoy en este panel.
 
 **Filtro por hacienda en el Historial**: nuevo `<select>` junto a los filtros de fecha, manda `hacienda_id` a
 `GET /api/asistencia/historial`. El Operador no tiene `hacienda_id` propio (vive del Supervisor al que pertenece

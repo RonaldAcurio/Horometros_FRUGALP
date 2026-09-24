@@ -1,5 +1,5 @@
 import { Component, ChangeDetectorRef, OnInit, signal } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, forkJoin, map } from 'rxjs';
 import { Operador, Asistencia, RegistroActividad, Equipo, Actividad } from '../../../../core/models/asistencia.model';
 import * as QRCode from 'qrcode';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
@@ -81,19 +81,35 @@ export class AsistenciaPanel implements OnInit{
   totalPaginasHistorial: number = 1;
   totalHistorial: number = 0;
 
-  // Reporte imprimible "Ver/Imprimir" (Directorio de Operadores y fila del Historial): carga las labores de un
-  // operador para mostrarlas con el mismo diseño de la hoja física "REPORTES DE LABORES DIARIOS". Se muestra
-  // en una ventana flotante (mismo patrón que "Ver Evidencia") en vez de una pestaña nueva - la app va a quedar
-  // empaquetada, así que todo tiene que vivir dentro de la misma pantalla.
+  // Reporte imprimible "Ver/Imprimir" (fila del Historial, o varios operadores a la vez desde el rango de
+  // fechas del Historial): carga las labores para mostrarlas con el mismo diseño de la hoja física "REPORTES
+  // DE LABORES DIARIOS". Se muestra en una ventana flotante (mismo patrón que "Ver Evidencia") en vez de una
+  // pestaña nueva - la app va a quedar empaquetada, así que todo tiene que vivir dentro de la misma pantalla.
   cargandoReporteImpresion = false;
   mostrarModalHoja: boolean = false;
-  hojaOperador: Operador | null = null;
-  hojaRegistros: RegistroActividad[] = [];
+  // Un grupo por operador - normalmente 1 (fila del Historial), pero la impresión por rango de fechas manda
+  // uno por cada operador distinto que aparece en la tabla filtrada, todos en la misma ventana con salto de
+  // página entre uno y otro (ver imprimirHojasRangoHistorial).
+  hojaGrupos: { operador: Operador; registros: RegistroActividad[] }[] = [];
   // Cuando la hoja es de UN solo día (fila del Historial) la fecha va junto al nombre del operador y se
-  // ocultan la columna Fecha de la tabla y trae la observación del Supervisor de esa jornada. Cuando es el
-  // historial completo del Directorio (varios días) queda null y la tabla vuelve a mostrar Fecha por fila.
+  // ocultan la columna Fecha de la tabla y trae la observación del Supervisor de esa jornada. Cuando es un
+  // rango de varios días (impresión por rango) queda null y la tabla vuelve a mostrar Fecha por fila.
   hojaFechaUnica: string | null = null;
   hojaObservacionesSupervisor: string | null = null;
+
+  // Modal "Historial de Asistencia" de UN operador (Ficha, Directorio de Operadores): mismas columnas que la
+  // pestaña Historial general, pero ya filtrado a este operador - reutiliza el mismo GET /historial con
+  // operador_id (ver AsistenciaService.obtenerHistorial). Reemplaza al viejo botón "Ver/Imprimir Hoja de
+  // Actividades" de la Ficha, que imprimía TODO el historial de labores de un operador sin acotar fecha.
+  mostrarModalHistorialOperador: boolean = false;
+  historialOperadorSel: Operador | null = null;
+  historialOperadorRegistros: Asistencia[] = [];
+  historialOperadorFechaInicio: string = '';
+  historialOperadorFechaFin: string = '';
+  paginaHistorialOperador: number = 1;
+  totalPaginasHistorialOperador: number = 1;
+  totalHistorialOperador: number = 0;
+  cargandoHistorialOperador: boolean = false;
 
   // Pestaña "Equipo" (catálogo de maquinaria): mismo patrón de lista+búsqueda+paginación que ya usa el
   // autocompletar del Panel de Actividades, pero con +Agregar/Editar/Eliminar (soft-delete) via modal. La
@@ -374,34 +390,22 @@ export class AsistenciaPanel implements OnInit{
 
   /*
   Ver/Imprimir hoja de actividades: mismo diseño de la hoja física "REPORTES DE LABORES DIARIOS" que el usuario
-  compartió, pero como ventana FLOTANTE dentro de la misma pantalla (mismo patrón que "Ver Evidencia",
-  visor-foto.ts) en vez de una pestaña nueva - la app va empaquetada, así que abrir un link/ventana del
-  navegador aparte no tiene sentido ahí. Imprimir usa la propia ventana (window.print()) con el resto de la
-  pantalla oculto vía CSS de impresión (ver .imprimible en styles.css), no un documento aparte.
+  compartió, como ventana FLOTANTE dentro de la misma pantalla (mismo patrón que "Ver Evidencia", visor-foto.ts)
+  en vez de una pestaña nueva - la app va empaquetada, así que abrir un link/ventana del navegador aparte no
+  tiene sentido ahí. Imprimir usa la propia ventana (window.print()) con el resto de la pantalla oculto vía CSS
+  de impresión (ver .imprimible en styles.css), no un documento aparte.
 
-  Dos puntos de entrada:
-  - Directorio de Operadores (`verImprimirHojaActividades`): historial COMPLETO de un operador (todas sus
-    jornadas, varias fechas posibles) - combina ver+imprimir en un solo botón, se queda igual que antes.
-  - Historial de Asistencia (`verHojaFilaHistorial`/`imprimirHojaFilaHistorial`): UN SOLO día puntual (la fila
-    clicada) - "Ver" abre la vista previa sin imprimir, "Imprimir" además dispara la impresión. Al ser un solo
-    día la fecha se muestra junto al nombre del operador (no repetida por fila) y se agrega el pie con la
-    observación que el Supervisor haya dejado sobre esa jornada.
+  Dos puntos de entrada, ambos desde el Historial de Asistencia (ya no existe uno en la Ficha del Directorio -
+  ese imprimía TODO el historial de labores de un operador sin acotar fecha, se reemplazó por acotar siempre a
+  un rango):
+  - `verHojaFilaHistorial`/`imprimirHojaFilaHistorial`: UN SOLO día puntual (la fila clicada) - "Ver" abre la
+    vista previa sin imprimir, "Imprimir" además dispara la impresión. Al ser un solo día la fecha se muestra
+    junto al nombre del operador (no repetida por fila) y se agrega el pie con la observación que el Supervisor
+    haya dejado sobre esa jornada.
+  - `imprimirHojasRangoHistorial`: TODOS los operadores distintos que aparecen en la tabla del Historial ya
+    filtrada por un rango Desde/Hasta - une la hoja de cada uno en la misma ventana, con salto de página entre
+    operador y operador, siempre con Fecha por fila (puede haber varios días por persona).
   */
-  verImprimirHojaActividades(op: Operador): void {
-    this.cargandoReporteImpresion = true;
-    this.registroActividadService.obtenerPorOperador(op.id).subscribe({
-      next: (registros) => {
-        this.cargandoReporteImpresion = false;
-        this.abrirHojaActividades(op, registros, { autoImprimir: true });
-      },
-      error: (err) => {
-        this.cargandoReporteImpresion = false;
-        this.notificacionService.error(err.error?.message || 'Error al cargar las labores del operador.');
-        this.cdr.detectChanges();
-      },
-    });
-  }
-
   verHojaFilaHistorial(reg: Asistencia): void {
     this.abrirHojaFilaHistorial(reg, false);
   }
@@ -416,7 +420,7 @@ export class AsistenciaPanel implements OnInit{
     this.registroActividadService.obtenerPorOperador(reg.operador_id, reg.fecha, reg.fecha).subscribe({
       next: (registros) => {
         this.cargandoReporteImpresion = false;
-        this.abrirHojaActividades(reg.operador!, registros, {
+        this.abrirHojaActividades([{ operador: reg.operador!, registros }], {
           fechaUnica: reg.fecha,
           observacionesSupervisor: reg.observaciones ?? null,
           autoImprimir,
@@ -425,6 +429,43 @@ export class AsistenciaPanel implements OnInit{
       error: (err) => {
         this.cargandoReporteImpresion = false;
         this.notificacionService.error(err.error?.message || 'Error al cargar las labores de ese día.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  // Junta a todos los operadores distintos de la tabla del Historial YA FILTRADA (la página actual, no todo el
+  // rango completo si hay más páginas) y les arma la hoja de cada uno, acotada al mismo rango Desde/Hasta
+  // activo. Solo se habilita cuando el filtro de fecha está completo (ver [disabled] en el template).
+  imprimirHojasRangoHistorial(): void {
+    if (!this.fechaInicioFiltro || !this.fechaFinFiltro) return;
+
+    const operadoresUnicos = new Map<number, Operador>();
+    for (const reg of this.historial) {
+      if (reg.operador && !operadoresUnicos.has(reg.operador_id)) {
+        operadoresUnicos.set(reg.operador_id, reg.operador);
+      }
+    }
+    if (operadoresUnicos.size === 0) {
+      this.notificacionService.error('No hay operadores en la tabla para imprimir.');
+      return;
+    }
+
+    this.cargandoReporteImpresion = true;
+    const peticiones = Array.from(operadoresUnicos.values()).map((op) =>
+      this.registroActividadService.obtenerPorOperador(op.id, this.fechaInicioFiltro, this.fechaFinFiltro).pipe(
+        map((registros) => ({ operador: op, registros }))
+      )
+    );
+
+    forkJoin(peticiones).subscribe({
+      next: (grupos) => {
+        this.cargandoReporteImpresion = false;
+        this.abrirHojaActividades(grupos, { autoImprimir: true });
+      },
+      error: (err) => {
+        this.cargandoReporteImpresion = false;
+        this.notificacionService.error(err.error?.message || 'Error al generar las hojas del rango.');
         this.cdr.detectChanges();
       },
     });
@@ -440,12 +481,10 @@ export class AsistenciaPanel implements OnInit{
   }
 
   private abrirHojaActividades(
-    op: Operador,
-    registros: RegistroActividad[],
+    grupos: { operador: Operador; registros: RegistroActividad[] }[],
     opciones: { fechaUnica?: string; observacionesSupervisor?: string | null; autoImprimir: boolean }
   ): void {
-    this.hojaOperador = op;
-    this.hojaRegistros = registros;
+    this.hojaGrupos = grupos;
     this.hojaFechaUnica = opciones.fechaUnica ?? null;
     this.hojaObservacionesSupervisor = opciones.observacionesSupervisor ?? null;
     this.mostrarModalHoja = true;
@@ -463,11 +502,65 @@ export class AsistenciaPanel implements OnInit{
 
   cerrarModalHoja(): void {
     this.mostrarModalHoja = false;
-    this.hojaOperador = null;
-    this.hojaRegistros = [];
+    this.hojaGrupos = [];
     this.hojaFechaUnica = null;
     this.hojaObservacionesSupervisor = null;
     this.cdr.detectChanges();
+  }
+
+  // ==================== MODAL "HISTORIAL DE ASISTENCIA" DE UN OPERADOR (Ficha) ====================
+
+  abrirModalHistorialOperador(op: Operador): void {
+    this.historialOperadorSel = op;
+    this.historialOperadorFechaInicio = '';
+    this.historialOperadorFechaFin = '';
+    this.mostrarModalHistorialOperador = true;
+    this.buscarHistorialOperador();
+  }
+
+  cerrarModalHistorialOperador(): void {
+    this.mostrarModalHistorialOperador = false;
+    this.historialOperadorSel = null;
+    this.historialOperadorRegistros = [];
+    this.cdr.detectChanges();
+  }
+
+  buscarHistorialOperador(): void {
+    this.paginaHistorialOperador = 1;
+    this.cargarPaginaHistorialOperador();
+  }
+
+  cambiarPaginaHistorialOperador(nuevaPagina: number): void {
+    if (nuevaPagina >= 1 && nuevaPagina <= this.totalPaginasHistorialOperador) {
+      this.paginaHistorialOperador = nuevaPagina;
+      this.cargarPaginaHistorialOperador();
+    }
+  }
+
+  private cargarPaginaHistorialOperador(): void {
+    if (!this.historialOperadorSel) return;
+    this.cargandoHistorialOperador = true;
+    this.asistenciaService.obtenerHistorial(
+      this.historialOperadorFechaInicio || undefined,
+      this.historialOperadorFechaFin || undefined,
+      this.paginaHistorialOperador,
+      10,
+      undefined,
+      this.historialOperadorSel.id
+    ).subscribe({
+      next: (res) => {
+        this.cargandoHistorialOperador = false;
+        this.historialOperadorRegistros = res.data || [];
+        this.totalPaginasHistorialOperador = res.totalPaginas || 1;
+        this.totalHistorialOperador = res.total || 0;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.cargandoHistorialOperador = false;
+        this.notificacionService.error('Error al cargar el historial de este operador.');
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   cambiarTab(tab:'directorio' | 'historial' | 'equipos' | 'actividades'):void{

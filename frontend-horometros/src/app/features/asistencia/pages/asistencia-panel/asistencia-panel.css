@@ -288,3 +288,37 @@
   margin: 0.25rem 0 0;
   color: #374151;
 }
+
+/* Impresión de varios operadores en una sola ventana (imprimirHojasRangoHistorial): separa cada bloque en
+   pantalla y fuerza salto de página entre uno y otro al imprimir, para que cada operador salga en su propia hoja. */
+.hoja-actividades-grupo + .hoja-actividades-grupo {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 2px dashed #9ca3af;
+}
+
+@media print {
+  .hoja-actividades-salto-pagina {
+    page-break-before: always;
+  }
+}
+
+/* Modal "Historial de Asistencia" de un operador (Ficha) - mas ancho que el modal.card por defecto (28rem)
+   porque adentro lleva la misma tabla de 7 columnas que la pestaña Historial general. */
+.historial-operador-card {
+  max-width: 60rem;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+/*
+La hoja de actividades (Ver/Imprimir) se puede abrir ENCIMA de este modal de Historial (dos modal-backdrop
+apilados a la vez). Sin esto, el que queda "arriba" depende del orden en que aparecen en el HTML, no de cual se
+abrio despues - con los dos en el mismo z-index (50, ver styles.css), el de Historial (que esta mas abajo en el
+archivo) tapaba al de la hoja y bloqueaba sus clics. Se sube el z-index de la hoja para que SIEMPRE quede
+arriba, que es el unico caso real de anidamiento que existe hoy en este panel.
+*/
+.modal-backdrop-anidado {
+  z-index: 60;
+}

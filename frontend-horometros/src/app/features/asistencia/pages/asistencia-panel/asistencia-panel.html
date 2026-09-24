@@ -153,10 +153,9 @@
             </button>
             <button
               class="btn btn-secondary w-full mt-2"
-              [disabled]="cargandoReporteImpresion"
-              (click)="verImprimirHojaActividades(operadorSeleccionado)"
+              (click)="abrirModalHistorialOperador(operadorSeleccionado)"
             >
-              {{ cargandoReporteImpresion ? 'Cargando...' : '📄 Ver/Imprimir Hoja de Actividades' }}
+              📅 Ver Historial de Asistencia
             </button>
           </div>
         </div>
@@ -239,7 +238,15 @@
       </div>
       <div class="pagination-bar" *ngIf="historial.length > 0">
         <span>Página {{ paginaHistorial }} de {{ totalPaginasHistorial }} ({{ totalHistorial }} registros)</span>
-        <div class="flex gap-1">
+        <div class="flex gap-2">
+          <button
+            class="btn btn-primary btn-sm"
+            [disabled]="!fechaInicioFiltro || !fechaFinFiltro || cargandoReporteImpresion"
+            [title]="!fechaInicioFiltro || !fechaFinFiltro ? 'Elige un rango Desde/Hasta para habilitar la impresión' : ''"
+            (click)="imprimirHojasRangoHistorial()"
+          >
+            {{ cargandoReporteImpresion ? 'Generando...' : '🖨️ Imprimir Hojas del rango' }}
+          </button>
           <button [disabled]="paginaHistorial === 1" (click)="cambiarPaginaHistorial(paginaHistorial - 1)" class="btn btn-secondary btn-sm">◀</button>
           <button [disabled]="paginaHistorial === totalPaginasHistorial" (click)="cambiarPaginaHistorial(paginaHistorial + 1)" class="btn btn-secondary btn-sm">▶</button>
         </div>
@@ -493,7 +500,10 @@
   <!-- MODAL: VER/IMPRIMIR HOJA DE ACTIVIDADES (Directorio y fila del Historial) - flotante, no pestaña nueva,
        porque la app va empaquetada. Al imprimir, styles.css oculta el resto de la pantalla y deja visible
        solo .imprimible (ver @media print en styles.css). -->
-  <div class="modal-backdrop" *ngIf="mostrarModalHoja" (click)="cerrarModalHoja()">
+  <!-- modal-backdrop-anidado: esta hoja se puede abrir ENCIMA del modal de Historial de un operador (al
+       clicar Ver/Imprimir dentro de ese modal) - necesita quedar por encima del otro backdrop sin importar
+       el orden en el HTML (ver .modal-backdrop-anidado en asistencia-panel.css). -->
+  <div class="modal-backdrop modal-backdrop-anidado" *ngIf="mostrarModalHoja" (click)="cerrarModalHoja()">
     <div class="modal-card hoja-actividades-card imprimible" (click)="$event.stopPropagation()">
       <button type="button" class="hoja-actividades-cerrar no-imprimir" (click)="cerrarModalHoja()">✕</button>
 
@@ -501,43 +511,127 @@
         <button type="button" class="btn btn-primary btn-sm" (click)="imprimirHoja()">🖨️ Imprimir</button>
       </div>
 
-      <h2 class="hoja-actividades-titulo">Reportes de Labores Diarios</h2>
-      <div class="hoja-actividades-encabezado">
-        <span class="hoja-actividades-mecanico">
-          Mecánico: {{ hojaOperador?.nombre_completo }}<ng-container *ngIf="hojaOperador?.codigo_megued"> · {{ hojaOperador?.codigo_megued }}</ng-container>
-        </span>
-        <span *ngIf="hojaFechaUnica" class="hoja-actividades-fecha">Fecha: {{ hojaFechaUnica }}</span>
+      <!-- Un bloque por operador - normalmente 1 (fila del Historial), o varios cuando viene de "Imprimir
+           Hojas del rango" (uno por cada operador distinto de la tabla filtrada), con salto de página entre
+           uno y otro al imprimir. -->
+      <div
+        *ngFor="let grupo of hojaGrupos; let first = first"
+        class="hoja-actividades-grupo"
+        [class.hoja-actividades-salto-pagina]="!first"
+      >
+        <h2 class="hoja-actividades-titulo">Reportes de Labores Diarios</h2>
+        <div class="hoja-actividades-encabezado">
+          <span class="hoja-actividades-mecanico">
+            Mecánico: {{ grupo.operador.nombre_completo }}<ng-container *ngIf="grupo.operador.codigo_megued"> · {{ grupo.operador.codigo_megued }}</ng-container>
+          </span>
+          <span *ngIf="hojaFechaUnica" class="hoja-actividades-fecha">Fecha: {{ hojaFechaUnica }}</span>
+        </div>
+
+        <table class="hoja-actividades-tabla">
+          <thead>
+            <tr>
+              <th *ngIf="!hojaFechaUnica">Fecha</th>
+              <th>Equipo</th>
+              <th>OT</th>
+              <th>Daño</th>
+              <th>Tiempo estimado</th>
+              <th>Taller/Campo</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let reg of grupo.registros">
+              <td *ngIf="!hojaFechaUnica">{{ reg.asistencia?.fecha || '—' }}</td>
+              <td>{{ reg.equipo ? (reg.equipo.codigo_megued + ' - ' + reg.equipo.nombre_equipo) : '—' }}</td>
+              <td>{{ reg.area || '—' }}</td>
+              <td>{{ reg.observaciones || '—' }}</td>
+              <td>{{ duracionLabor(reg) }}</td>
+              <td>{{ reg.actividad?.categoria || '—' }}</td>
+            </tr>
+            <tr *ngIf="grupo.registros.length === 0">
+              <td [attr.colspan]="hojaFechaUnica ? 5 : 6" class="hoja-actividades-vacio">Sin labores registradas.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="hoja-actividades-observaciones" *ngIf="hojaFechaUnica">
+          <strong>Observaciones del Supervisor:</strong>
+          <p>{{ hojaObservacionesSupervisor || 'Sin observaciones.' }}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: HISTORIAL DE ASISTENCIA de UN operador (Ficha, Directorio) - mismas columnas que la pestaña
+       Historial general, ya filtrado a este operador (reutiliza GET /historial con operador_id). -->
+  <div class="modal-backdrop" *ngIf="mostrarModalHistorialOperador" (click)="cerrarModalHistorialOperador()">
+    <div class="modal-card historial-operador-card" (click)="$event.stopPropagation()">
+      <button type="button" class="hoja-actividades-cerrar" (click)="cerrarModalHistorialOperador()">✕</button>
+      <h3 class="modal-title">📅 Historial de Asistencia: {{ historialOperadorSel?.nombre_completo }}</h3>
+
+      <div class="filter-card">
+        <div class="filter-group">
+          <label class="filter-label">Desde:</label>
+          <input type="date" class="date-input" [(ngModel)]="historialOperadorFechaInicio">
+          <label class="filter-label">Hasta:</label>
+          <input type="date" class="date-input" [(ngModel)]="historialOperadorFechaFin">
+        </div>
+        <button class="btn btn-primary btn-sm" (click)="buscarHistorialOperador()">🔍 Buscar</button>
       </div>
 
-      <table class="hoja-actividades-tabla">
-        <thead>
-          <tr>
-            <th *ngIf="!hojaFechaUnica">Fecha</th>
-            <th>Equipo</th>
-            <th>OT</th>
-            <th>Daño</th>
-            <th>Tiempo estimado</th>
-            <th>Taller/Campo</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let reg of hojaRegistros">
-            <td *ngIf="!hojaFechaUnica">{{ reg.asistencia?.fecha || '—' }}</td>
-            <td>{{ reg.equipo ? (reg.equipo.codigo_megued + ' - ' + reg.equipo.nombre_equipo) : '—' }}</td>
-            <td>{{ reg.area || '—' }}</td>
-            <td>{{ reg.observaciones || '—' }}</td>
-            <td>{{ duracionLabor(reg) }}</td>
-            <td>{{ reg.actividad?.categoria || '—' }}</td>
-          </tr>
-          <tr *ngIf="hojaRegistros.length === 0">
-            <td [attr.colspan]="hojaFechaUnica ? 5 : 6" class="hoja-actividades-vacio">Sin labores registradas.</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Ingreso</th>
+              <th>Salida</th>
+              <th>Horas Trabajadas</th>
+              <th>Ver/Imprimir</th>
+              <th>Evidencia</th>
+              <th>Observación</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let reg of historialOperadorRegistros">
+              <td>{{ reg.fecha }}</td>
+              <td><span class="time-badge">{{ reg.hora_ingreso | date:'HH:mm:ss':'-0500' }}</span></td>
+              <td>
+                <span *ngIf="reg.hora_salida" class="time-badge">{{ reg.hora_salida | date:'HH:mm:ss':'-0500' }}</span>
+                <span *ngIf="!reg.hora_salida" class="text-muted-sm">Sin salida</span>
+              </td>
+              <td>{{ reg.total_horas != null ? (reg.total_horas + ' h') : '—' }}</td>
+              <td>
+                <div class="flex gap-1">
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    [disabled]="cargandoReporteImpresion"
+                    (click)="verHojaFilaHistorial(reg)"
+                  >👁️ Ver</button>
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    [disabled]="cargandoReporteImpresion"
+                    (click)="imprimirHojaFilaHistorial(reg)"
+                  >🖨️ Imprimir</button>
+                </div>
+              </td>
+              <td>
+                <app-visor-foto [asistenciaId]="reg.id" [tieneFoto]="!!reg.tiene_foto"></app-visor-foto>
+              </td>
+              <td>{{ reg.observaciones || '—' }}</td>
+            </tr>
+            <tr *ngIf="!cargandoHistorialOperador && historialOperadorRegistros.length === 0">
+              <td colspan="7" class="table-empty">No hay registros para el rango seleccionado.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
-      <div class="hoja-actividades-observaciones" *ngIf="hojaFechaUnica">
-        <strong>Observaciones del Supervisor:</strong>
-        <p>{{ hojaObservacionesSupervisor || 'Sin observaciones.' }}</p>
+      <div class="pagination-bar" *ngIf="historialOperadorRegistros.length > 0">
+        <span>Página {{ paginaHistorialOperador }} de {{ totalPaginasHistorialOperador }} ({{ totalHistorialOperador }} registros)</span>
+        <div class="flex gap-1">
+          <button [disabled]="paginaHistorialOperador === 1" (click)="cambiarPaginaHistorialOperador(paginaHistorialOperador - 1)" class="btn btn-secondary btn-sm">◀</button>
+          <button [disabled]="paginaHistorialOperador === totalPaginasHistorialOperador" (click)="cambiarPaginaHistorialOperador(paginaHistorialOperador + 1)" class="btn btn-secondary btn-sm">▶</button>
+        </div>
       </div>
     </div>
   </div>

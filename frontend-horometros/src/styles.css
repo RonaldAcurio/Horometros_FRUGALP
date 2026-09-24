@@ -416,6 +416,11 @@ html, body {
 }
 
 .modal-card {
+  /* Sin esto, un boton "cerrar" con position:absolute dentro de la tarjeta (ver .hoja-actividades-cerrar en
+     visor-foto.css/asistencia-panel.css) se ancla contra .modal-backdrop (que es position:fixed e inset:0, o
+     sea el viewport completo) en vez de la esquina de la propia tarjeta - queda flotando en la esquina de la
+     pantalla en vez de la esquina de la tarjeta. */
+  position: relative;
   background-color: var(--bg-card);
   border: 1px solid var(--border-card);
   border-radius: 0.75rem;
