@@ -1,5 +1,6 @@
 import { Component, ChangeDetectorRef, OnInit, signal } from '@angular/core';
-import { Operador, Asistencia, RegistroActividad } from '../../../../core/models/asistencia.model';
+import { Observable } from 'rxjs';
+import { Operador, Asistencia, RegistroActividad, Equipo, Actividad } from '../../../../core/models/asistencia.model';
 import * as QRCode from 'qrcode';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 import { UsuarioService } from '../../../../core/services/usuario.service';
@@ -11,6 +12,7 @@ import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { VisorFoto } from '../../components/visor-foto/visor-foto';
 import { NotificacionService } from '../../../../core/services/notificacion.service';
+import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
 
 @Component({
   standalone:true,
@@ -67,7 +69,7 @@ export class AsistenciaPanel implements OnInit{
   nuevoOperadorClave: string = '';
 
   //Historial de ASISTENCIA
-  tabActual: 'directorio' | 'historial' = 'directorio';
+  tabActual: 'directorio' | 'historial' | 'equipos' | 'actividades' = 'directorio';
   historial: Asistencia[] = [];
   fechaInicioFiltro: string= '';
   fechaFinFiltro:string = '';
@@ -93,13 +95,35 @@ export class AsistenciaPanel implements OnInit{
   hojaFechaUnica: string | null = null;
   hojaObservacionesSupervisor: string | null = null;
 
+  // Pestaña "Equipo" (catálogo de maquinaria): mismo patrón de lista+búsqueda+paginación que ya usa el
+  // autocompletar del Panel de Actividades, pero con +Agregar/Editar/Eliminar (soft-delete) via modal.
+  equipos: Equipo[] = [];
+  equipoBusquedaTab: string = '';
+  paginaEquiposTab: number = 1;
+  totalPaginasEquiposTab: number = 1;
+  totalEquiposTab: number = 0;
+  mostrarModalEquipo: boolean = false;
+  equipoEditando: Equipo | null = null;
+  formEquipo = { codigo_megued: '', nombre_equipo: '' };
+
+  // Pestaña "Actividad" (catálogo de labores): mismo patrón.
+  actividadesTab: Actividad[] = [];
+  actividadBusquedaTab: string = '';
+  paginaActividadesTab: number = 1;
+  totalPaginasActividadesTab: number = 1;
+  totalActividadesTab: number = 0;
+  mostrarModalActividad: boolean = false;
+  actividadEditando: Actividad | null = null;
+  formActividad: { codigo_megued: string; description: string; categoria: 'TALLER' | 'CAMPO' } = { codigo_megued: '', description: '', categoria: 'TALLER' };
+
   constructor(
     private asistenciaService: AsistenciaService,
     private usuarioService: UsuarioService,
     private registroActividadService: RegistroActividadService,
     private haciendaService: HaciendaService,
     private cdr: ChangeDetectorRef,
-    private notificacionService: NotificacionService
+    private notificacionService: NotificacionService,
+    private confirmacionService: ConfirmacionService
   ){};
 
   ngOnInit(): void {
@@ -301,6 +325,31 @@ export class AsistenciaPanel implements OnInit{
     });
   }
 
+  // Eliminar (soft-delete) el Operador seleccionado en la Ficha - desaparece del Directorio, pero sus
+  // Asistencias/RegistroActividad ya creados lo siguen mostrando con normalidad (ver backend).
+  async eliminarOperadorSeleccionado(): Promise<void> {
+    if (!this.operadorSeleccionado) return;
+
+    const confirmado = await this.confirmacionService.preguntar(
+      `¿Eliminar a ${this.operadorSeleccionado.nombre_completo}? Ya no va a aparecer en el Directorio, pero su historial de asistencia y labores se conserva.`,
+      'Eliminar operador'
+    );
+    if (!confirmado) return;
+
+    this.asistenciaService.eliminarOperador(this.operadorSeleccionado.id).subscribe({
+      next: () => {
+        this.notificacionService.exito('Operador eliminado correctamente.');
+        this.operadorSeleccionado = null;
+        this.cargarOperadores();
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.notificacionService.error(err.error?.message || 'Error al eliminar el operador.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
   imprimirQR(): void {
     const ventanaImpresion = window.open('', '_blank');
     if (ventanaImpresion && this.operadorSeleccionado) {
@@ -418,11 +467,17 @@ export class AsistenciaPanel implements OnInit{
     this.cdr.detectChanges();
   }
 
-  cambiarTab(tab:'directorio' | 'historial'):void{
+  cambiarTab(tab:'directorio' | 'historial' | 'equipos' | 'actividades'):void{
     this.tabActual = tab;
 
     if(tab === 'historial' && this.historial.length === 0){
       this.buscarHistorial();
+    }
+    if(tab === 'equipos' && this.equipos.length === 0){
+      this.buscarEquiposTab();
+    }
+    if(tab === 'actividades' && this.actividadesTab.length === 0){
+      this.buscarActividadesTab();
     }
   }
 
@@ -456,5 +511,172 @@ export class AsistenciaPanel implements OnInit{
       error:(err) => console.error('Error cargando historial:', err)
     });
   }
-  
+
+  // ==================== PESTAÑA "EQUIPO" ====================
+
+  buscarEquiposTab(): void {
+    this.paginaEquiposTab = 1;
+    this.cargarPaginaEquiposTab();
+  }
+
+  cambiarPaginaEquiposTab(nuevaPagina: number): void {
+    if (nuevaPagina >= 1 && nuevaPagina <= this.totalPaginasEquiposTab) {
+      this.paginaEquiposTab = nuevaPagina;
+      this.cargarPaginaEquiposTab();
+    }
+  }
+
+  private cargarPaginaEquiposTab(): void {
+    this.registroActividadService.obtenerEquipos(this.paginaEquiposTab, 20, this.equipoBusquedaTab || undefined).subscribe({
+      next: (res) => {
+        this.equipos = res.data || [];
+        this.totalPaginasEquiposTab = res.totalPaginas || 1;
+        this.totalEquiposTab = res.total || 0;
+        this.cdr.detectChanges();
+      },
+      error: (err) => console.error('Error cargando equipos:', err),
+    });
+  }
+
+  abrirModalNuevoEquipo(): void {
+    this.equipoEditando = null;
+    this.formEquipo = { codigo_megued: '', nombre_equipo: '' };
+    this.mostrarModalEquipo = true;
+  }
+
+  abrirModalEditarEquipo(eq: Equipo): void {
+    this.equipoEditando = eq;
+    this.formEquipo = { codigo_megued: eq.codigo_megued, nombre_equipo: eq.nombre_equipo };
+    this.mostrarModalEquipo = true;
+  }
+
+  cerrarModalEquipo(): void {
+    this.mostrarModalEquipo = false;
+    this.equipoEditando = null;
+  }
+
+  guardarEquipo(): void {
+    if (!this.formEquipo.codigo_megued || !this.formEquipo.nombre_equipo) return;
+
+    const peticion: Observable<unknown> = this.equipoEditando
+      ? this.registroActividadService.actualizarEquipo(this.equipoEditando.id, this.formEquipo)
+      : this.registroActividadService.crearEquipo(this.formEquipo);
+
+    peticion.subscribe({
+      next: () => {
+        this.notificacionService.exito(this.equipoEditando ? 'Equipo actualizado con éxito.' : '¡Equipo creado con éxito!');
+        this.cerrarModalEquipo();
+        this.cargarPaginaEquiposTab();
+        this.cdr.detectChanges();
+      },
+      error: (err: any) => {
+        this.notificacionService.error(err.error?.message || 'Error al guardar el equipo.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  async eliminarEquipoTab(eq: Equipo): Promise<void> {
+    const confirmado = await this.confirmacionService.preguntar(
+      `¿Eliminar el equipo ${eq.nombre_equipo}? Ya no va a aparecer en los selectores, pero las labores ya registradas con él se conservan.`,
+      'Eliminar equipo'
+    );
+    if (!confirmado) return;
+
+    this.registroActividadService.eliminarEquipo(eq.id).subscribe({
+      next: () => {
+        this.notificacionService.exito('Equipo eliminado correctamente.');
+        this.cargarPaginaEquiposTab();
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.notificacionService.error(err.error?.message || 'Error al eliminar el equipo.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  // ==================== PESTAÑA "ACTIVIDAD" ====================
+
+  buscarActividadesTab(): void {
+    this.paginaActividadesTab = 1;
+    this.cargarPaginaActividadesTab();
+  }
+
+  cambiarPaginaActividadesTab(nuevaPagina: number): void {
+    if (nuevaPagina >= 1 && nuevaPagina <= this.totalPaginasActividadesTab) {
+      this.paginaActividadesTab = nuevaPagina;
+      this.cargarPaginaActividadesTab();
+    }
+  }
+
+  private cargarPaginaActividadesTab(): void {
+    this.asistenciaService.obtenerActividadesPaginado(this.paginaActividadesTab, 20, this.actividadBusquedaTab || undefined).subscribe({
+      next: (res) => {
+        this.actividadesTab = res.data || [];
+        this.totalPaginasActividadesTab = res.totalPaginas || 1;
+        this.totalActividadesTab = res.total || 0;
+        this.cdr.detectChanges();
+      },
+      error: (err) => console.error('Error cargando actividades:', err),
+    });
+  }
+
+  abrirModalNuevaActividad(): void {
+    this.actividadEditando = null;
+    this.formActividad = { codigo_megued: '', description: '', categoria: 'TALLER' };
+    this.mostrarModalActividad = true;
+  }
+
+  abrirModalEditarActividad(act: Actividad): void {
+    this.actividadEditando = act;
+    this.formActividad = { codigo_megued: act.codigo_megued, description: act.description, categoria: act.categoria || 'TALLER' };
+    this.mostrarModalActividad = true;
+  }
+
+  cerrarModalActividad(): void {
+    this.mostrarModalActividad = false;
+    this.actividadEditando = null;
+  }
+
+  guardarActividad(): void {
+    if (!this.formActividad.codigo_megued || !this.formActividad.description) return;
+
+    const peticion: Observable<unknown> = this.actividadEditando
+      ? this.asistenciaService.actualizarActividad(this.actividadEditando.id, this.formActividad)
+      : this.asistenciaService.crearActividad(this.formActividad);
+
+    peticion.subscribe({
+      next: () => {
+        this.notificacionService.exito(this.actividadEditando ? 'Actividad actualizada con éxito.' : '¡Actividad creada con éxito!');
+        this.cerrarModalActividad();
+        this.cargarPaginaActividadesTab();
+        this.cdr.detectChanges();
+      },
+      error: (err: any) => {
+        this.notificacionService.error(err.error?.message || 'Error al guardar la actividad.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  async eliminarActividadTab(act: Actividad): Promise<void> {
+    const confirmado = await this.confirmacionService.preguntar(
+      `¿Eliminar la actividad ${act.description}? Ya no va a aparecer en los selectores, pero las marcaciones/labores ya registradas con ella se conservan.`,
+      'Eliminar actividad'
+    );
+    if (!confirmado) return;
+
+    this.asistenciaService.eliminarActividad(act.id).subscribe({
+      next: () => {
+        this.notificacionService.exito('Actividad eliminada correctamente.');
+        this.cargarPaginaActividadesTab();
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.notificacionService.error(err.error?.message || 'Error al eliminar la actividad.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
 }

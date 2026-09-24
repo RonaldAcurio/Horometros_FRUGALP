@@ -522,7 +522,37 @@ lo confirmado:
   todas formas), pero se mantiene el diseño de sync manual/periódico ya acordado para cuando no hay señal en campo.
 - **Sacar el módulo Horómetros a un proyecto aparte** (decisión del usuario, todavía no ejecutada): separar lo que es
   exclusivo de Horómetros (componentes, servicio, modelo, la ruta `/horometros`) de lo compartido (`app.routes.ts`,
-  `app.html`, el sistema de notificaciones) sin romper Asistencia.
+  `app.html`, el sistema de notificaciones) sin romper Asistencia. Lista concreta de qué es exclusivo de
+  Horómetros (se puede mover/borrar tal cual) vs. qué es compartido (NO se toca, lo usa Asistencia):
+
+  **Backend - borrar completo:**
+  - `src/controllers/horometros.controller.ts`, `src/routes/horometros.routees.ts`
+  - `src/services/gemini.service.ts` (OCR vía Gemini - `@google/genai` en `package.json`, sin otro consumidor)
+  - `src/middlewares/upload.middleware.ts` (Multer - `multer`/`@types/multer` en `package.json`, sin otro consumidor)
+  - `src/models/ingresos_semanales.ts` (el modelo de datos de Horómetros, no lo usa Asistencia)
+
+  **Backend - editar (quitar solo las líneas de Horómetros, todo lo demás se queda):**
+  - `src/app.ts`: el `import horometrosRoutes` y `app.use('/api/horometros', horometrosRoutes)`
+  - `src/models/index.ts`: el `import Ingresos_Semanales`, sus 3 bloques de asociación (`Ingresos_Semanales.belongsTo(Equipo/Operador/Actividad)` y los `hasMany` inversos) y quitarlo del `export`
+  - `package.json`: quitar `@google/genai` y `multer` (+ `@types/multer` de devDependencies), después `npm install`
+  - Opcional, no relacionado a Horómetros pero es código suelto: `src/index.ts` tiene una consulta de prueba a
+    `Equipo.findOne({numero_hoja:'33'})` al arrancar, sobrante de una prueba manual - se puede borrar aparte.
+
+  **Backend - NO se toca (compartido con Asistencia vía el modelo `Equipo`):** `ultimo_km_inicial`, `ultimo_real`,
+  `numero_hoja`, `tiene_tope_10k`, `nombre_maquinaria` en `models/equipo.ts` quedan como columnas sin uso una vez
+  que Horómetros se va (las escribía `horometros.controller.ts`, nadie más las toca) - no hace falta borrarlas de
+  la tabla/modelo para que Asistencia siga funcionando, es limpieza de base de datos opcional para más adelante.
+
+  **Frontend - borrar completo:** carpeta `src/app/features/horometros/` entera (incluye
+  `components/carga-lote/`) y `src/app/core/services/horometros.services.ts`.
+
+  **Frontend - editar:**
+  - `src/app/app.routes.ts`: quitar el bloque de la ruta `path: 'horometros'`
+  - `src/app/features/dashboard/dashboard.component.html`: quitar la tarjeta `<a routerLink="/horometros" ...>`
+    ("+ Horómetro", entre las tarjetas de "Asistencia" y "Administración")
+
+  Todo lo demás (Equipo/Operador/Actividad como modelos, sus tablas, y todo el módulo Asistencia) es compartido y
+  se queda igual - Horómetros solo LEE/ESCRIBE encima de esas tablas, no es dueño de ellas.
 - **Diseños de Figma confirmados, pendientes de construir** (el usuario los compartió, existen en su Figma):
   - "Descargar" (exporta a Excel, formato pendiente de que el usuario lo proporcione) e "Imprimir" general en el
     Directorio de Operadores - este último solo se habilita cuando el Historial está filtrado a **un solo día**
@@ -530,10 +560,9 @@ lo confirmado:
     no se habilita, para no tener que resolver "cuántas hojas de cuántos días imprimo". El "Ver/Imprimir" **por
     operador individual** (Directorio) y **por fila individual** (Historial, un solo día) ya se construyeron, ver
     abajo.
-  - Nueva pestaña de ADMIN para crear/editar/eliminar Equipos y Secciones (catálogos que hoy no tienen UI de
-    gestión, solo lectura) - Actividades ya tiene sus 3 endpoints de mutación protegidos y listos
-    (`POST/PUT/DELETE /api/actividad`, ver Endpoints), y Equipos ganó un `GET /api/equipos` de solo lectura esta
-    ronda (lo necesitaba el Panel de Actividades) - falta el resto del CRUD y la pantalla.
+  - ~~Nueva pestaña de ADMIN para crear/editar/eliminar Equipos y Secciones~~ - Equipo y Actividad ya se
+    construyeron esta ronda como pestañas del Panel de Asistente (ver abajo, "Gestión de Equipo/Actividad +
+    soft-delete"). Secciones sigue sin CRUD ni pantalla (fase 2, hoy no se usa - ver modelo `registro_actividad.ts`).
 
 ### Ver/Imprimir hoja de actividades (Directorio de Operadores + Historial de Asistencia)
 
@@ -587,6 +616,39 @@ suyo.
 de forma permanente, ver tabla de roles), así que el backend filtra vía include anidado
 `operador -> supervisor -> hacienda_id` con `required: true` en el include de `operador` cuando hay filtro (si
 no, Sequelize deja el include como LEFT JOIN y el `where` anidado del supervisor no filtra nada).
+
+### Gestión de Equipo/Actividad + soft-delete (Panel de Asistente)
+
+Dos pestañas nuevas junto a Directorio/Historial: **Equipo** (🚜) y **Actividad** (🛠️), mismo patrón de
+lista+buscador+paginación+modal que ya usaba el Directorio de Operadores, con `+Nuevo`, `Editar` y `Eliminar`
+por fila. Ambas comparten roles con Operador (`requireRol('ADMIN','ASISTENTE')`) - Actividad ya tenía sus 3
+endpoints de mutación protegidos solo para ADMIN desde antes (sin UI), se amplió a incluir ASISTENTE ya que ahí
+es donde vive esta pantalla.
+
+**"Eliminar" es siempre soft-delete (`paranoid`), nunca borra la fila.** Se extendió el mismo patrón que ya
+tenía `Actividad`/`Seccion` a `Equipo` y `Operador` (migración `20260924010000-agregar-softdelete-equipos-operadores`,
+agrega `createdAt`/`updatedAt`/`deletedAt` a ambas tablas). Con `paranoid:true`, Sequelize excluye automáticamente
+las filas eliminadas de cualquier `findAll`/`findAndCountAll` por defecto - así que los catálogos
+(`obtenerEquipos`, `ObtenerActividades`, `obtenerOperadores`) y los selectores del Panel de Actividades quedan
+filtrados gratis, sin tocarles el código. El Directorio de Operadores ganó su botón "🗑️ Eliminar Operador" en la
+Ficha (antes no existía ninguna forma de dar de baja a un operador).
+
+**Cuidado real que esto exige** (y que ya se aplicó en esta ronda): por defecto Sequelize también aplica el
+filtro `paranoid` a los **includes** - así que un `Operador`/`Actividad`/`Equipo` eliminado DESPUÉS de generar
+una Asistencia/RegistroActividad iba a desaparecer silenciosamente de esos registros ya existentes (nombre en
+blanco en el Historial, en "Ver/Imprimir Hoja de Actividades", etc.) en cualquier include que no diga lo
+contrario. Se agregó `paranoid: false` explícito a cada include de Operador/Actividad/Equipo/Seccion que sirve
+para mostrar datos YA REGISTRADOS (`obtenerAsistenciaHoy`, `finalizarDia`, `obtenerHistorial` en
+`asistencia.controller.ts`; `obtenerRegistrosPorAsistencia` y `obtenerRegistrosPorOperador` en
+`registro_actividad.controller.ts`) - un catálogo dado de baja no debe borrar el rastro de lo que ya se hizo con
+él. Los includes de validación al CREAR un registro nuevo (`Operador.findByPk`/`Actividad.findByPk`/
+`Equipo.findByPk` al marcar asistencia o registrar una labor) se dejaron con el comportamiento paranoid por
+defecto a propósito: un catálogo eliminado SÍ debe rechazarse para uso nuevo.
+
+**`numero_hoja` de `Equipo` pasó a admitir NULL** (antes era `NOT NULL`, exclusivo de Horómetros - "número de
+hoja física" de la libreta de lecturas): con el Panel de Asistente creando Equipos también, ya no puede seguir
+siendo obligatorio, porque ese concepto no existe fuera de Horómetros. El formulario de "Nuevo Equipo" del Panel
+de Asistente solo pide código y nombre.
 
 ## Flujo de trabajo de esta sesión
 

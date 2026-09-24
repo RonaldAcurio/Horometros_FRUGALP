@@ -5,11 +5,15 @@ export class Equipo extends Model <InferAttributes<Equipo>, InferCreationAttribu
     declare id: CreationOptional<number>;
     declare codigo_megued: string;
     declare nombre_equipo: string;
-    declare numero_hoja: string;
-    declare tiene_tope_10k: boolean;
-    declare ultimo_km_inicial: number;
-    declare ultimo_real: number;
-    declare nombre_maquinaria:CreationOptional<string | null>;
+    declare numero_hoja: CreationOptional<string | null>;
+    // Todas tienen defaultValue en el init() de abajo (exclusivas del modulo Horometros) - CreationOptional
+    // porque crearEquipo (Panel de Asistente) no las pide, deja que caigan en su default.
+    declare tiene_tope_10k: CreationOptional<boolean>;
+    declare ultimo_km_inicial: CreationOptional<number>;
+    declare ultimo_real: CreationOptional<number>;
+    declare nombre_maquinaria: CreationOptional<string | null>;
+    // createdAt/updatedAt/deletedAt: Sequelize los maneja solo via timestamps+paranoid (ver init() abajo),
+    // mismo patron que Actividad (models/actividad.ts) - no hace falta declararlos aqui.
 }
 
 Equipo.init(
@@ -29,9 +33,12 @@ Equipo.init(
             allowNull: false,
             unique: true,
         },
+        // Exclusivo del modulo Horometros ("numero de hoja fisica" de la libreta de lecturas) - admite NULL
+        // porque el Panel de Asistente tambien crea Equipos ahora (ver migracion 20260924010000) y ahi ese
+        // concepto no aplica.
         numero_hoja:{
             type: DataTypes.STRING(20),
-            allowNull: false,
+            allowNull: true,
         },
         tiene_tope_10k:{
             type: DataTypes.BOOLEAN,
@@ -53,6 +60,7 @@ Equipo.init(
         sequelize,
         modelName: 'Equipo',
         tableName: 'equipos',
-        timestamps: false,
+        timestamps: true,
+        paranoid: true,
     }
 )

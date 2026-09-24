@@ -219,6 +219,26 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
     }
 };
 
+// Eliminar (soft-delete) un Operador - pone deletedAt, no borra la fila: sus Asistencias/RegistroActividad ya
+// creados siguen mostrando su nombre normalmente (ver includes con paranoid:false mas abajo en este archivo).
+export const eliminarOperador = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+
+        const operador = await Operador.findByPk(Number(id));
+        if (!operador) {
+            res.status(404).json({ message: 'Operador no encontrado.' });
+            return;
+        }
+
+        await operador.destroy();
+        res.status(200).json({ message: 'Operador eliminado exitosamente.' });
+    } catch (err) {
+        console.error('Error al eliminar el operador:', err);
+        res.status(500).json({ message: 'Error al eliminar el operador.' });
+    }
+};
+
 //Obtener la lista de operadores
 export const obtenerOperadores = async(_req: Request, res:Response):Promise<void> => {
     try{
@@ -662,10 +682,15 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
         const { rows:asistencias, count:total } = await Asistencia.findAndCountAll({
             where: { fecha:hoy },
             attributes: ATRIBUTOS_SIN_FOTO,
+            /*
+            paranoid:false en los 3 includes: si el Operador/Actividad de una marcacion de HOY fue eliminado
+            (soft-delete) despues de que marco, el Panel de Supervisor tiene que seguir mostrando su nombre para
+            poder confirmar O/X - un catalogo eliminado no debe borrar una marcacion ya hecha.
+            */
             include: [
-                { model: Operador, as:'operador'},
-                { model: Actividad, as:'actividad'},
-                { model: Actividad, as:'actividades'},
+                { model: Operador, as:'operador', paranoid: false},
+                { model: Actividad, as:'actividad', paranoid: false},
+                { model: Actividad, as:'actividades', paranoid: false},
             ],
             order: [['hora_ingreso','DESC']],
             limit: limitePagina,
@@ -708,7 +733,9 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
         */
        const registroDelDia = await Asistencia.findAll({
             where: {fecha: fechaProcesar},
-            include: [{ model: Operador, as: 'operador', attributes: ['nombre_completo'] }],
+            // paranoid:false: el operador pudo haber sido eliminado (soft-delete) despues de marcar hoy - su
+            // nombre igual tiene que poder aparecer en "Falta confirmar la asistencia de: ..." mas abajo.
+            include: [{ model: Operador, as: 'operador', attributes: ['nombre_completo'], paranoid: false }],
        });
         if(registroDelDia.length === 0 ){
             res.status(404).json({
@@ -823,18 +850,24 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
         const { rows:historial, count:total } = await Asistencia.findAndCountAll({
             where: whereCondition,
             attributes:ATRIBUTOS_SIN_FOTO,
+            /*
+            paranoid:false en Operador/Actividad: el Historial es la auditoria OFICIAL de jornadas ya cerradas -
+            si el Operador o alguna Actividad fue eliminado (soft-delete) DESPUES de esa jornada, el registro
+            historico tiene que seguir mostrando su nombre igual, no desaparecer del reporte.
+            */
             include:[
                 {
                     model: Operador, as: 'operador',
                     required: filtrarPorHacienda,
+                    paranoid: false,
                     include: [{
                         model: Usuario, as: 'supervisor',
                         attributes: [],
                         ...(filtrarPorHacienda ? { where: { hacienda_id: Number(hacienda_id) } } : {}),
                     }],
                 },
-                { model: Actividad, as: 'actividad' },
-                { model: Actividad, as: 'actividades'},
+                { model: Actividad, as: 'actividad', paranoid: false },
+                { model: Actividad, as: 'actividades', paranoid: false },
             ],
             order: [['fecha','DESC'],['hora_ingreso','DESC']],
             limit: limitePagina,

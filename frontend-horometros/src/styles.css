@@ -182,6 +182,16 @@ html, body {
   box-shadow: 0 0 14px var(--amarillo-glow);
 }
 
+.btn-danger {
+  background-color: var(--vino);
+  color: #ffffff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background-color: var(--vino-hover);
+  box-shadow: 0 0 14px var(--vino-glow);
+}
+
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;

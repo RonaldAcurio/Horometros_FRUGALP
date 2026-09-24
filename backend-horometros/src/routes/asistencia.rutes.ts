@@ -18,6 +18,7 @@ import {
     obtenerMiEstado,
     marcarConQrSesion,
     confirmarAsistencia,
+    eliminarOperador,
 } from "../controllers/asistencia.controller";
 import { verificarAutenticacion, requireRol, verificarJornadaOperadorActiva } from "../middlewares/auth.middleware";
 
@@ -28,6 +29,7 @@ const router = Router();
 router.post('/operadores', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), crearOperador);
 router.get('/operadores', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), obtenerOperadores);
 router.put('/operadores/:id', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), actualizarOperador);
+router.delete('/operadores/:id', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), eliminarOperador);
 router.get('/historial', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), obtenerHistorial);
 router.put('/operadores/:id/clave',verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), resetearClaveOperador);
 

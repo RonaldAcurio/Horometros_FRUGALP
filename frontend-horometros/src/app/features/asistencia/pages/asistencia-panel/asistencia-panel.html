@@ -14,6 +14,12 @@
     <button class="tab-btn" [class.active]="tabActual === 'historial'" (click)="cambiarTab('historial')">
       📅 Historial de Asistencia
     </button>
+    <button class="tab-btn" [class.active]="tabActual === 'equipos'" (click)="cambiarTab('equipos')">
+      🚜 Equipo
+    </button>
+    <button class="tab-btn" [class.active]="tabActual === 'actividades'" (click)="cambiarTab('actividades')">
+      🛠️ Actividad
+    </button>
   </div>
 
   <!-- PESTAÑA: DIRECTORIO (tu contenido de siempre, sin cambios) -->
@@ -132,6 +138,9 @@
             <button class="btn btn-primary w-full mt-2" (click)="guardarDatosOperador()">
               💾 Actualizar Ficha
             </button>
+            <button class="btn btn-danger w-full mt-2" (click)="eliminarOperadorSeleccionado()">
+              🗑️ Eliminar Operador
+            </button>
           </div>
 
           <div class="qr-section">
@@ -238,6 +247,118 @@
     </div>
   </div>
 
+  <!-- PESTAÑA: EQUIPO (catálogo de maquinaria) -->
+  <div *ngIf="tabActual === 'equipos'">
+    <div class="filter-card">
+      <div class="filter-group">
+        <input
+          type="text"
+          [(ngModel)]="equipoBusquedaTab"
+          (keyup.enter)="buscarEquiposTab()"
+          placeholder="🔍 Buscar por código o nombre..."
+          class="input-control"
+        />
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-primary btn-sm" (click)="buscarEquiposTab()">🔍 Buscar</button>
+        <button class="btn btn-primary btn-sm" (click)="abrirModalNuevoEquipo()">➕ Nuevo Equipo</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Nombre</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let eq of equipos">
+              <td><strong class="code-badge">{{ eq.codigo_megued }}</strong></td>
+              <td class="font-medium">{{ eq.nombre_equipo }}</td>
+              <td>
+                <div class="flex gap-1">
+                  <button class="btn btn-secondary btn-sm" (click)="abrirModalEditarEquipo(eq)">✏️ Editar</button>
+                  <button class="btn btn-danger btn-sm" (click)="eliminarEquipoTab(eq)">🗑️ Eliminar</button>
+                </div>
+              </td>
+            </tr>
+            <tr *ngIf="equipos.length === 0">
+              <td colspan="3" class="table-empty">No hay equipos registrados.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination-bar" *ngIf="equipos.length > 0">
+        <span>Página {{ paginaEquiposTab }} de {{ totalPaginasEquiposTab }} ({{ totalEquiposTab }} equipos)</span>
+        <div class="flex gap-1">
+          <button [disabled]="paginaEquiposTab === 1" (click)="cambiarPaginaEquiposTab(paginaEquiposTab - 1)" class="btn btn-secondary btn-sm">◀</button>
+          <button [disabled]="paginaEquiposTab === totalPaginasEquiposTab" (click)="cambiarPaginaEquiposTab(paginaEquiposTab + 1)" class="btn btn-secondary btn-sm">▶</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PESTAÑA: ACTIVIDAD (catálogo de labores) -->
+  <div *ngIf="tabActual === 'actividades'">
+    <div class="filter-card">
+      <div class="filter-group">
+        <input
+          type="text"
+          [(ngModel)]="actividadBusquedaTab"
+          (keyup.enter)="buscarActividadesTab()"
+          placeholder="🔍 Buscar por código o descripción..."
+          class="input-control"
+        />
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-primary btn-sm" (click)="buscarActividadesTab()">🔍 Buscar</button>
+        <button class="btn btn-primary btn-sm" (click)="abrirModalNuevaActividad()">➕ Nueva Actividad</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Descripción</th>
+              <th>Categoría</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let act of actividadesTab">
+              <td><strong class="code-badge">{{ act.codigo_megued }}</strong></td>
+              <td class="font-medium">{{ act.description }}</td>
+              <td class="text-muted-sm">{{ act.categoria === 'CAMPO' ? 'Campo' : 'Taller' }}</td>
+              <td>
+                <div class="flex gap-1">
+                  <button class="btn btn-secondary btn-sm" (click)="abrirModalEditarActividad(act)">✏️ Editar</button>
+                  <button class="btn btn-danger btn-sm" (click)="eliminarActividadTab(act)">🗑️ Eliminar</button>
+                </div>
+              </td>
+            </tr>
+            <tr *ngIf="actividadesTab.length === 0">
+              <td colspan="4" class="table-empty">No hay actividades registradas.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination-bar" *ngIf="actividadesTab.length > 0">
+        <span>Página {{ paginaActividadesTab }} de {{ totalPaginasActividadesTab }} ({{ totalActividadesTab }} actividades)</span>
+        <div class="flex gap-1">
+          <button [disabled]="paginaActividadesTab === 1" (click)="cambiarPaginaActividadesTab(paginaActividadesTab - 1)" class="btn btn-secondary btn-sm">◀</button>
+          <button [disabled]="paginaActividadesTab === totalPaginasActividadesTab" (click)="cambiarPaginaActividadesTab(paginaActividadesTab + 1)" class="btn btn-secondary btn-sm">▶</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL NUEVO OPERADOR (sin cambios, sigue fuera de las pestañas) -->
   <div class="modal-backdrop" *ngIf="mostrarModalOperador">
     <div class="modal-card">
@@ -321,6 +442,55 @@
         <div class="flex justify-end gap-2 pt-3">
           <button type="button" (click)="cerrarModalResetClaveOperador()" class="btn btn-secondary">Cancelar</button>
           <button type="submit" [disabled]="!formClaveOp.form.valid" class="btn btn-primary">Actualizar clave</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: NUEVO/EDITAR EQUIPO (pestaña "Equipo") -->
+  <div class="modal-backdrop" *ngIf="mostrarModalEquipo">
+    <div class="modal-card">
+      <h3 class="modal-title">{{ equipoEditando ? '✏️ Editar Equipo' : '🚜 Nuevo Equipo' }}</h3>
+      <form (ngSubmit)="guardarEquipo()" #formEq="ngForm" class="space-y-3 mt-3">
+        <div class="form-group">
+          <label class="form-label">Código Megued *</label>
+          <input type="text" [(ngModel)]="formEquipo.codigo_megued" name="codigo_megued_eq" required class="input-control w-full">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nombre del equipo *</label>
+          <input type="text" [(ngModel)]="formEquipo.nombre_equipo" name="nombre_equipo_eq" required class="input-control w-full">
+        </div>
+        <div class="flex justify-end gap-2 pt-3">
+          <button type="button" (click)="cerrarModalEquipo()" class="btn btn-secondary">Cancelar</button>
+          <button type="submit" [disabled]="!formEq.form.valid" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: NUEVA/EDITAR ACTIVIDAD (pestaña "Actividad") -->
+  <div class="modal-backdrop" *ngIf="mostrarModalActividad">
+    <div class="modal-card">
+      <h3 class="modal-title">{{ actividadEditando ? '✏️ Editar Actividad' : '🛠️ Nueva Actividad' }}</h3>
+      <form (ngSubmit)="guardarActividad()" #formAct="ngForm" class="space-y-3 mt-3">
+        <div class="form-group">
+          <label class="form-label">Código Megued *</label>
+          <input type="text" [(ngModel)]="formActividad.codigo_megued" name="codigo_megued_act" required class="input-control w-full">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Descripción *</label>
+          <input type="text" [(ngModel)]="formActividad.description" name="description_act" required class="input-control w-full">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Categoría</label>
+          <select class="input-control w-full" [(ngModel)]="formActividad.categoria" name="categoria_act">
+            <option value="TALLER">Taller</option>
+            <option value="CAMPO">Campo</option>
+          </select>
+        </div>
+        <div class="flex justify-end gap-2 pt-3">
+          <button type="button" (click)="cerrarModalActividad()" class="btn btn-secondary">Cancelar</button>
+          <button type="submit" [disabled]="!formAct.form.valid" class="btn btn-primary">Guardar</button>
         </div>
       </form>
     </div>

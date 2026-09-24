@@ -166,12 +166,14 @@ export const obtenerRegistrosPorAsistencia = async (req:Request, res:Response):P
             return;
         }
 
+        // paranoid:false: si el Equipo/Actividad de esta labor fue eliminado (soft-delete) despues de
+        // registrarla, la jornada abierta tiene que seguir mostrando con que trabajo, no perder el dato.
         const registros = await RegistroActividad.findAll({
             where: { asistencia_id:Number(asistenciaId)},
             include:[
-                {model: Equipo, as:'equipo'},
-                {model: Actividad, as:'actividad'},
-                {model: Seccion, as: 'seccion'},
+                {model: Equipo, as:'equipo', paranoid: false},
+                {model: Actividad, as:'actividad', paranoid: false},
+                {model: Seccion, as: 'seccion', paranoid: false},
             ],
             order: [['hora_inicio','ASC']],
         });
@@ -211,11 +213,13 @@ export const obtenerRegistrosPorOperador = async (req:Request, res:Response):Pro
             whereAsistencia.fecha = rangoFecha;
         }
 
+        // paranoid:false: mismo motivo que en obtenerRegistrosPorAsistencia - este es el reporte imprimible
+        // "Ver/Imprimir" (Directorio/Historial), no puede perder equipo/actividad si luego se eliminaron.
         const registros = await RegistroActividad.findAll({
             include:[
-                {model: Equipo, as:'equipo'},
-                {model: Actividad, as:'actividad'},
-                {model: Seccion, as: 'seccion'},
+                {model: Equipo, as:'equipo', paranoid: false},
+                {model: Actividad, as:'actividad', paranoid: false},
+                {model: Seccion, as: 'seccion', paranoid: false},
                 {model: Asistencia, as: 'asistencia', where: whereAsistencia, attributes: ['id','fecha','operador_id']},
             ],
             order: [[{ model: Asistencia, as: 'asistencia' }, 'fecha', 'ASC'], ['hora_inicio','ASC']],

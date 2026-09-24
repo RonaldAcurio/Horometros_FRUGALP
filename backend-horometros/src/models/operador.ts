@@ -18,7 +18,8 @@ export class Operador extends Model <InferAttributes<Operador>, InferCreationAtt
     //Usuario+clave propios, ademas del QR fisico, Ambor juntos: o los datos o ninguno
     declare usuario: CreationOptional<string | null>;
     declare clave_hash: CreationOptional<string | null>;
-    
+    // createdAt/updatedAt/deletedAt: Sequelize los maneja solo via timestamps+paranoid (ver init() abajo),
+    // mismo patron que Actividad (models/actividad.ts) - no hace falta declararlos aqui.
 }
 
 Operador.init(
@@ -89,6 +90,7 @@ Operador.init(
         sequelize,
         modelName: 'Operador',
         tableName: 'operadores',
-        timestamps: false,
+        timestamps: true,
+        paranoid: true,
     }
 )

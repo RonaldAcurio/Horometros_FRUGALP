@@ -29,6 +29,12 @@ export class AsistenciaService {
         return this.http.put(`${this.baseUrl}/operadores/${id}`, datos);
     }
 
+    // DELETE -> /api/asistencia/operadores/:id - soft-delete: el operador desaparece del Directorio pero sus
+    // Asistencias/RegistroActividad ya creados lo siguen mostrando con normalidad (ver eliminarOperador backend).
+    eliminarOperador(id: number): Observable<{ message: string }> {
+        return this.http.delete<{ message: string }>(`${this.baseUrl}/operadores/${id}`);
+    }
+
     // PUT -> /api/asistencia/operadores/:id/clave (requiere JWT con rol ADMIN o ASISTENTE)
     resetearClaveOperador(id: number, clave: string): Observable<{ message: string }> {
         return this.http.put<{ message: string }>(`${this.baseUrl}/operadores/${id}/clave`, { clave });
@@ -84,6 +90,21 @@ export class AsistenciaService {
                 return of({ data: [], total: 0, pagina, totalPaginas: 1 });
             })
         );
+    }
+
+    // POST/PUT/DELETE -> /api/actividad - gestión del catálogo (pestaña "Actividad" del Panel de Asistente).
+    // DELETE es soft-delete (paranoid, ver models/actividad.ts): la actividad desaparece de los listados pero
+    // las marcaciones/labores ya registradas que la usaron la siguen mostrando con normalidad.
+    crearActividad(datos: { codigo_megued: string; description: string; categoria?: 'TALLER' | 'CAMPO' }): Observable<Actividad> {
+        return this.http.post<Actividad>(`${environment.apiUrl}/actividad/nueva`, datos);
+    }
+
+    actualizarActividad(id: number, datos: { codigo_megued: string; description: string; categoria?: 'TALLER' | 'CAMPO' }): Observable<{ message: string; existente: Actividad }> {
+        return this.http.put<{ message: string; existente: Actividad }>(`${environment.apiUrl}/actividad/${id}`, datos);
+    }
+
+    eliminarActividad(id: number): Observable<{ message: string }> {
+        return this.http.delete<{ message: string }>(`${environment.apiUrl}/actividad/${id}`);
     }
 
     // GET -> https://.../api/asistencia/hoy?fecha=YYYY-MM-DD&pagina=1&limite=30

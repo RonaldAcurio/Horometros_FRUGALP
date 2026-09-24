@@ -12,12 +12,28 @@ export class RegistroActividadService {
 
     constructor(private http: HttpClient) {}
 
-    // GET -> /api/equipos?pagina=1&limite=20&q=... - paginado y filtrable por texto (codigo_megued/nombre_equipo),
-    // lo consume el autocompletar de Equipo del Panel de Actividades.
+    // GET -> /api/equipos?pagina=1&limite=20&q=... - paginado y filtrable por texto (codigo_megued/nombre_equipo).
+    // Lo consumen tanto el autocompletar de Equipo del Panel de Actividades como la pestaña "Equipo" de gestión
+    // del Panel de Asistente (Directorio/Historial/Equipo/Actividad, ver asistencia-panel.ts).
     obtenerEquipos(pagina: number, limite: number, q?: string): Observable<RespuestaPaginada<Equipo>> {
         let params = new HttpParams().set('pagina', pagina).set('limite', limite);
         if (q) params = params.set('q', q);
         return this.http.get<RespuestaPaginada<Equipo>>(`${environment.apiUrl}/equipos`, { params });
+    }
+
+    // POST/PUT/DELETE -> /api/equipos - gestión del catálogo (pestaña "Equipo" del Panel de Asistente).
+    // DELETE es soft-delete (ver equipo.controller.ts): el equipo desaparece de los listados pero las labores
+    // ya registradas que lo usaron lo siguen mostrando con normalidad.
+    crearEquipo(datos: { codigo_megued: string; nombre_equipo: string }): Observable<Equipo> {
+        return this.http.post<Equipo>(`${environment.apiUrl}/equipos`, datos);
+    }
+
+    actualizarEquipo(id: number, datos: { codigo_megued: string; nombre_equipo: string }): Observable<{ message: string; equipo: Equipo }> {
+        return this.http.put<{ message: string; equipo: Equipo }>(`${environment.apiUrl}/equipos/${id}`, datos);
+    }
+
+    eliminarEquipo(id: number): Observable<{ message: string }> {
+        return this.http.delete<{ message: string }>(`${environment.apiUrl}/equipos/${id}`);
     }
 
     obtenerPorAsistencia(asistenciaId: number): Observable<RegistroActividad[]> {

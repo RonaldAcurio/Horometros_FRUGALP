@@ -15,10 +15,10 @@ const router = Router();
 router.get('/',ObtenerActividades);
 router.get('/:id',obtenerActividadPorId);
 
-// Mutaciones del catalogo (crear/editar/eliminar actividad): no hay UI todavia (ver CLAUDE.md, "Equipos/
-// Actividades/Secciones management tab" en Pendiente), pero quedan protegidas ya mismo - solo ADMIN.
-router.post('/nueva', verificarAutenticacion, requireRol('ADMIN'), crearActividad);
-router.put('/:id', verificarAutenticacion, requireRol('ADMIN'), actualizarActividad);
-router.delete('/:id', verificarAutenticacion, requireRol('ADMIN'), eliminarActividad);
+// Mutaciones del catalogo: pestaña "Actividad" del Panel de Asistente (ADMIN/ASISTENTE, mismos roles que
+// gestionan Operador/Equipo).
+router.post('/nueva', verificarAutenticacion, requireRol('ADMIN', 'ASISTENTE'), crearActividad);
+router.put('/:id', verificarAutenticacion, requireRol('ADMIN', 'ASISTENTE'), actualizarActividad);
+router.delete('/:id', verificarAutenticacion, requireRol('ADMIN', 'ASISTENTE'), eliminarActividad);
 
 export default router;
