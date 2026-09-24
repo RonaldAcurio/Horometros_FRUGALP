@@ -673,6 +673,35 @@ Ambos se resolvieron agregando el override directamente en el propio `@media pri
 (`max-height: none !important; overflow: visible !important;` y `display: none !important;` respectivamente) -
 mismo archivo, especificidad ya no importa porque `!important` fuerza la prioridad.
 
+**El mecanismo de impresión global (`.imprimible`, `styles.css`) se reescribió por completo** al probar
+"Imprimir Hojas del rango" con varios operadores de verdad: el contenido salía con varios "REPORTES DE LABORES
+DIARIOS" superpuestos/duplicados en vez de uno por página. Dos vueltas hasta llegar al diseño final (las dos
+fallaron de formas distintas y vale la pena no repetirlas):
+1. **Original**: `visibility: hidden` en `body *` + `.imprimible` forzado a `position: absolute; top: 0;
+   left: 0` para "escapar" del espacio que sus hermanos ocultos seguían reservando (`visibility: hidden` NO
+   libera el espacio en el layout, solo lo hace invisible). Bug real: un elemento fuera de flujo (`absolute`)
+   no pagina bien a varias hojas - el motor de impresión no sabe cómo partirlo entre página y página con varios
+   operadores, y termina superponiendo/duplicando el contenido en vez de repartirlo.
+2. **Primer intento de arreglo**: cambiar a `display: none`/`revert` (SÍ libera el espacio) para que
+   `.imprimible` pudiera quedarse en flujo normal (`position: static`) y paginar bien. Bug real, distinto:
+   `.imprimible, .imprimible *` solo restaura el propio nodo y sus DESCENDIENTES, nunca sus ANCESTROS - y
+   `body *` ya les había puesto `display: none` a esos ancestros también (son parte de `body *`). Con un
+   ancestro en `display: none`, toda esa rama deja de renderizar sin importar que el hijo diga
+   `display: revert` - la página quedaba completamente en blanco.
+3. **Solución final**: agregar `body *:has(.imprimible) { display: revert !important; }` - restaura también
+   la cadena de ANCESTROS de `.imprimible` a cualquier profundidad de anidamiento, sin tener que listar cada
+   nivel del árbol a mano (`:has()`: Chrome 105+/Firefox 121+/Safari 15.4+, cubre los navegadores donde se usa
+   esta app). `.modal-backdrop` (normalmente `position: fixed; inset: 0` con fondo oscuro semitransparente)
+   también se fuerza a `position: static; background: none` en print - "fixed" tampoco pagina bien a varias
+   hojas, y el fondo oscuro se hubiera impreso como un rectángulo gris de pared a pared detrás del contenido.
+4. **Efecto secundario de `display: revert` que hubo que corregir aparte**: `revert` restaura el display POR
+   DEFECTO del navegador (div→block, table→table, etc.), lo que de paso borra cualquier `display: flex/grid`
+   que un elemento necesite - `.hoja-actividades-encabezado` (Mecánico + Fecha lado a lado con
+   `justify-content: space-between`) se imprimía con el texto pegado sin espacio entre los dos, por perder su
+   `display: flex`. Se reafirma explícitamente en el propio `@media print` de `asistencia-panel.css` (mismo
+   patrón que los otros overrides `!important` de esta sección) - cualquier otro `display: flex/grid` que se
+   agregue después DENTRO de `.imprimible` en este componente va a necesitar el mismo tipo de reafirmación.
+
 **Pendiente, fuera del control de la app**: el navegador (Chrome) agrega su propio encabezado/pie de página al
 imprimir (fecha, título de la pestaña, URL, número de página) - es la casilla "Headers and footers" del propio
 diálogo de impresión del navegador, NO algo que CSS/JS de la página pueda desactivar (es una protección

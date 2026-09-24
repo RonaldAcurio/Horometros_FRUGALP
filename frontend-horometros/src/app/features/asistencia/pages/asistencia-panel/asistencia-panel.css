@@ -341,6 +341,14 @@ clase. Se fuerza todo explicitamente aqui, en el propio @media print de este com
   .hoja-actividades-barra-superior {
     display: none !important;
   }
+
+  /* El "display:revert" global (styles.css, @media print) restaura cada elemento a su display por defecto del
+     navegador (block/table/etc) para deshacer el display:none general - pero de paso también borra cualquier
+     display:flex/grid que un elemento necesite (acá, el encabezado Mecánico/Fecha lado a lado). Se reafirma
+     explícitamente el flex que sí hace falta conservar al imprimir. */
+  .hoja-actividades-encabezado {
+    display: flex !important;
+  }
 }
 
 /* Modal "Historial de Asistencia" de un operador (Ficha) - mas ancho que el modal.card por defecto (28rem)

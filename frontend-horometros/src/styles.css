@@ -445,29 +445,61 @@ html, body {
 /*
 Impresion de una ventana flotante (ej. Ver/Imprimir Hoja de Actividades, asistencia-panel.ts): al imprimir,
 oculta TODO lo demas de la pantalla (sidebar, tabs, backdrop) y deja visible solo el nodo marcado con
-.imprimible, reposicionado para ocupar la hoja completa. Los botones que no deben salir en el papel (cerrar,
-imprimir) llevan .no-imprimir.
+.imprimible. Los botones que no deben salir en el papel (cerrar, imprimir) llevan .no-imprimir.
+
+Dos vueltas para llegar a esto, documentadas porque las dos fallaron de formas distintas y no obvias:
+
+1ra vuelta: visibility:hidden en 'body *' + .imprimible forzado a position:absolute;top:0;left:0 "para escapar"
+del espacio que sus hermanos ocultos seguian reservando (visibility:hidden NO libera el espacio en el layout,
+solo lo hace invisible). Bug real: un elemento fuera de flujo (absolute) no pagina bien a varias hojas - con
+"Imprimir Hojas del rango" (varios operadores) el motor de impresion no sabia como partirlo entre pagina y
+pagina, y terminaba superponiendo/duplicando el contenido en vez de repartirlo.
+
+2da vuelta: se cambio a display:none/revert (SI libera el espacio) pensando que asi .imprimible podia quedarse
+en flujo normal (position:static) y paginar bien. Bug real, distinto: la regla ".imprimible, .imprimible *"
+solo restaura el propio nodo y sus DESCENDIENTES, nunca sus ANCESTROS - y "body *" ya les habia puesto
+display:none a esos ancestros tambien (son parte de "body *"). Con un ancestro en display:none toda esa rama
+deja de renderizar sin importar que el hijo diga display:revert - la pagina quedaba en blanco.
+
+Solucion final: restaurar tambien la cadena de ancestros con :has() (Chrome 105+/Firefox 121+/Safari 15.4+,
+cubre los navegadores donde se usa esta app) - selecciona cualquier elemento que CONTENGA .imprimible en
+cualquier profundidad, sin tener que listar cada nivel del árbol a mano.
 */
 @media print {
+  body {
+    background: #ffffff !important;
+  }
+
   body * {
-    visibility: hidden;
+    display: none !important;
+  }
+
+  /* Restaura toda la cadena de ancestros de .imprimible (a cualquier profundidad de anidamiento). */
+  body *:has(.imprimible) {
+    display: revert !important;
   }
 
   .imprimible,
   .imprimible * {
-    visibility: visible;
+    display: revert !important;
+  }
+
+  /* .modal-backdrop en pantalla es position:fixed;inset:0 con fondo oscuro semitransparente - en el papel
+     "fixed" no pagina bien a varias hojas (queda atado al viewport, no al documento) y el fondo oscuro se
+     imprimiría como un rectángulo gris de pared a pared detrás del contenido, gastando tinta de más. */
+  .modal-backdrop {
+    position: static !important;
+    background: none !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
   }
 
   .imprimible {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    max-height: none;
-    box-shadow: none;
+    max-height: none !important;
+    box-shadow: none !important;
   }
 
   .imprimible .no-imprimir {
-    display: none;
+    display: none !important;
   }
 }
