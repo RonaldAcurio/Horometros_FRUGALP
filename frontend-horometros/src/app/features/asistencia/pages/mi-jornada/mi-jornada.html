@@ -151,6 +151,10 @@
             <label class="form-label">OT</label>
             <input type="text" class="input-control w-full" [(ngModel)]="nuevoRegistro.area" name="area" placeholder="Ej: OT-1023">
           </div>
+          <div class="form-group" *ngIf="!esMecanico">
+            <label class="form-label">Horómetro inicial</label>
+            <input type="number" class="input-control w-full" [(ngModel)]="nuevoRegistro.horometro_inicio" name="horometro_inicio" step="0.01" placeholder="Ej: 1234.5">
+          </div>
           <div class="form-group">
             <label class="form-label">Hora de inicio</label>
             <div class="hora-hhmm">
@@ -181,6 +185,7 @@
             <tr>
               <th>Equipo</th>
               <th>Actividad</th>
+              <th *ngIf="!esMecanico">Horómetro</th>
               <th>Inicio</th>
               <th>Fin</th>
               <th>Acción</th>
@@ -190,6 +195,7 @@
             <tr *ngFor="let reg of registros">
               <td>{{ reg.equipo?.nombre_equipo || reg.equipo_id }}</td>
               <td>{{ reg.actividad?.description || reg.actividad_id }}</td>
+              <td *ngIf="!esMecanico">{{ reg.horometro_inicio ?? '—' }} / {{ reg.horometro_final ?? '—' }}</td>
               <td><span class="time-badge">{{ reg.hora_inicio | date:'HH:mm':'-0500' }}</span></td>
               <td>
                 <span *ngIf="reg.hora_fin" class="time-badge">{{ reg.hora_fin | date:'HH:mm':'-0500' }}</span>
@@ -208,6 +214,15 @@
                     <span class="hora-hhmm-separador">:</span>
                     <input type="number" class="input-control input-control-sm hora-hhmm-input" [(ngModel)]="horaFinMM" name="horaFinMM{{ reg.id }}" min="0" max="59" placeholder="MM">
                   </div>
+                  <input
+                    *ngIf="!esMecanico"
+                    type="number"
+                    class="input-control input-control-sm horometro-final-input"
+                    [(ngModel)]="horometroFinal"
+                    name="horometroFinal{{ reg.id }}"
+                    step="0.01"
+                    placeholder="Horómetro final"
+                  >
                   <button class="btn btn-primary btn-sm" [disabled]="guardandoFinalizacion || horaFinHH === null || horaFinMM === null" (click)="confirmarFinalizarRegistro()">✔️</button>
                   <button class="btn btn-secondary btn-sm" [disabled]="guardandoFinalizacion" (click)="cancelarFinalizarRegistro()">✕</button>
                 </div>
@@ -218,7 +233,7 @@
               </td>
             </tr>
             <tr *ngIf="registros.length === 0">
-              <td colspan="5" class="table-empty">Todavía no registras ninguna labor.</td>
+              <td [attr.colspan]="esMecanico ? 5 : 6" class="table-empty">Todavía no registras ninguna labor.</td>
             </tr>
           </tbody>
         </table>

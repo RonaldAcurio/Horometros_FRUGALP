@@ -1,4 +1,7 @@
-# FRUGALP - Sistema de Asistencia y Horómetros
+# FRUGALP - Sistema de Asistencia
+
+(El nombre del proyecto/repo/BD sigue siendo "Horometros_FRUGALP"/`horometros_db` por historia - el módulo
+Horómetros que le daba ese nombre ya no existe, ver "Módulos del sistema" abajo.)
 
 Empresa agrícola. Backend Node/Express + TypeScript + Sequelize sobre PostgreSQL (Render, `dpg-dab9e9ojo6nc739j25ug-a`).
 Frontend Angular 22 (standalone components) + Tailwind CSS, desplegado en **Vercel**. El destino final es empaquetar
@@ -8,11 +11,64 @@ prueba directo en el link de Vercel (navegador), no hace falta empaquetar para c
 Este documento es el briefing de arquitectura para retomar el proyecto en cualquier momento: qué existe, qué reglas
 de negocio ya están confirmadas, y qué falta. No es un documento para el usuario final de la app.
 
-## Los 2 módulos del sistema
+## Módulos del sistema
 
-1. **Asistencia** - el módulo activo, el que describe todo este documento.
-2. **Horómetros** - OCR con Gemini para leer horómetros de fotos (`horometros.controller.ts`, `gemini.service.ts`).
-   Módulo aparte, funcionando, **no tocar** salvo que se pida explícitamente.
+**Asistencia** es el único módulo activo - el que describe todo este documento. El módulo **Horómetros** (OCR con
+Gemini para leer horómetros de fotos, `horometros.controller.ts`/`gemini.service.ts`) **se eliminó por completo**
+(decisión del usuario, ejecutada - ver "Eliminación del módulo Horómetros (OCR)" más abajo para el detalle de qué
+se borró y qué quedó). Las columnas de `Equipo` que eran exclusivas de ese módulo (`ultimo_km_inicial`,
+`ultimo_real`, `numero_hoja`, `tiene_tope_10k`, `nombre_maquinaria`) **no se tocaron** - siguen en la tabla, sin
+uso, por decisión explícita del usuario de no borrar columnas.
+
+### Eliminación del módulo Horómetros (OCR)
+
+Pedido explícito del usuario: el módulo Horómetros (subía fotos de la hoja física del tractor, las procesaba con
+IA vía Gemini y actualizaba `Equipo`/`Ingresos_Semanales`) ya no se necesita dentro de esta app. Era un módulo
+autocontenido desde el inicio (nunca compartía componentes/servicios con Asistencia, solo el modelo `Equipo`), así
+que se pudo borrar de raíz sin dejar código muerto:
+
+**Backend - borrado:** `controllers/horometros.controller.ts`, `routes/horometros.routees.ts`,
+`services/gemini.service.ts` (OCR vía Gemini), `middlewares/upload.middleware.ts` (Multer, sin otro consumidor en
+todo el backend), `models/ingresos_semanales.ts` (la tabla de resultados del OCR - el modelo Sequelize se borró,
+la tabla en Postgres NO, ver más abajo). `package.json`: se quitaron `@google/genai` y `multer` (+
+`@types/multer`) y se corrió `npm install` para limpiar `package-lock.json`.
+
+**Backend - editado:** `app.ts` (el `import`/`app.use('/api/horometros', ...)`), `models/index.ts` (el `import
+Ingresos_Semanales`, sus 3 asociaciones con Equipo/Operador/Actividad y su entrada en el `export`). De paso,
+`index.ts` perdió una consulta de prueba suelta (`Equipo.findOne({numero_hoja:'33'})` al arrancar, resto de una
+prueba manual de cuando se armó el modelo `Equipo` - no era parte de ningún flujo real).
+
+**Frontend - borrado:** carpeta `features/horometros/` completa (`horometros.component.*` +
+`components/carga-lote/`), `core/services/horometros.services.ts`, `core/models/horometro.model.ts`. **Editado:**
+`app.routes.ts` (la ruta `path: 'horometros'`) y `dashboard.component.html` (la tarjeta "+ Horómetro" entre
+"Asistencia" y "Administración" - el Dashboard de ADMIN/ASISTENTE/SUPERVISOR ahora solo tiene 1 o 2 tarjetas).
+
+**Explícitamente NO se tocó** (columnas/tablas en Postgres, por pedido directo del usuario de no borrar ninguna):
+- `equipos`: `ultimo_km_inicial`, `ultimo_real`, `numero_hoja`, `tiene_tope_10k`, `nombre_maquinaria` - eran
+  exclusivas de Horómetros (las escribía `horometros.controller.ts`, nadie más), quedan como columnas sin uso.
+  El modelo Sequelize `Equipo` las sigue declarando (no tenía sentido borrarlas del modelo si la columna sigue
+  viva en la BD - dejaría de poder leerlas si alguna vez hicieran falta).
+- `ingresos_semanales` (la tabla completa): el modelo Sequelize que la mapeaba se borró (arriba), pero la tabla en
+  sí sigue existiendo en Postgres, simplemente ya no la escribe ni lee ningún código de la app. No se corrió
+  ninguna migración para eliminarla.
+
+Con esto, "Equipo" pasó a ser un modelo 100% de Asistencia: su CRUD completo vive en `equipo.controller.ts` (lo
+usan tanto el Panel de Actividades - solo lectura, `GET /api/equipos` - como la pestaña "Equipo" del Panel de
+Asistente, ver "Gestión de Equipo/Actividad + soft-delete").
+
+**Fase 2 de `RegistroActividad` para OPERADOR, construida en la misma ronda**: como parte de este mismo pedido
+("no quiero perder las dos columnas donde se ingresa horómetro inicio/fin, que aparezcan solo para OPERADOR"), se
+construyó en el Panel de Actividades (`mi-jornada.html`) lo que el modelo `registro_actividad.ts` ya traía
+preparado desde antes pero sin UI: los campos `horometro_inicio`/`horometro_final`, visibles únicamente cuando
+`esMecanico` es `false` (ver "Panel de Actividades" arriba para el detalle). Se evaluó construir un panel
+**separado** exclusivo de OPERADOR para no "saturar de condiciones" el componente compartido - se descartó: el
+componente ya tenía exactamente este mismo patrón resuelto para MECANICO (el campo `area`/"OT", con un solo
+`*ngIf="esMecanico"`), y todo lo demás de la pantalla (fases código/QR, polling de estado, autocompletar de
+Equipo/Actividad, editor de finalizar, salida) es 100% idéntico entre los dos roles - duplicarlo en dos
+componentes hubiera significado mantener dos copias de esa lógica compartida por cada cambio futuro, a cambio de
+evitarse dos `*ngIf` más. Se prefirió extender el patrón ya existente: un `*ngIf="!esMecanico"` para el input de
+horómetro inicial (junto a "Hora de inicio"), otro dentro del editor inline de finalizar para el horómetro final,
+y una columna "Horómetro" en la tabla "Labores de hoy" con el mismo guard.
 
 ## Roles
 
@@ -132,11 +188,17 @@ medianoche.
 
 Una vez con la jornada abierta (código o QR, ver "Camino A"/"Camino B" arriba), el trabajador entra al Panel de
 Actividades de su propia jornada (`mi-jornada.ts`, fase `actividades`): registra labores puntuales contra el
-catálogo de **Equipos** (`GET /api/equipos`, nuevo endpoint de solo lectura - el CRUD completo de Equipo es del
-módulo Horómetros, no tocado) y **Actividades** (`GET /api/actividad`), usando el modelo `RegistroActividad` que
-ya existía en el backend sin frontend (`registro_actividad.controller.ts`). Campo `area` (MECANICO) es fase 1;
-`seccion_id`/`horometro_inicio`/`horometro_final` (OPERADOR) siguen en fase 2, no se piden en el formulario
-todavía (ver el propio modelo, `registro_actividad.ts`).
+catálogo de **Equipos** (`GET /api/equipos`, endpoint de solo lectura - el CRUD completo de Equipo vive en
+`equipo.controller.ts`, compartido con la pestaña "Equipo" del Panel de Asistente) y **Actividades**
+(`GET /api/actividad`), usando el modelo `RegistroActividad` que ya existía en el backend sin frontend
+(`registro_actividad.controller.ts`). El formulario cambia de campo según el rol de quien inició sesión
+(`esMecanico = perfil.rol !== 'OPERADOR'`, ver `mi-jornada.ts`):
+- **MECANICO**: campo `area`, con la etiqueta "OT" (Orden de Trabajo).
+- **OPERADOR**: campos `horometro_inicio` (al iniciar la labor, etiqueta "Horómetro inicial") y `horometro_final`
+  (al finalizarla, dentro del mismo editor inline de la hora de fin, etiqueta "Horómetro final") - ambos
+  opcionales, sin validación de que uno sea mayor que el otro (mismo criterio que `area`: campo de captura libre,
+  sin reglas de negocio extra que el usuario no pidió). La tabla "Labores de hoy" gana una columna "Horómetro"
+  (`inicio / final`) solo quien no sea MECANICO la ve. `seccion_id` sigue sin UI (fase 2, siempre en NULL).
 
 **Selectores como autocompletar**: ambos catálogos pueden crecer, así que Equipo/Actividad de este panel no son
 un `<select>` sino un input de texto + lista desplegable (`abrirOpcionesEquipo`/`onBuscarEquipo`/
@@ -293,7 +355,8 @@ día está cerrado cuando NINGÚN registro de esa fecha sigue `EN_JORNADA`/`PEND
   `confirmado_por_supervisor` (O/X, null hasta que el Supervisor lo revisa).
 - **registro_actividades**: el detalle del Panel de Actividades (equipo + actividad + sección + horómetro por
   jornada) - el backend ya existía (`registro_actividad.controller.ts`/`.rutes.ts`); el frontend (`mi-jornada.ts`,
-  fase `actividades`) se construyó recién esta ronda, usando solo los campos de fase 1 (ver sección de arriba).
+  fase `actividades`) usa ya los campos de MECANICO (`area`) y de OPERADOR (`horometro_inicio`/`horometro_final`) -
+  solo `seccion_id` sigue sin UI (ver "Panel de Actividades" arriba).
 - ~~`asistencias.diesel_consumido`~~: columna sin usar en ningún controlador ni en el frontend - se sacó del modelo
   Sequelize (`asistencias.ts`) en la auditoría de código suelto de esta ronda. La columna sigue existiendo en la BD
   (no se tocó ninguna migración), simplemente Sequelize ya no la conoce.
@@ -313,15 +376,16 @@ un loop de redirects para roles sin Dashboard), `homeRedirectGuard` (rutas `''` 
 
 | Rol | Ruta hogar | Qué ve |
 |---|---|---|
-| ADMIN, ASISTENTE, SUPERVISOR | `/dashboard` | Menú con tarjetas (Asistencia, Horómetros, + Administración si aplica) |
+| ADMIN, ASISTENTE, SUPERVISOR | `/dashboard` | Menú con tarjetas (Asistencia, + Administración si aplica) |
 | ESCANER | `/escaner` | Un solo botón "📷 Escanear" (ver abajo) |
 | MECANICO, OPERADOR | `/mi-jornada` | Código o QR flotante, según su hacienda (ver arriba), después Panel de Actividades |
 
-`/dashboard` y `/horometros` ahora llevan `roleGuard('ADMIN','ASISTENTE','SUPERVISOR')` (antes solo `authGuard`,
-cualquier rol logueado entraba) - ESCANER y MECANICO/OPERADOR nunca tuvieron necesidad real de esas pantallas.
+`/dashboard` lleva `roleGuard('ADMIN','ASISTENTE','SUPERVISOR')` (antes solo `authGuard`, cualquier rol logueado
+entraba) - ESCANER y MECANICO/OPERADOR nunca tuvieron necesidad real de esa pantalla. (`/horometros` existió con
+el mismo guard, pero la ruta y el módulo entero se eliminaron - ver "Eliminación del módulo Horómetros (OCR)".)
 
 **Ya construido:**
-- `dashboard` - menú principal (Asistencia/Horómetros, + "Administración" si el rol es ADMIN o ASISTENTE). Solo
+- `dashboard` - menú principal (Asistencia, + "Administración" si el rol es ADMIN o ASISTENTE). Solo
   ADMIN/ASISTENTE/SUPERVISOR llegan aquí (ver tabla de arriba).
 - `asistencia-menu` - submenú del módulo Asistencia con las 3 tarjetas (Gestión de Personal / Punto de Marcación /
   Panel de Supervisor). Solo lo ve tal cual el ADMIN: `/asistencia` tiene el guard `asistenciaRedirectGuard`, que
@@ -383,8 +447,6 @@ cualquier rol logueado entraba) - ESCANER y MECANICO/OPERADOR nunca tuvieron nec
 - `NotificacionService`/`<app-toast>` y `ConfirmacionService`/`<app-confirm-modal>` (montados una vez en `app.html`) -
   reemplazan `alert()`/`confirm()` nativos del navegador en TODO el proyecto (no tienen sentido en una app
   empaquetada nativo). Todo campo de clave tiene su "ojito" para mostrar/ocultar.
-- Módulo Horómetros (OCR) - aparte, no tocar (⚠️ el usuario quiere sacarlo a un proyecto separado, ver Pendiente).
-  Ahora con `roleGuard('ADMIN','ASISTENTE','SUPERVISOR')` en frontend y backend (antes cualquier rol logueado).
 
 **Botón "Menú" del header (`app.ts`):** calcula `rutaHomePorRol(perfil)` en cada navegación y:
 - MECANICO/OPERADOR: el botón **no se muestra** (`mostrarBotonMenu = false`) - pantalla cautiva, no hay a dónde ir.
@@ -456,17 +518,14 @@ gallina) - se insertó a mano por SQL directo en la base de producción de Rende
 | POST /api/actividad/nueva | ADMIN | Crea una actividad del catálogo (sin UI todavía, ver Pendiente). |
 | PUT /api/actividad/:id | ADMIN | Edita una actividad del catálogo. |
 | DELETE /api/actividad/:id | ADMIN | Elimina una actividad del catálogo. |
-| GET /api/equipos | cualquier cuenta logueada | Catálogo de Equipos (solo lectura, el CRUD es de Horómetros) - siempre paginado (`pagina`/`limite`, default 1/20), lo usa el selector del Panel de Actividades. |
-| POST /api/horometros/procesar-foto | cualquier cuenta logueada | Sube y procesa con IA una foto de reporte físico. |
-| POST /api/horometros/confirmar-ingreso | cualquier cuenta logueada | Confirma la actualización a MEGUED. |
-| POST /api/horometros/procesar-lote | cualquier cuenta logueada | Igual que arriba, hasta 6 fotos. |
+| GET /api/equipos | cualquier cuenta logueada | Catálogo de Equipos, solo lectura - siempre paginado (`pagina`/`limite`, default 1/20), lo usa el selector del Panel de Actividades. El CRUD completo es `POST`/`PUT`/`DELETE /api/equipos` (ver "Gestión de Equipo/Actividad + soft-delete"). |
 | GET /api/haciendas | ADMIN, SUPERVISOR, ASISTENTE | Lista haciendas (id, nombre, token vigente). |
 | POST /api/haciendas | ADMIN | Crea una hacienda nueva. |
 | POST /api/haciendas/:id/token | ADMIN, SUPERVISOR (solo la suya) | Genera/regenera el Token de Hacienda. |
 | DELETE /api/haciendas/:id/token | ADMIN, SUPERVISOR (solo la suya) | Invalida el Token antes de tiempo. |
 
 **Auditoría de accesos (cerrada):** hasta esta ronda, `operadores`, `hoy`, `finalizar-dia`, `historial`, `revisar/:id`,
-`:id/foto` (en `asistencia.rutes.ts`), las mutaciones de `actividad` y las 3 rutas de `horometros` no tenían
+`:id/foto` (en `asistencia.rutes.ts`) y las mutaciones de `actividad` no tenían
 `verificarAutenticacion` ni `requireRol` - cualquiera que conociera la URL podía llamarlas sin loguearse. Quedó
 documentado como deuda "temporal" desde antes del Login, pero el Login ya existe hace rato y nunca se cerró. Cada
 ruta arriba quedó con el mismo rol que ya la protegía en el frontend (roleGuard/`*ngIf` de cada panel) - no se
@@ -520,39 +579,6 @@ lo confirmado:
 **Frontend** (sobre lo ya construido, ver sección de arriba)
 - Offline/sync: la app empaqueta nativo (no PWA, así que no aplica la limitación de Background Sync de iOS/Safari de
   todas formas), pero se mantiene el diseño de sync manual/periódico ya acordado para cuando no hay señal en campo.
-- **Sacar el módulo Horómetros a un proyecto aparte** (decisión del usuario, todavía no ejecutada): separar lo que es
-  exclusivo de Horómetros (componentes, servicio, modelo, la ruta `/horometros`) de lo compartido (`app.routes.ts`,
-  `app.html`, el sistema de notificaciones) sin romper Asistencia. Lista concreta de qué es exclusivo de
-  Horómetros (se puede mover/borrar tal cual) vs. qué es compartido (NO se toca, lo usa Asistencia):
-
-  **Backend - borrar completo:**
-  - `src/controllers/horometros.controller.ts`, `src/routes/horometros.routees.ts`
-  - `src/services/gemini.service.ts` (OCR vía Gemini - `@google/genai` en `package.json`, sin otro consumidor)
-  - `src/middlewares/upload.middleware.ts` (Multer - `multer`/`@types/multer` en `package.json`, sin otro consumidor)
-  - `src/models/ingresos_semanales.ts` (el modelo de datos de Horómetros, no lo usa Asistencia)
-
-  **Backend - editar (quitar solo las líneas de Horómetros, todo lo demás se queda):**
-  - `src/app.ts`: el `import horometrosRoutes` y `app.use('/api/horometros', horometrosRoutes)`
-  - `src/models/index.ts`: el `import Ingresos_Semanales`, sus 3 bloques de asociación (`Ingresos_Semanales.belongsTo(Equipo/Operador/Actividad)` y los `hasMany` inversos) y quitarlo del `export`
-  - `package.json`: quitar `@google/genai` y `multer` (+ `@types/multer` de devDependencies), después `npm install`
-  - Opcional, no relacionado a Horómetros pero es código suelto: `src/index.ts` tiene una consulta de prueba a
-    `Equipo.findOne({numero_hoja:'33'})` al arrancar, sobrante de una prueba manual - se puede borrar aparte.
-
-  **Backend - NO se toca (compartido con Asistencia vía el modelo `Equipo`):** `ultimo_km_inicial`, `ultimo_real`,
-  `numero_hoja`, `tiene_tope_10k`, `nombre_maquinaria` en `models/equipo.ts` quedan como columnas sin uso una vez
-  que Horómetros se va (las escribía `horometros.controller.ts`, nadie más las toca) - no hace falta borrarlas de
-  la tabla/modelo para que Asistencia siga funcionando, es limpieza de base de datos opcional para más adelante.
-
-  **Frontend - borrar completo:** carpeta `src/app/features/horometros/` entera (incluye
-  `components/carga-lote/`) y `src/app/core/services/horometros.services.ts`.
-
-  **Frontend - editar:**
-  - `src/app/app.routes.ts`: quitar el bloque de la ruta `path: 'horometros'`
-  - `src/app/features/dashboard/dashboard.component.html`: quitar la tarjeta `<a routerLink="/horometros" ...>`
-    ("+ Horómetro", entre las tarjetas de "Asistencia" y "Administración")
-
-  Todo lo demás (Equipo/Operador/Actividad como modelos, sus tablas, y todo el módulo Asistencia) es compartido y
-  se queda igual - Horómetros solo LEE/ESCRIBE encima de esas tablas, no es dueño de ellas.
 - **Diseños de Figma confirmados, pendientes de construir** (el usuario los compartió, existen en su Figma):
   - "Descargar" (exporta a Excel, formato pendiente de que el usuario lo proporcione) e "Imprimir" general en el
     Directorio de Operadores - este último solo se habilita cuando el Historial está filtrado a **un solo día**

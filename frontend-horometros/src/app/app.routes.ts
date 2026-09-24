@@ -33,11 +33,6 @@ export const routes: Routes = [
         loadComponent: () => import('./features/admin/pages/admin-panel/admin-panel').then(m => m.AdminPanel)
     },
     {
-        path: 'horometros',
-        canActivate: [authGuard, roleGuard('ADMIN', 'ASISTENTE', 'SUPERVISOR')],
-        loadComponent: () => import('./features/horometros/horometros.component').then(m => m.HorometrosComponent)
-    },
-    {
         // El menu de 3 tarjetas solo se ve tal cual para ADMIN - los demas roles son redirigidos
         // directo a su propio panel por asistenciaRedirectGuard (ver ese archivo).
         path: 'asistencia',

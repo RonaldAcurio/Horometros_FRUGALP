@@ -77,7 +77,7 @@ export class MiJornada implements OnInit, OnDestroy {
   actividadesPanelTotalPaginas = 1;
   cargandoMasActividadesPanel = false;
   private debounceActividad?: ReturnType<typeof setTimeout>;
-  nuevoRegistro = { equipo_id: null as number | null, actividad_id: null as number | null, area: '', observaciones: '' };
+  nuevoRegistro = { equipo_id: null as number | null, actividad_id: null as number | null, area: '', horometro_inicio: null as number | null, observaciones: '' };
   guardandoRegistro = false;
 
   /*
@@ -98,6 +98,7 @@ export class MiJornada implements OnInit, OnDestroy {
   registroFinalizandoId: number | null = null;
   horaFinHH: number | null = null;
   horaFinMM: number | null = null;
+  horometroFinal: number | null = null;
   guardandoFinalizacion = false;
 
   // Poll continuo de mi-estado: detecta cuando lo escanean (entra a 'actividades') y cuando lo vuelven a
@@ -444,12 +445,13 @@ export class MiJornada implements OnInit, OnDestroy {
       equipo_id: this.nuevoRegistro.equipo_id,
       actividad_id: this.nuevoRegistro.actividad_id,
       area: this.esMecanico ? this.nuevoRegistro.area : undefined,
+      horometro_inicio: !this.esMecanico && this.nuevoRegistro.horometro_inicio !== null ? this.nuevoRegistro.horometro_inicio : undefined,
       observaciones: this.nuevoRegistro.observaciones || undefined,
       hora_inicio: this.horaComponentesAIso(this.horaInicioHH, this.horaInicioMM),
     }).subscribe({
       next: () => {
         this.notificacionService.exito('Labor registrada.');
-        this.nuevoRegistro = { equipo_id: null, actividad_id: null, area: '', observaciones: '' };
+        this.nuevoRegistro = { equipo_id: null, actividad_id: null, area: '', horometro_inicio: null, observaciones: '' };
         const { hh, mm } = this.horaActualComponentes();
         this.horaInicioHH = hh;
         this.horaInicioMM = mm;
@@ -474,6 +476,7 @@ export class MiJornada implements OnInit, OnDestroy {
     const { hh, mm } = this.horaActualComponentes();
     this.horaFinHH = hh;
     this.horaFinMM = mm;
+    this.horometroFinal = null;
     this.cdr.detectChanges();
   }
 
@@ -486,7 +489,12 @@ export class MiJornada implements OnInit, OnDestroy {
     if (!this.registroFinalizandoId || this.horaFinHH === null || this.horaFinMM === null) return;
 
     this.guardandoFinalizacion = true;
-    this.registroActividadService.finalizar(this.registroFinalizandoId, undefined, this.horaComponentesAIso(this.horaFinHH, this.horaFinMM)).subscribe({
+    this.registroActividadService.finalizar(
+      this.registroFinalizandoId,
+      undefined,
+      this.horaComponentesAIso(this.horaFinHH, this.horaFinMM),
+      !this.esMecanico && this.horometroFinal !== null ? this.horometroFinal : undefined,
+    ).subscribe({
       next: () => {
         this.notificacionService.exito('Labor finalizada.');
         this.registroFinalizandoId = null;

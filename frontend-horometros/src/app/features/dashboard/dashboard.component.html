@@ -21,23 +21,7 @@
       </p>
     </a>
 
-    <!-- Opción 2: + Horómetro -->
-    <a routerLink="/horometros" class="card card-active group">
-      <div class="card-header-active">
-        <div class="icon-box icon-cyan">
-          <svg xmlns="http://www.w3.org/2000/svg" class="icon-lg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
-        </div>
-        <span class="action-text">Ingresar ➔</span>
-      </div>
-      <h3 class="card-title card-title-active">+ Horómetro</h3>
-      <p class="card-description">
-        Carga fotos de reportes físicos (hasta 6), procesa con IA y confirma la actualización a MEGUED.
-      </p>
-    </a>
-
-    <!-- Opción 3: Administración (ADMIN completo; ASISTENTE ve solo Usuarios, ver admin-panel.ts) -->
+    <!-- Opción 2: Administración (ADMIN completo; ASISTENTE ve solo Usuarios, ver admin-panel.ts) -->
     <a routerLink="/admin" class="card card-active group" *ngIf="authService.tieneRol('ADMIN', 'ASISTENTE')">
       <div class="card-header-active">
         <div class="icon-box icon-amber">

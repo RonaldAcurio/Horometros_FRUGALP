@@ -10,7 +10,9 @@ export class RegistroActividad extends Model<InferAttributes<RegistroActividad>,
     // OT (Orden de Trabajo): la columna se sigue llamando "area" por compatibilidad, pero "area" como tal ya no
     // se usa - el dato que guarda es el numero/codigo de OT (decision del usuario, ver CLAUDE.md).
     declare area: CreationOptional<string | null>;
-    //-----------------------------------------Campos uso exclusivo de Operador (fase 2, hoy quedan en NULL)------------------------
+    //-----------------------------------------Campos uso exclusivo de Operador----------------------------------------------------
+    // seccion_id sigue en fase 2 (hoy queda en NULL, no tiene UI). horometro_inicio/horometro_final SI se piden
+    // ya en el Panel de Actividades (mi-jornada.html), solo cuando quien inicio sesion es OPERADOR.
     declare seccion_id: CreationOptional<number | null>;
     declare horometro_inicio: CreationOptional<number | null>;
     declare horometro_final: CreationOptional<number | null>;

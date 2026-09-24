@@ -53,15 +53,16 @@ export class RegistroActividadService {
     // libre) y decir a que hora la hizo, en vez de que el backend le imponga el momento exacto del clic.
     crear(datos: {
         asistencia_id: number; equipo_id: number; actividad_id: number;
-        area?: string; observaciones?: string; hora_inicio?: string;
+        area?: string; horometro_inicio?: number; observaciones?: string; hora_inicio?: string;
     }): Observable<RegistroActividad> {
         return this.http.post<RegistroActividad>(this.baseUrl, datos);
     }
 
-    finalizar(id: number, observaciones?: string, horaFin?: string): Observable<{ message: string; registro: RegistroActividad }> {
+    finalizar(id: number, observaciones?: string, horaFin?: string, horometroFinal?: number): Observable<{ message: string; registro: RegistroActividad }> {
         return this.http.put<{ message: string; registro: RegistroActividad }>(`${this.baseUrl}/${id}/finalizar`, {
             observaciones,
             hora_fin: horaFin,
+            horometro_final: horometroFinal,
         });
     }
 }

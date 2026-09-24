@@ -35,15 +35,17 @@ export interface RespuestaPaginada<T> {
     totalPaginas: number;
 }
 
-// Panel de Actividades: una labor puntual dentro de la jornada abierta de un Operador/Mecanico. 'seccion_id',
-// 'horometro_inicio' y 'horometro_final' son de fase 2 (hoy siempre quedan en null, ver CLAUDE.md) - no se piden
-// en el formulario todavia.
+// Panel de Actividades: una labor puntual dentro de la jornada abierta de un Operador/Mecanico. 'seccion_id'
+// sigue siendo de fase 2 (hoy siempre queda en null, no se pide en el formulario todavia). 'horometro_inicio'/
+// 'horometro_final' SI se piden ya, solo cuando quien inicio sesion es OPERADOR (ver CLAUDE.md).
 export interface RegistroActividad {
     id: number;
     asistencia_id: number;
     equipo_id: number;
     actividad_id: number;
     area?: string | null;
+    horometro_inicio?: number | null;
+    horometro_final?: number | null;
     observaciones?: string | null;
     hora_inicio: string;
     hora_fin?: string | null;

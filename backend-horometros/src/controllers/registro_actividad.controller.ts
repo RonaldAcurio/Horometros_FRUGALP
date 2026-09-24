@@ -21,7 +21,7 @@ const puedeOperarSobre = (req:Request, operadorIdDeLaAsistencia:number):boolean 
 //Crear una nueva labor dentro de la jornada abierta del trabajador (Panel de Actividades)
 export const crearRegistroActividad = async(req:Request, res:Response):Promise<void> => {
     try{
-        const { asistencia_id, equipo_id, actividad_id, area, seccion_id, observaciones, hora_inicio } = req.body;
+        const { asistencia_id, equipo_id, actividad_id, area, seccion_id, horometro_inicio, observaciones, hora_inicio } = req.body;
         if(!asistencia_id || !equipo_id || !actividad_id){
             res.status(400).json({ message:'asistencia_id, equipo_id y actividad_id son obligatios.'});
             return;
@@ -84,6 +84,7 @@ export const crearRegistroActividad = async(req:Request, res:Response):Promise<v
             actividad_id: actividad.id,
             area: area || null,
             seccion_id: seccion_id ? Number(seccion_id) : null,
+            horometro_inicio: horometro_inicio !== undefined && horometro_inicio !== null && horometro_inicio !== '' ? Number(horometro_inicio) : null,
             observaciones: observaciones || null,
             hora_inicio: horaInicioFinal,
         });
@@ -100,7 +101,7 @@ export const crearRegistroActividad = async(req:Request, res:Response):Promise<v
 export const finalizarRegistroActividad = async(req:Request, res:Response):Promise<void> => {
     try{
         const { id } = req.params;
-        const { observaciones, hora_fin } = req.body;
+        const { observaciones, hora_fin, horometro_final } = req.body;
 
         const registro = await RegistroActividad.findByPk(Number(id));
         if(!registro){
@@ -136,6 +137,7 @@ export const finalizarRegistroActividad = async(req:Request, res:Response):Promi
 
         await registro.update({
             hora_fin: horaFinFinal,
+            horometro_final: horometro_final !== undefined && horometro_final !== null && horometro_final !== '' ? Number(horometro_final) : registro.horometro_final,
             observaciones: observaciones ?? registro.observaciones,
         });
 

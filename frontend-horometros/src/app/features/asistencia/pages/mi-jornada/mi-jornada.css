@@ -98,6 +98,10 @@
   width: auto;
 }
 
+.horometro-final-input {
+  width: 8rem;
+}
+
 /*
 Hora de inicio/fin: dos <input type="number"> (HH y MM) en vez de un <input type="time"> nativo - ver el
 comentario en mi-jornada.ts sobre el bug de UX del widget compuesto. Ancho fijo y angosto a propósito: cada
