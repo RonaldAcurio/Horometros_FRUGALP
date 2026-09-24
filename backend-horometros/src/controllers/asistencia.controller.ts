@@ -679,6 +679,16 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
         const limitePagina = Math.min(100, Math.max(1, Number(req.query['limite']) || 30));
         const offset = (paginaActual - 1) * limitePagina;
 
+        /*
+        Filtro opcional por supervisor (lo usa el panel de ADMIN, que ve TODAS las haciendas mezcladas en esta
+        pantalla - a diferencia de un Supervisor real, que solo tiene la suya - para poder acotar a lo que hizo
+        un Supervisor puntual). Mismo patron que en obtenerHistorial: filtra operador.supervisor_id directo.
+        No afecta a calcularDiaCerrado (mas abajo) a proposito - "Cerrar Jornada" sigue cerrando el dia completo
+        sin importar el filtro de vista, ver Deuda tecnica heredada en CLAUDE.md sobre finalizarDia y hacienda_id.
+        */
+        const supervisorIdQuery = req.query['supervisor_id'];
+        const filtrarPorSupervisor = supervisorIdQuery !== undefined && supervisorIdQuery !== '';
+
         const { rows:asistencias, count:total } = await Asistencia.findAndCountAll({
             where: { fecha:hoy },
             attributes: ATRIBUTOS_SIN_FOTO,
@@ -688,7 +698,12 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
             poder confirmar O/X - un catalogo eliminado no debe borrar una marcacion ya hecha.
             */
             include: [
-                { model: Operador, as:'operador', paranoid: false},
+                {
+                    model: Operador, as:'operador',
+                    required: filtrarPorSupervisor,
+                    paranoid: false,
+                    ...(filtrarPorSupervisor ? { where: { supervisor_id: Number(supervisorIdQuery) } } : {}),
+                },
                 { model: Actividad, as:'actividad', paranoid: false},
                 { model: Actividad, as:'actividades', paranoid: false},
             ],

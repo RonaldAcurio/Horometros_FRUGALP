@@ -6,6 +6,11 @@
     </div>
     <div class="flex items-center gap-2">
       <a routerLink="/asistencia/escanear" class="btn btn-secondary">📷 Escanear</a>
+      <!-- Solo ADMIN: esta pantalla mezcla TODAS las haciendas (ver esAdmin/supervisorIdFiltro en supervisor-panel.ts) -->
+      <select *ngIf="esAdmin" class="input-control" [(ngModel)]="supervisorIdFiltro" (change)="onCambioSupervisor()">
+        <option [ngValue]="null">Todos los Supervisores</option>
+        <option *ngFor="let s of supervisores" [ngValue]="s.id">{{ s.nombre_completo }}</option>
+      </select>
       <input
         type="date"
         class="input-control"

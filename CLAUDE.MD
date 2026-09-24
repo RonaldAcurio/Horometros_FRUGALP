@@ -609,9 +609,10 @@ su propio bloque (`.hoja-actividades-grupo`) con el Mecánico en un subtítulo e
 física, que solo repite Fecha por fila y escribe el mecánico una sola vez. Cuando hay más de un grupo (impresión
 por rango, ver abajo), se separa con una línea punteada en pantalla; al imprimir el contenido fluye normal en
 vez de forzar una página nueva por operador (ver "Empaquetado de páginas al imprimir" más abajo). Columnas de la
-tabla: EQUIPO / OT / DAÑO / TIEMPO ESTIMADO / TALLER-CAMPO. La hoja física no tiene un campo equivalente exacto a
-"daño" ni a "tiempo estimado" en el modelo actual, así que se mapean del dato más cercano disponible: DAÑO =
-`RegistroActividad.observaciones` (el campo de texto libre), TIEMPO ESTIMADO = duración real calculada
+tabla para MECANICO: EQUIPO / OT / OBSERVACIONES / TIEMPO ESTIMADO / TALLER-CAMPO (para OPERADOR es distinta, ver
+"Ronda de mejoras..." más abajo). OBSERVACIONES = `RegistroActividad.observaciones` (el campo de texto libre que
+anota el trabajador - esta columna se llamó "Daño" hasta una ronda posterior, ver esa misma sección, donde se
+renombró para que coincida con lo que el usuario esperaba ver ahí). TIEMPO ESTIMADO = duración real calculada
 (`hora_fin - hora_inicio`, o "—" si la labor sigue abierta), TALLER-CAMPO = `Actividad.categoria`. **OT** =
 `RegistroActividad.area` (decisión del usuario de una ronda anterior: la columna sigue llamándose `area` en la
 base de datos, pero "área" como concepto ya no se usa - lo que guarda es el número/código de Orden de Trabajo
@@ -823,13 +824,20 @@ Ahora `grupo.operador.rol` decide todo:
 - Título: `REPORTE DE LABORES DIARIOS` (no-OPERADOR, o sea MECANICO) vs `REPORTE DE LABORES MAQUINARIAS`
   (OPERADOR). Mismo cambio en la etiqueta del encabezado: "Mecánico:" vs "Operador:".
 - Tabla: son DOS `<table class="hoja-actividades-tabla">` con `*ngIf="grupo.operador.rol !== 'OPERADOR'"` /
-  `*ngIf="grupo.operador.rol === 'OPERADOR'"` (nunca las dos a la vez). La de MECANICO se dejó intacta
-  (Equipo/OT/Daño/Tiempo estimado/Taller-Campo). La de OPERADOR reemplaza OT/Daño/Taller-Campo (no aplican - un
-  Operador no tiene Orden de Trabajo ni "daño" de taller) por **Horómetro inicio** / **Horómetro fin**
-  (`reg.horometro_inicio`/`reg.horometro_final`) y **Observaciones** (`reg.observaciones`, el dato real de la
-  labor, no reetiquetado como "Daño" como en la tabla de MECANICO) - mantiene Tiempo estimado igual que la otra.
+  `*ngIf="grupo.operador.rol === 'OPERADOR'"` (nunca las dos a la vez). La de MECANICO quedó igual salvo un
+  cambio (ver abajo). La de OPERADOR reemplaza OT/Daño/Taller-Campo (no aplican - un Operador no tiene Orden de
+  Trabajo ni "daño" de taller) por **Horómetro inicio** / **Horómetro fin** (`reg.horometro_inicio`/
+  `reg.horometro_final`) y **Observaciones** (`reg.observaciones`) - mantiene Tiempo estimado igual que la otra.
   `grupo.operador.rol` ya venía disponible en los datos (el include de `Operador` en `obtenerHistorial` no
   restringe `attributes`, trae la fila completa) - no hizo falta tocar el backend para esto.
+- **Corrección de la misma ronda**: la columna "Daño" de la tabla de MECANICO se RENOMBRÓ a "Observaciones" (el
+  dato detrás sigue siendo el mismo `reg.observaciones`, nunca cambió - "Daño" era la etiqueta original de una
+  ronda mucho más antigua, pensada para reportar daños de taller). El usuario probó en producción, vio una hoja
+  de un MECÁNICO con esa columna en "—" (sin dato en esos registros puntuales) y preguntó por qué no salía
+  "Observaciones" ahí - la respuesta correcta no era "falta el dato", era que el pedido original ("agregar la
+  columna de observaciones... en la tabla que se va a imprimir") se leyó como exclusivo de OPERADOR cuando en
+  realidad pedía la etiqueta pareja en las dos tablas. Ver el bloque de abajo para el resto de lo que reveló esa
+  misma prueba en producción.
 
 **5. El Historial ya no muestra una jornada antes de que el Supervisor la revise** (`asistencia.controller.ts`,
 `obtenerHistorial`): bug real encontrado al investigar el reporte del usuario ("se actualiza en tiempo real
@@ -854,13 +862,25 @@ rojo/negrita una vez que `token_expira_en - ahora <= 0`, clase `.token-vencido`)
 hacía lo correcto, era la UI la que nunca lo comunicaba.
 
 **7. Filtro "Supervisor" en el Historial (para ADMIN)** (`asistencia.controller.ts`/`asistencia-panel.ts`/`.html`):
-nuevo `<select>` junto al de Hacienda, mismo patrón (`supervisor_id` opcional en `GET /historial`, filtra
-`operador.supervisor_id` directo vía include). Reusa `supervisores: Usuario[]` (ya cargado en el componente para
-el selector de "a qué hacienda pertenece" al crear/editar un Operador) - no hizo falta un fetch nuevo. Nota:
-como cada Hacienda tiene como máximo UN Supervisor (`usuarios_hacienda_id_supervisor_unico`, UNIQUE en BD), este
-filtro y el de Hacienda devuelven exactamente el mismo resultado - se agregó de todas formas porque es más
-directo para un ADMIN pensar "quiero ver lo que hizo tal Supervisor" que tener que saber a qué hacienda
-pertenece.
+nuevo `<select>` junto al de Hacienda en la pestaña **Historial** del Panel de Asistente, mismo patrón
+(`supervisor_id` opcional en `GET /historial`, filtra `operador.supervisor_id` directo vía include). Reusa
+`supervisores: Usuario[]` (ya cargado en el componente para el selector de "a qué hacienda pertenece" al
+crear/editar un Operador) - no hizo falta un fetch nuevo.
+
+**Corrección de la misma ronda - filtro incompleto, faltaba la pantalla que el usuario realmente probó**: "en
+el panel del ADMIN" resultó ser ambiguo - lo implementé en el Historial (auditoría de jornadas ya cerradas), pero
+el usuario lo probó en `/asistencia/supervisor` (**Panel de Control de Supervisor** - el "hoy" en vivo,
+`obtenerAsistenciaHoy`/`supervisor-panel.ts`, accesible también a ADMIN vía `roleGuard('ADMIN','SUPERVISOR')`) y
+ahí no hay filtro de ningún tipo, todo el mundo confirmó por captura de pantalla. Se agregó el mismo patrón
+también ahí:
+- Backend (`obtenerAsistenciaHoy`): mismo filtro `supervisor_id` opcional, mismo include condicional sobre
+  `Operador`. Deliberadamente NO toca `calcularDiaCerrado` (sigue calculado sobre el día completo sin filtrar) -
+  "Cerrar Jornada" tiene que seguir cerrando el día real sin importar qué filtro de vista tenga puesto quien lo
+  ejecuta.
+- Frontend (`supervisor-panel.ts`/`.html`): el selector solo se muestra con `*ngIf="esAdmin"` (mismo getter que
+  ya usa `admin-panel.ts`) - un Supervisor real no tiene sentido de negocio filtrando por "otro Supervisor" (y de
+  cualquier forma esta pantalla no lo aísla a su propia hacienda hoy, ver Deuda técnica heredada: "finalizarDia
+  no filtra por hacienda_id" - el mismo hueco aplica aquí, no se tocó, es un tema aparte).
 
 ## Flujo de trabajo de esta sesión
 

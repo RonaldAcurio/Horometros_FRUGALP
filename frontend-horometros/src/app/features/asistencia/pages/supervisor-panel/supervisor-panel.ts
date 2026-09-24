@@ -4,9 +4,11 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 import { HaciendaService } from '../../../../core/services/hacienda.service';
+import { UsuarioService } from '../../../../core/services/usuario.service';
 import { AuthService } from '../../../../core/services/auth.service';
 import { Asistencia } from '../../../../core/models/asistencia.model';
 import { Hacienda } from '../../../../core/models/hacienda.model';
+import { Usuario } from '../../../../core/models/usuario.model';
 import { VisorFoto } from '../../components/visor-foto/visor-foto';
 import { NotificacionService } from '../../../../core/services/notificacion.service';
 import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
@@ -45,9 +47,19 @@ export class SupervisorPanel implements OnInit {
   // independiente de las demas - no hay selector, no puede tocar el de otra hacienda (ver CLAUDE.md).
   miHacienda: Hacienda | null = null;
 
+  // Filtro por Supervisor: solo tiene sentido para ADMIN (ver esAdmin abajo) - un Supervisor real ya ve todo
+  // mezclado en esta misma pantalla (deuda tecnica heredada, no filtra por hacienda propia, ver CLAUDE.md), asi
+  // que dejarlo elegir OTRO supervisor no tendria sentido de negocio.
+  supervisores: Usuario[] = [];
+  supervisorIdFiltro: number | null = null;
+  get esAdmin(): boolean {
+    return this.authService.tieneRol('ADMIN');
+  }
+
   constructor(
     private asistenciaService: AsistenciaService,
     private haciendaService: HaciendaService,
+    private usuarioService: UsuarioService,
     protected authService: AuthService,
     private cdr: ChangeDetectorRef,
     private notificacionService: NotificacionService,
@@ -57,6 +69,22 @@ export class SupervisorPanel implements OnInit {
   ngOnInit(): void {
     this.cargarAsistencias();
     this.cargarMiHacienda();
+    if (this.esAdmin) this.cargarSupervisores();
+  }
+
+  cargarSupervisores(): void {
+    this.usuarioService.obtenerUsuarios().subscribe({
+      next: (data) => {
+        this.supervisores = data.filter((u) => u.cargo === 'SUPERVISOR');
+        this.cdr.detectChanges();
+      },
+      error: (err) => console.error('Error cargando supervisores:', err),
+    });
+  }
+
+  onCambioSupervisor(): void {
+    this.paginaHoy = 1;
+    this.cargarAsistencias();
   }
 
   cargarMiHacienda(): void {
@@ -113,7 +141,7 @@ export class SupervisorPanel implements OnInit {
   }
 
   cargarAsistencias(): void {
-    this.asistenciaService.obtenerAsistenciasHoy(this.fechaSeleccionada || undefined, this.paginaHoy, 30).subscribe({
+    this.asistenciaService.obtenerAsistenciasHoy(this.fechaSeleccionada || undefined, this.paginaHoy, 30, this.supervisorIdFiltro || undefined).subscribe({
       next: (res) => {
         this.asistenciasHoy = res.data || [];
         this.totalPaginasHoy = res.totalPaginas || 1;

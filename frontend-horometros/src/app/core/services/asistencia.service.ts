@@ -109,13 +109,17 @@ export class AsistenciaService {
 
     // GET -> https://.../api/asistencia/hoy?fecha=YYYY-MM-DD&pagina=1&limite=30
     // Paginado: al Supervisor tampoco le llega de golpe todo el dia de una sola vez.
+    // supervisorId opcional: lo usa el panel de ADMIN (ve TODAS las haciendas mezcladas aqui) para acotar a lo
+    // que hizo un Supervisor puntual.
     obtenerAsistenciasHoy(
         fecha?: string,
         pagina: number = 1,
-        limite: number = 30
+        limite: number = 30,
+        supervisorId?: number
     ): Observable<{ data: Asistencia[]; total: number; pagina: number; totalPaginas: number; diaCerrado: boolean }> {
         let params = `?pagina=${pagina}&limite=${limite}`;
         if(fecha) params += `&fecha=${fecha}`;
+        if(supervisorId) params += `&supervisor_id=${supervisorId}`;
         return this.http.get<{ data: Asistencia[]; total: number; pagina: number; totalPaginas: number; diaCerrado: boolean }>(
             `${this.baseUrl}/hoy${params}`
         );
