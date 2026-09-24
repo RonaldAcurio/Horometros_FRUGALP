@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, signal, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { UsuarioService } from '../../../../core/services/usuario.service';
@@ -20,7 +20,7 @@ const CARGOS_CON_HACIENDA: CargoUsuario[] = ['SUPERVISOR', 'ESCANER'];
   styleUrl: './admin-panel.css',
   templateUrl: './admin-panel.html',
 })
-export class AdminPanel implements OnInit {
+export class AdminPanel implements OnInit, OnDestroy {
   private usuarioService = inject(UsuarioService);
   private haciendaService = inject(HaciendaService);
   private notificacionService = inject(NotificacionService);
@@ -61,10 +61,46 @@ export class AdminPanel implements OnInit {
   ngOnInit(): void {
     this.cargarUsuarios();
     this.cargarHaciendas();
+    /*
+    El Token de Hacienda vence a las 24h (ver TOKEN_VIGENCIA_MS en hacienda.controller.ts) - el backend YA lo
+    rechaza pasado ese tiempo (marcarConCodigo/marcarConMiCodigo comparan token_expira_en contra la hora actual),
+    pero esta pantalla solo mostraba la fecha/hora de vencimiento en texto plano, sin nada que avisara que ya
+    pasó: un token vencido se veía exactamente igual a uno vigente. Se agrega un "reloj" que fuerza a recalcular
+    el tiempo restante cada segundo (ver tiempoRestanteToken/tokenVencido, usados en el template).
+    */
+    this.intervaloReloj = setInterval(() => {
+      this.ahora = Date.now();
+      this.cdr.detectChanges();
+    }, 1000);
+  }
+
+  ngOnDestroy(): void {
+    if (this.intervaloReloj) clearInterval(this.intervaloReloj);
   }
 
   cambiarTab(tab: 'usuarios' | 'haciendas'): void {
     this.tabActual = tab;
+  }
+
+  // --- Cuenta regresiva del Token de Hacienda ---
+  private intervaloReloj?: ReturnType<typeof setInterval>;
+  ahora = Date.now();
+
+  tokenVencido(hacienda: Hacienda): boolean {
+    if (!hacienda.token_actual || !hacienda.token_expira_en) return false;
+    return new Date(hacienda.token_expira_en).getTime() - this.ahora <= 0;
+  }
+
+  tiempoRestanteToken(hacienda: Hacienda): string {
+    if (!hacienda.token_expira_en) return '—';
+    const restanteMs = new Date(hacienda.token_expira_en).getTime() - this.ahora;
+    if (restanteMs <= 0) return 'Expirado';
+    const totalSegundos = Math.floor(restanteMs / 1000);
+    const horas = Math.floor(totalSegundos / 3600);
+    const minutos = Math.floor((totalSegundos % 3600) / 60);
+    const segundos = totalSegundos % 60;
+    const dosDigitos = (n: number) => String(n).padStart(2, '0');
+    return `${dosDigitos(horas)}:${dosDigitos(minutos)}:${dosDigitos(segundos)}`;
   }
 
   cargarUsuarios(): void {

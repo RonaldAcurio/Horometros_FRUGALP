@@ -809,7 +809,7 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
 // Historial con filtros opcionales de fechas
 export const obtenerHistorial = async(req:Request, res:Response):Promise<void> => {
     try{
-        const { fecha_inicio, fecha_fin, operador_id, hacienda_id } = req.query;
+        const { fecha_inicio, fecha_fin, operador_id, hacienda_id, supervisor_id } = req.query;
         const whereCondition:any = {};
 
         // Filtro por rango de fecha
@@ -829,8 +829,17 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
         /*
         El Historial de Asistencia es la auditoria OFICIAL: solo debe mostrar jornadas que el supervisor ya reviso y cerro(FINALIZADO/SALIDA_OLVIDADA),
         nunca marcaciones todavia en curso (EN_JORNADA) o pendiente de revision (PENDIENTE_REVISION).
+
+        confirmado_por_supervisor no nulo: un trabajador puede autocerrar su PROPIA jornada como SALIDA_OLVIDADA
+        sin que el Supervisor la haya revisado (autoservicio "no podre marcar salida", ver marcarSalidaOlvidada) -
+        eso deja estado en SALIDA_OLVIDADA de inmediato, sin pasar por finalizarDia, que es quien normalmente
+        exige el O/X del Supervisor antes de cerrar el dia. Sin este filtro, esa jornada aparecia en el Historial
+        apenas el trabajador se autocerraba, como si fuera "en tiempo real" - antes de que el Supervisor hiciera
+        su revision o cerrara el dia. Se exige la misma condicion que finalizarDia ya exige (confirmado_por_supervisor
+        !== null) para que el Historial nunca muestre nada que el Supervisor no haya revisado todavia.
         */
         whereCondition.estado = { [Op.in] : ['FINALIZADO','SALIDA_OLVIDADA']};
+        whereCondition.confirmado_por_supervisor = { [Op.ne]: null };
 
         /*
         Paginacion: sin esto, un filtro de "todo el ano" intentaria devolver miles de registros (con sus fotos, si no los hubieramos excluido arriba)
@@ -841,12 +850,16 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
        const offset = (paginaActual -1) * limitePagina;
 
         /*
-        Filtro opcional por hacienda: el Operador no tiene hacienda_id propio (vive del Supervisor al que
-        pertenece de forma permanente, ver CLAUDE.md), asi que se filtra via el include anidado
-        operador -> supervisor -> hacienda_id. `required: true` en 'operador' cuando hay filtro convierte el
-        include en INNER JOIN (si no, Sequelize lo deja LEFT JOIN y el where anidado no filtra nada).
+        Filtro opcional por hacienda o por supervisor: el Operador no tiene hacienda_id propio (vive del
+        Supervisor al que pertenece de forma permanente, ver CLAUDE.md), asi que "hacienda" se filtra via el
+        include anidado operador -> supervisor -> hacienda_id, y "supervisor" directo sobre
+        operador.supervisor_id (lo usa el panel de ADMIN para ver solo lo que hizo un Supervisor puntual, sin
+        tener que saber a que hacienda pertenece). `required: true` en 'operador' cuando hay CUALQUIERA de los
+        dos filtros convierte el include en INNER JOIN (si no, Sequelize lo deja LEFT JOIN y el where anidado no
+        filtra nada).
         */
         const filtrarPorHacienda = hacienda_id !== undefined && hacienda_id !== '';
+        const filtrarPorSupervisor = supervisor_id !== undefined && supervisor_id !== '';
         const { rows:historial, count:total } = await Asistencia.findAndCountAll({
             where: whereCondition,
             attributes:ATRIBUTOS_SIN_FOTO,
@@ -858,8 +871,9 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
             include:[
                 {
                     model: Operador, as: 'operador',
-                    required: filtrarPorHacienda,
+                    required: filtrarPorHacienda || filtrarPorSupervisor,
                     paranoid: false,
+                    ...(filtrarPorSupervisor ? { where: { supervisor_id: Number(supervisor_id) } } : {}),
                     include: [{
                         model: Usuario, as: 'supervisor',
                         attributes: [],

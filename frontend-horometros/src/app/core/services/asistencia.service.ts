@@ -124,13 +124,16 @@ export class AsistenciaService {
     //GET -> /api/asistencia/historial?fecha_inicio=YYYY-MM-DD&fecha_fin=YYYY-MM-DD
     // operadorId opcional: lo usa el modal "Historial de Asistencia" de la Ficha (Directorio de Operadores) para
     // traer solo las jornadas de ESE operador, reutilizando el mismo endpoint/filtro que ya soporta el backend.
-    obtenerHistorial(fechaInicio?: string, fechaFin?: string, pagina:number=1, limite:number=30, haciendaId?: number, operadorId?: number
+    // supervisorId opcional: filtra solo lo que hizo ese Supervisor (via operador.supervisor_id), lo usa el
+    // Historial cuando lo ve un ADMIN.
+    obtenerHistorial(fechaInicio?: string, fechaFin?: string, pagina:number=1, limite:number=30, haciendaId?: number, operadorId?: number, supervisorId?: number
     ): Observable<{data:Asistencia[]; total:number; pagina:number; totalPaginas:number}>{
         let params = new HttpParams().set('pagina', pagina).set('limite', limite);
         if(fechaInicio) params = params.set('fecha_inicio', fechaInicio);
         if(fechaFin) params = params.set('fecha_fin', fechaFin);
         if(haciendaId) params = params.set('hacienda_id', haciendaId);
         if(operadorId) params = params.set('operador_id', operadorId);
+        if(supervisorId) params = params.set('supervisor_id', supervisorId);
 
         return this.http.get<{data:Asistencia[]; total:number; pagina:number; totalPaginas:number}>(
             `${this.baseUrl}/historial`, { params });

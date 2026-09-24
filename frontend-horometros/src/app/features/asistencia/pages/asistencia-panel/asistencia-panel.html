@@ -182,6 +182,11 @@
           <option [ngValue]="null">Todas</option>
           <option *ngFor="let h of haciendas" [ngValue]="h.id">{{ h.nombre }}</option>
         </select>
+        <label class="filter-label">Supervisor:</label>
+        <select class="input-control" [(ngModel)]="supervisorIdFiltro">
+          <option [ngValue]="null">Todos</option>
+          <option *ngFor="let s of supervisores" [ngValue]="s.id">{{ s.nombre_completo }}</option>
+        </select>
       </div>
       <button class="btn btn-primary btn-sm" (click)="buscarHistorial()">🔍 Buscar</button>
     </div>
@@ -521,15 +526,18 @@
         *ngFor="let grupo of hojaGrupos"
         class="hoja-actividades-grupo"
       >
-        <h2 class="hoja-actividades-titulo">Reportes de Labores Diarios</h2>
+        <!-- Titulo y tabla dependen del rol de quien hizo las labores: un Operador no tiene OT ni "daño" (eso
+             es del taller mecánico), en cambio sí lleva horómetro inicio/fin - por eso el diseño impreso es
+             distinto para cada uno, no solo el título (ver CLAUDE.md). -->
+        <h2 class="hoja-actividades-titulo">{{ grupo.operador.rol === 'OPERADOR' ? 'REPORTE DE LABORES MAQUINARIAS' : 'REPORTE DE LABORES DIARIOS' }}</h2>
         <div class="hoja-actividades-encabezado">
           <span class="hoja-actividades-mecanico">
-            Mecánico: {{ grupo.operador.nombre_completo }}<ng-container *ngIf="grupo.operador.codigo_megued"> · {{ grupo.operador.codigo_megued }}</ng-container>
+            {{ grupo.operador.rol === 'OPERADOR' ? 'Operador' : 'Mecánico' }}: {{ grupo.operador.nombre_completo }}<ng-container *ngIf="grupo.operador.codigo_megued"> · {{ grupo.operador.codigo_megued }}</ng-container>
           </span>
           <span *ngIf="hojaFechaUnica" class="hoja-actividades-fecha">Fecha: {{ hojaFechaUnica }}</span>
         </div>
 
-        <table class="hoja-actividades-tabla">
+        <table class="hoja-actividades-tabla" *ngIf="grupo.operador.rol !== 'OPERADOR'">
           <thead>
             <tr>
               <th *ngIf="!hojaFechaUnica">Fecha</th>
@@ -548,6 +556,34 @@
               <td>{{ reg.observaciones || '—' }}</td>
               <td>{{ duracionLabor(reg) }}</td>
               <td>{{ reg.actividad?.categoria || '—' }}</td>
+            </tr>
+            <tr *ngIf="grupo.registros.length === 0">
+              <td [attr.colspan]="hojaFechaUnica ? 5 : 6" class="hoja-actividades-vacio">Sin labores registradas.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Tabla de OPERADOR: sin OT ni Daño/Taller-Campo (no aplican), con Horómetro inicio/fin y
+             Observaciones de cada labor en su lugar. -->
+        <table class="hoja-actividades-tabla" *ngIf="grupo.operador.rol === 'OPERADOR'">
+          <thead>
+            <tr>
+              <th *ngIf="!hojaFechaUnica">Fecha</th>
+              <th>Equipo</th>
+              <th>Horómetro inicio</th>
+              <th>Horómetro fin</th>
+              <th>Tiempo estimado</th>
+              <th>Observaciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let reg of grupo.registros">
+              <td *ngIf="!hojaFechaUnica">{{ reg.asistencia?.fecha || '—' }}</td>
+              <td>{{ reg.equipo ? (reg.equipo.codigo_megued + ' - ' + reg.equipo.nombre_equipo) : '—' }}</td>
+              <td>{{ reg.horometro_inicio ?? '—' }}</td>
+              <td>{{ reg.horometro_final ?? '—' }}</td>
+              <td>{{ duracionLabor(reg) }}</td>
+              <td>{{ reg.observaciones || '—' }}</td>
             </tr>
             <tr *ngIf="grupo.registros.length === 0">
               <td [attr.colspan]="hojaFechaUnica ? 5 : 6" class="hoja-actividades-vacio">Sin labores registradas.</td>

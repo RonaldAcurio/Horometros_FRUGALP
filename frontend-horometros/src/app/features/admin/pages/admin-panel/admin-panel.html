@@ -66,7 +66,7 @@
           <tr>
             <th>Hacienda</th>
             <th>Token actual</th>
-            <th>Vigente hasta</th>
+            <th>Vence en</th>
             <th>Acciones</th>
           </tr>
         </thead>
@@ -74,11 +74,14 @@
           <tr *ngFor="let h of haciendas">
             <td class="nombre-operador">{{ h.nombre }}</td>
             <td>
-              <span *ngIf="h.token_actual" class="code-badge token-valor">{{ h.token_actual }}</span>
+              <span *ngIf="h.token_actual && !tokenVencido(h)" class="code-badge token-valor">{{ h.token_actual }}</span>
+              <span *ngIf="h.token_actual && tokenVencido(h)" class="code-badge token-valor token-vencido">{{ h.token_actual }}</span>
               <span *ngIf="!h.token_actual" class="text-muted-sm">Sin token activo</span>
             </td>
             <td>
-              <span *ngIf="h.token_expira_en" class="text-muted-sm">{{ h.token_expira_en | date:'short' }}</span>
+              <span *ngIf="h.token_expira_en" class="text-muted-sm" [class.token-vencido]="tokenVencido(h)">
+                {{ tiempoRestanteToken(h) }}
+              </span>
               <span *ngIf="!h.token_expira_en">—</span>
             </td>
             <td class="flex gap-2">

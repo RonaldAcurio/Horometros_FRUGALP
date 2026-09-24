@@ -800,6 +800,68 @@ hoja física" de la libreta de lecturas): con el Panel de Asistente creando Equi
 siendo obligatorio, porque ese concepto no existe fuera de Horómetros. El formulario de "Nuevo Equipo" del Panel
 de Asistente solo pide código y nombre.
 
+### Ronda de mejoras: validación de horas, Observaciones, impresión por rol, filtro por Supervisor y Token
+
+Siete pedidos puntuales del usuario tras revisar la app ya en uso, todos independientes entre sí:
+
+**1. La hora de una labor NUEVA no puede quedar antes de la última labor ya registrada ese día**
+(`registro_actividad.controller.ts`, `crearRegistroActividad`): antes de crear el registro, se trae TODA la
+jornada (`RegistroActividad.findAll({ where: { asistencia_id }})`) y se calcula en memoria el máximo de
+`hora_fin ?? hora_inicio` de cada una (Postgres no tiene un "max de coalesce" directo sin SQL crudo, y la
+cantidad de labores por jornada es chica). Si la nueva `hora_inicio` queda antes de ese máximo, 400. No valida
+solapamiento entre labores, solo que no retroceda en el tiempo - no se pidió más que eso.
+
+**2. Columna "Observaciones" en "Labores de hoy"** (`mi-jornada.html`): el campo ya se capturaba en el
+formulario (`nuevoRegistro.observaciones`) pero no se mostraba en la tabla de labores del día - se agregó la
+columna (visible para MECANICO y OPERADOR por igual, el campo es común a ambos) y se ajustó el `colspan` de la
+fila "Todavía no registras ninguna labor" (`esMecanico ? 6 : 7`, antes 5/6).
+
+**3 y 4. Título e diseño de tabla al imprimir, según el rol del operador** (`asistencia-panel.html`, dentro del
+`*ngFor="let grupo of hojaGrupos"`): antes el título y la tabla eran siempre los mismos para cualquier trabajador
+("Reportes de Labores Diarios", columnas Equipo/OT/Daño/Tiempo estimado/Taller-Campo - pensadas para MECANICO).
+Ahora `grupo.operador.rol` decide todo:
+- Título: `REPORTE DE LABORES DIARIOS` (no-OPERADOR, o sea MECANICO) vs `REPORTE DE LABORES MAQUINARIAS`
+  (OPERADOR). Mismo cambio en la etiqueta del encabezado: "Mecánico:" vs "Operador:".
+- Tabla: son DOS `<table class="hoja-actividades-tabla">` con `*ngIf="grupo.operador.rol !== 'OPERADOR'"` /
+  `*ngIf="grupo.operador.rol === 'OPERADOR'"` (nunca las dos a la vez). La de MECANICO se dejó intacta
+  (Equipo/OT/Daño/Tiempo estimado/Taller-Campo). La de OPERADOR reemplaza OT/Daño/Taller-Campo (no aplican - un
+  Operador no tiene Orden de Trabajo ni "daño" de taller) por **Horómetro inicio** / **Horómetro fin**
+  (`reg.horometro_inicio`/`reg.horometro_final`) y **Observaciones** (`reg.observaciones`, el dato real de la
+  labor, no reetiquetado como "Daño" como en la tabla de MECANICO) - mantiene Tiempo estimado igual que la otra.
+  `grupo.operador.rol` ya venía disponible en los datos (el include de `Operador` en `obtenerHistorial` no
+  restringe `attributes`, trae la fila completa) - no hizo falta tocar el backend para esto.
+
+**5. El Historial ya no muestra una jornada antes de que el Supervisor la revise** (`asistencia.controller.ts`,
+`obtenerHistorial`): bug real encontrado al investigar el reporte del usuario ("se actualiza en tiempo real
+aunque el Supervisor no haya Cerrado Jornada"). El filtro de estados (`FINALIZADO`/`SALIDA_OLVIDADA`) ya excluía
+`EN_JORNADA`/`PENDIENTE_REVISION`, pero el autoservicio "no podré marcar salida hoy" (`marcarSalidaOlvidada`,
+Panel de Actividades del propio trabajador) pone `estado: 'SALIDA_OLVIDADA'` DIRECTO, sin pasar por
+`finalizarDia` - y `finalizarDia` es quien normalmente exige que el Supervisor ya haya hecho su O/X
+(`confirmado_por_supervisor !== null`, ver la validación al inicio de esa función) antes de dejar cerrar el día.
+Resultado: un trabajador que se autocerraba aparecía en el Historial al instante, sin que nadie del lado del
+Supervisor lo hubiera tocado - exactamente el hueco de fraude que el O/X existe para atrapar (alguien pasó su
+código/QR a un compañero). Se agregó `whereCondition.confirmado_por_supervisor = { [Op.ne]: null }` al
+`obtenerHistorial` - la misma condición que `finalizarDia` ya exige, aplicada también aquí para el caso
+`SALIDA_OLVIDADA` que se autocierra sin pasar por ahí. No cambia nada para el flujo normal (todo lo que llega a
+`FINALIZADO` vía `finalizarDia` ya tiene `confirmado_por_supervisor` garantizado por esa misma función).
+
+**6. Cuenta regresiva del Token de Hacienda** (`admin-panel.ts`/`.html`/`.css`, pestaña Haciendas): el backend
+YA rechazaba un Token vencido (`marcarConCodigo`/`marcarConMiCodigo` comparan `token_expira_en` contra la hora
+actual desde el principio) - el hueco era 100% visual: la columna solo mostraba la fecha/hora de vencimiento en
+texto plano, un token vencido se veía idéntico a uno vigente. Se agregó un intervalo de 1s (`ngOnInit`, limpiado
+en `ngOnDestroy`) que fuerza a recalcular `tiempoRestanteToken(hacienda)` (formato `HH:MM:SS`, o "Expirado" en
+rojo/negrita una vez que `token_expira_en - ahora <= 0`, clase `.token-vencido`). No se tocó el backend - ya
+hacía lo correcto, era la UI la que nunca lo comunicaba.
+
+**7. Filtro "Supervisor" en el Historial (para ADMIN)** (`asistencia.controller.ts`/`asistencia-panel.ts`/`.html`):
+nuevo `<select>` junto al de Hacienda, mismo patrón (`supervisor_id` opcional en `GET /historial`, filtra
+`operador.supervisor_id` directo vía include). Reusa `supervisores: Usuario[]` (ya cargado en el componente para
+el selector de "a qué hacienda pertenece" al crear/editar un Operador) - no hizo falta un fetch nuevo. Nota:
+como cada Hacienda tiene como máximo UN Supervisor (`usuarios_hacienda_id_supervisor_unico`, UNIQUE en BD), este
+filtro y el de Hacienda devuelven exactamente el mismo resultado - se agregó de todas formas porque es más
+directo para un ADMIN pensar "quiero ver lo que hizo tal Supervisor" que tener que saber a qué hacienda
+pertenece.
+
 ## Flujo de trabajo de esta sesión
 
 Backend: todo cambio se prueba primero contra Postgres local (`service postgresql start`, rol `postgre`/`1234`,

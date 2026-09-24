@@ -76,6 +76,9 @@ export class AsistenciaPanel implements OnInit{
   // Filtro por hacienda: el Operador no tiene hacienda propia, se filtra via su Supervisor (ver backend).
   haciendas: Hacienda[] = [];
   haciendaIdFiltro: number | null = null;
+  // Filtro por Supervisor (para que ADMIN vea solo lo que hizo un Supervisor puntual) - reusa 'supervisores',
+  // ya cargado para el selector de "a que hacienda pertenece" al crear/editar un Operador.
+  supervisorIdFiltro: number | null = null;
   //Paginacion del historial: el backend nunca manda todo el rando de fechas de una sola vez
   paginaHistorial: number = 1;
   totalPaginasHistorial: number = 1;
@@ -598,7 +601,9 @@ export class AsistenciaPanel implements OnInit{
       this.fechaFinFiltro || undefined,
       this.paginaHistorial,
       30,
-      this.haciendaIdFiltro || undefined
+      this.haciendaIdFiltro || undefined,
+      undefined,
+      this.supervisorIdFiltro || undefined
     ).subscribe({
       next:(res) => {
         this.historial = res.data || [];

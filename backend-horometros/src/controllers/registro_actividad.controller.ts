@@ -78,6 +78,28 @@ export const crearRegistroActividad = async(req:Request, res:Response):Promise<v
             }
         }
 
+        /*
+        La hora de inicio de una labor NUEVA no puede quedar antes de la ultima labor ya registrada ese dia (ni
+        antes de su inicio si sigue abierta, ni antes de su fin si ya la cerraron) - decision del usuario: evita
+        que la lista de "Labores de hoy" quede desordenada/inconsistente en el tiempo. Se compara contra TODAS
+        las labores de esta jornada, no solo la ultima creada, por si el trabajador cierra una labor fuera de
+        orden.
+        */
+        const registrosPrevios = await RegistroActividad.findAll({
+            where: { asistencia_id: asistencia.id },
+            attributes: ['hora_inicio', 'hora_fin'],
+        });
+        if(registrosPrevios.length > 0){
+            const ultimaHoraRegistrada = registrosPrevios.reduce((maxHasta, r) => {
+                const horaRelevante = (r.hora_fin ?? r.hora_inicio).getTime();
+                return horaRelevante > maxHasta ? horaRelevante : maxHasta;
+            }, 0);
+            if(horaInicioFinal.getTime() < ultimaHoraRegistrada){
+                res.status(400).json({ message: 'La hora de inicio no puede ser anterior a la ultima labor ya registrada hoy.' });
+                return;
+            }
+        }
+
         const registro = await RegistroActividad.create({
             asistencia_id: asistencia.id,
             equipo_id: equipo.id,

@@ -186,6 +186,7 @@
               <th>Equipo</th>
               <th>Actividad</th>
               <th *ngIf="!esMecanico">Horómetro</th>
+              <th>Observaciones</th>
               <th>Inicio</th>
               <th>Fin</th>
               <th>Acción</th>
@@ -196,6 +197,7 @@
               <td>{{ reg.equipo?.nombre_equipo || reg.equipo_id }}</td>
               <td>{{ reg.actividad?.description || reg.actividad_id }}</td>
               <td *ngIf="!esMecanico">{{ reg.horometro_inicio ?? '—' }} / {{ reg.horometro_final ?? '—' }}</td>
+              <td>{{ reg.observaciones || '—' }}</td>
               <td><span class="time-badge">{{ reg.hora_inicio | date:'HH:mm':'-0500' }}</span></td>
               <td>
                 <span *ngIf="reg.hora_fin" class="time-badge">{{ reg.hora_fin | date:'HH:mm':'-0500' }}</span>
@@ -233,7 +235,7 @@
               </td>
             </tr>
             <tr *ngIf="registros.length === 0">
-              <td [attr.colspan]="esMecanico ? 5 : 6" class="table-empty">Todavía no registras ninguna labor.</td>
+              <td [attr.colspan]="esMecanico ? 6 : 7" class="table-empty">Todavía no registras ninguna labor.</td>
             </tr>
           </tbody>
         </table>

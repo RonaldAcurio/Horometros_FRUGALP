@@ -54,3 +54,10 @@
   font-size: 0.75rem;
   word-break: break-all;
 }
+
+/* Token vencido (cuenta regresiva llegó a 0): mismo dato en pantalla, pero se marca en rojo para que no se vea
+   idéntico a un token todavía vigente - antes no había ninguna señal visual de que ya no servía. */
+.token-vencido {
+  color: #b91c1c;
+  font-weight: 600;
+}
