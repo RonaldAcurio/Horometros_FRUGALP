@@ -8,6 +8,8 @@
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "e2e:server": "NODE_ENV=test sequelize-cli db:migrate && NODE_ENV=test tsx src/test-setup/sembrar-e2e.ts && NODE_ENV=test tsx watch src/index.ts",
+    "carga:preparar": "NODE_ENV=test sequelize-cli db:migrate && NODE_ENV=test tsx src/test-setup/sembrar-carga.ts",
+    "test:carga": "NODE_ENV=test tsx src/test-setup/prueba-carga.ts",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "build": "npx tsc",
@@ -31,12 +33,14 @@
     "typescript": "^7.0.2"
   },
   "devDependencies": {
+    "@types/autocannon": "^7.12.7",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.2.0",
     "@types/supertest": "^7.2.1",
+    "autocannon": "^8.0.0",
     "sequelize-cli": "^6.6.5",
     "supertest": "^7.3.0",
     "ts-node": "^10.9.2",

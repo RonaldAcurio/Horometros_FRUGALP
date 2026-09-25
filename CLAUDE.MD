@@ -603,7 +603,9 @@ en cada push/PR a main, ver abajo) · pruebas unitarias ✅ (arreglado 2026-09-2
 negocio - validación de horas y vigencia del Token de Hacienda, backend y frontend - además de los specs por
 componente que ya traía Angular) · integración ✅ (arreglado 2026-09-25, ver abajo - contra Postgres real,
 corre en CI con un servicio de BD propio) · end-to-end ✅ (arreglado 2026-09-25, ver abajo - Playwright real
-contra el navegador, backend y BD reales, esta vez sí quedó en el repo y corre en CI) · carga ❌.
+contra el navegador, backend y BD reales, esta vez sí quedó en el repo y corre en CI) · carga ✅ (arreglado
+2026-09-25, ver abajo - `autocannon` contra volumen real de ~950 operadores, no corre en CI a propósito, un
+hallazgo real quedó pendiente de decisión de producto en "Pendiente").
 
 **Configuración y observabilidad:** login ✅ (arreglado 2026-09-25: rate limiting ya estaba de la ronda anterior,
 clave mínima subida de 6 a 8 caracteres) · monitoreo de métricas ❌ · alertas ❌ · trazabilidad ⚠️ (mejorado
@@ -982,12 +984,64 @@ otro nivel de mocks, es la UI completa haciendo clics reales.
 - Corrido 2 veces seguidas en local para confirmar que es repetible (usuarios de prueba con nombres únicos por
   timestamp, no fijos) - 4/4 en ambas corridas.
 
+### Pruebas de carga (autocannon, 2026-09-25)
+
+Primera vez que se mide, con números reales, cómo responde el backend al volumen que va a tener la empresa
+cliente (~950 trabajadores de campo). No corren en CI a propósito (son pesadas/lentas y miden capacidad, no
+corrección) - se corren a mano antes de un release grande, contra la BD de test real.
+
+- **`backend-horometros/src/test-setup/sembrar-carga.ts`** (nuevo, `npm run carga:preparar`): siembra 950
+  Operadores con su Asistencia de hoy YA cerrada (para medir lectura del Panel/Historial con volumen real), 950
+  Operadores APARTE sin marcar hoy (para la ráfaga de escritura - un Operador solo puede marcar una vez al día,
+  reusar el mismo pool para las dos cosas habría hecho que la ráfaga fallara por regla de negocio, no por
+  capacidad) y 3000 registros de auditoría repartidos en 180 días.
+- **`backend-horometros/src/test-setup/prueba-carga.ts`** (nuevo, `npm run test:carga`): levanta el backend real
+  en el mismo proceso, mide 3 endpoints de lectura con `autocannon` (20 conexiones concurrentes ~ oficina real) y
+  una ráfaga de escritura propia (`fetch` con concurrencia manual, no autocannon - necesitaba un body de login
+  DISTINTO por petición, uno por trabajador) simulando 950 marcaciones de entrada distintas al arranque del
+  turno, 50 a la vez.
+- **`limitadorLogin`/`limitadorMarcacion`** (`rate-limit.middleware.ts`): `skip` nuevo cuando
+  `NODE_ENV==='test'` - la ráfaga manda cientos de marcaciones desde una sola IP a propósito (simula 950
+  trabajadores, no 1); en producción real cada uno pega desde su propio celular, así que el límite por IP nunca
+  los junta. `NODE_ENV` solo vale `'test'` en pruebas corridas a mano o en CI, nunca en producción.
+
+**Resultados de la corrida local** (máquina de desarrollo, no el plan real de Render - sirven para comparar
+entre sí y para encontrar problemas de diseño, no como SLA absoluto de producción):
+
+| Endpoint | Escenario | p50 | p97.5 | p99 | Resultado |
+|---|---|---|---|---|---|
+| `GET /asistencia/operadores` | 1900 operadores, **sin paginar**, 20 conc. | 1433ms | 2874ms | 3237ms | ⚠️ lento |
+| `GET /auditoria?pagina=1` | 3000 registros, paginado, 20 conc. | 38ms | 61ms | 76ms | ✅ |
+| `GET /asistencia/hoy?pagina=1` | 950 asistencias hoy, paginado, 20 conc. | 109ms | 137ms | 161ms | ✅ |
+| `POST /asistencia/marcar-codigo` | 950 marcaciones distintas, 50 conc. | 3886ms | 6308ms | 9629ms | ✅ (0 errores, ver nota) |
+
+**Hallazgo real, pendiente de decisión:** `GET /asistencia/operadores` es el único de los 4 que NO tiene
+paginación (a diferencia de `/historial`, `/auditoria` y `/hoy`, que ya la tienen) - trae los 950+ Operadores de
+un solo golpe en cada carga del Menú Admin, y por eso es el más lento por lejos. Arreglarlo con el mismo patrón
+que los otros 3 es sencillo del lado del backend, pero el Menú Admin de hoy probablemente usa la lista completa
+para buscar/filtrar del lado del cliente - paginar en el servidor sin perder esa búsqueda instantánea necesita
+decidir si se agrega búsqueda por servidor o se vive con una carga inicial más pesada. Lo dejo marcado como
+pendiente en vez de tocarlo a ciegas, ver "Pendiente" más abajo.
+
+**Nota sobre la ráfaga de `marcar-codigo`:** los 950/950 salieron exitosos, pero la latencia crece harto bajo
+50 conexiones a la vez (hasta 9.6s en el peor caso, ~74s en total). La causa no es el pool de Postgres (`max:10`,
+ver `database.ts`) ni una query lenta - es `bcrypt.compare` en cada login: es CPU-bound y deliberadamente lento
+(así está diseñado, para resistir fuerza bruta), así que 50 requests a la vez compitiendo por el mismo hilo de
+Node se van encolando. En producción real esto no es un problema: 950 trabajadores no marcan en el mismo
+segundo literal, llegan repartidos en 15-30 minutos al inicio del turno - pero si alguna vez se ve lento en la
+práctica, esta es la causa conocida, no un misterio a investigar de cero.
+
 ## Pendiente
 
 **Backend**
 - Filtrar `finalizarDia` por `hacienda_id` del Supervisor que ejecuta el cierre (ver Deuda técnica heredada) - es un
   hueco de alcance/autorización distinto al de `verificarAutenticacion`/`requireRol` (ya cerrado, ver Endpoints):
   ahí el Supervisor SÍ tiene permiso para la acción, solo que la acción no respeta el límite de "su" hacienda.
+- Paginar `GET /asistencia/operadores` (hallazgo de la prueba de carga, ver arriba) - hoy es el único endpoint de
+  listado sin paginar, y es medible más lento que el resto a volumen real (~950+ Operadores). Necesita decisión
+  de producto antes de tocarlo: el Menú Admin de hoy probablemente busca/filtra sobre la lista completa ya
+  cargada en el cliente, así que paginar en servidor sin perder esa búsqueda instantánea implica agregar
+  búsqueda por servidor (query `?buscar=`) o aceptar que la carga inicial siga siendo pesada.
 
 **Frontend** (sobre lo ya construido, ver sección de arriba)
 - Offline/sync: la app empaqueta nativo (no PWA, así que no aplica la limitación de Background Sync de iOS/Safari de
