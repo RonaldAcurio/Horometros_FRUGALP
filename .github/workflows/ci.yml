@@ -18,7 +18,7 @@ jobs:
       run:
         working-directory: backend-horometros
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -63,7 +63,7 @@ jobs:
       JWT_SECRET: clave_de_pruebas_integracion_no_usar_en_produccion
       CIFRADO_CLAVE: '1111111111111111111111111111111111111111111111111111111111111111'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -79,7 +79,7 @@ jobs:
       run:
         working-directory: frontend-horometros
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -120,7 +120,7 @@ jobs:
       JWT_SECRET: clave_de_pruebas_e2e_no_usar_en_produccion
       CIFRADO_CLAVE: '2222222222222222222222222222222222222222222222222222222222222222'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
