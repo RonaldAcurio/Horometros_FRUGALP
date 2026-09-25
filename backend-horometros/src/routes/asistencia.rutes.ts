@@ -21,6 +21,7 @@ import {
     eliminarOperador,
 } from "../controllers/asistencia.controller";
 import { verificarAutenticacion, requireRol, verificarJornadaOperadorActiva } from "../middlewares/auth.middleware";
+import { limitadorLogin, limitadorMarcacion } from "../middlewares/rate-limit.middleware";
 
 const router = Router();
 
@@ -34,7 +35,8 @@ router.get('/historial', verificarAutenticacion, requireRol('ADMIN','ASISTENTE')
 router.put('/operadores/:id/clave',verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), resetearClaveOperador);
 
 // Carnet fisico del kiosco: sin JWT a proposito, el trabajador lo usa SIN loguearse (ver marcacion-kiosco.ts).
-router.post('/marcar-qr', registrarMacarcoQR);
+// limitadorMarcacion: es publica y acepta un operador_id que se podria adivinar a fuerza bruta.
+router.post('/marcar-qr', limitadorMarcacion, registrarMacarcoQR);
 
 // Panel de Supervisor: reporte del dia, cierre de jornada y ajustes de un registro - mismos roles que
 // /asistencia/supervisor en el frontend.
@@ -49,7 +51,8 @@ router.get('/:id/foto', verificarAutenticacion, requireRol('ADMIN','ASISTENTE','
 router.post('/admitir-externo',verificarAutenticacion, requireRol('SUPERVISOR','ADMIN'),admitirTrabajadorExterno);
 
 // Camino A: hacienda sin camara, marca con usuario+clave+Token de Hacienda. No requiere JWT (la credencial ES el operador).
-router.post('/marcar-codigo', marcarConCodigo);
+// limitadorLogin: verifica clave igual que /auth/login, mismo riesgo de fuerza bruta.
+router.post('/marcar-codigo', limitadorLogin, marcarConCodigo);
 // Camino A para un trabajador YA logueado (pantalla "mi jornada"): solo confirma el codigo, sin re-escribir su clave.
 router.post('/marcar-mi-codigo', verificarAutenticacion, verificarJornadaOperadorActiva, marcarConMiCodigo);
 

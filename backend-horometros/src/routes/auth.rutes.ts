@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { login } from "../controllers/auth.controller";
+import { limitadorLogin } from "../middlewares/rate-limit.middleware";
 
 const router = Router();
 
-router.post('/login',login);
+router.post('/login', limitadorLogin, login);
 
 export default router;

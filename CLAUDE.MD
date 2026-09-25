@@ -582,16 +582,18 @@ explícitas de tiempo de respuesta/uptime) · restricciones de integridad ✅ (F
 **Seguridad de la app:** manejo de sesiones ⚠️ (JWT 8h sin revocación) · almacenamiento seguro ⚠️ (bcrypt bien,
 PII en texto plano) · cifrado de datos sensibles ❌ (nada a nivel app, solo lo que cifre Render en disco) ·
 SQL injection ✅ (Sequelize parametrizado, cero queries crudas) · XSS ✅ (Angular escapa por defecto, cero
-`innerHTML`/`bypassSecurityTrust`) · CSRF ✅ (JWT va en header, no en cookie) · rate limiting ❌ (sin límite de
-intentos en login) · helmet/cabeceras de seguridad ❌ (no instalado) · CORS ⚠️ (`cors()` sin restricción, abierto
-a cualquier origen) · certificados SSL ✅ (los da Render/Vercel automático).
+`innerHTML`/`bypassSecurityTrust`) · CSRF ✅ (JWT va en header, no en cookie) · rate limiting ✅ (arreglado
+2026-09-25, ver abajo) · helmet/cabeceras de seguridad ✅ (arreglado 2026-09-25) · CORS ✅ (arreglado 2026-09-25,
+dominio de producción de Vercel ya viene por defecto, `CORS_ORIGIN` solo hace falta si agregan otro dominio) ·
+certificados SSL ✅ (los da Render/Vercel automático).
 
-**Infraestructura:** balanceador de carga ❌ (hoy no aplica por escala, pero con ~950 trabajadores de campo
-como usuarios reales SÍ hay que resolverlo, ver Pendiente) · backups de BD ❌ (no verificado - urgente revisar
-plan de Render, el free tier expira solo) · firewall ➖ (lo maneja la plataforma) · redundancia ❌ (una sola
-instancia) · recuperación ante desastres ❌ (sin plan) · escalabilidad horizontal/vertical ⚠️ (diseño stateless
-ayuda, pero no configurado) · cache ❌ · cola de procesamiento ❌ (no hace falta todavía) · tareas en segundo
-plano ❌ (nada corre solo, "Cerrar Jornada" es 100% manual).
+**Infraestructura:** balanceador de carga ❌ (pendiente de decisión de plan - con ~950 trabajadores de campo
+como usuarios reales de la app SÍ hay que resolverlo, ver Pendiente) · backups de BD ❌ (no verificado - urgente
+revisar plan de Render/Railway, el free tier expira solo) · firewall ➖ (lo maneja la plataforma) · redundancia
+❌ (una sola instancia) · recuperación ante desastres ❌ (sin plan) · escalabilidad horizontal/vertical ⚠️
+(diseño stateless ayuda + pool de conexiones de Sequelize ya explícito desde 2026-09-25 para poder escalar
+réplicas sin sorpresas, pero sin plan pago que dé las réplicas todavía) · cache ❌ · cola de procesamiento ❌
+(no hace falta todavía) · tareas en segundo plano ❌ (nada corre solo, "Cerrar Jornada" es 100% manual).
 
 **Ciclo de desarrollo:** ambientes dev/stage/prod ⚠️ (solo dev y prod, sin staging) · secretos ✅ (`.env`
 gitignored, `JWT_SECRET` falla duro si falta) · CI/CD ❌ (sin GitHub Actions, deploy automático de la plataforma
@@ -617,6 +619,37 @@ usuarios reales, no cumple: sin pruebas, sin CI/CD, sin observabilidad de ningú
 3 huecos de seguridad baratos de cerrar (CORS abierto, sin rate limiting, sin helmet) que son la prioridad
 inmediata. Balanceador de carga/redundancia pasaron de "no aplica" a "sí aplica" en cuanto se confirmó la escala
 real (~950 trabajadores de campo como usuarios de la app, ~150 de oficina que no la usan, de un total de ~1100).
+
+### Cierre de los 3 huecos baratos (2026-09-25)
+
+- **CORS**: `app.ts` ya no usa `cors()` sin argumentos. Ahora lee `process.env.CORS_ORIGIN` (lista separada por
+  comas, para agregar dominios sin tocar código) y solo acepta esos orígenes; sin la variable configurada, cae al
+  dominio real de producción en Vercel (`https://horometros-frugalp.vercel.app`, el "Domain" estable del
+  proyecto - no las URLs de preview con hash que cambian en cada deploy) + `http://localhost:4200` para
+  desarrollo, así que no hace falta configurar nada para que el frontend actual siga funcionando tal cual. Si
+  agregan un dominio propio o algún otro deploy de Vercel más adelante, ahí sí hay que setear `CORS_ORIGIN` en
+  las variables de entorno de Render con la lista completa (reemplaza el fallback, no se suma a él).
+- **Rate limiting**: `middlewares/rate-limit.middleware.ts` (nuevo) - `limitadorLogin` (10 intentos/15min) en
+  `POST /api/auth/login` y `POST /api/asistencia/marcar-codigo` (comparten el mismo balde por IP, ambos piden
+  clave); `limitadorMarcacion` (30/15min, más laxo) en `POST /api/asistencia/marcar-qr` (solo pide un
+  `operador_id`, no una clave). Guarda el conteo en memoria del proceso - si algún día corren 2+ réplicas del
+  backend detrás de un balanceador, cada réplica cuenta aparte (el límite real efectivo se multiplica por la
+  cantidad de réplicas); no hace falta resolverlo todavía, pero si se vuelve un problema real la solución es un
+  store compartido (Redis) en vez del de memoria por defecto.
+- **Helmet**: `app.use(helmet())` en `app.ts` - cabeceras de seguridad por defecto (CSP, X-Frame-Options,
+  X-Content-Type-Options, etc.), sin configuración especial.
+- **`trust proxy`**: `app.set('trust proxy', 1)` - necesario porque Render/Railway ponen la app detrás de su
+  propio proxy inverso; sin esto, Express ve la IP del proxy en vez de la del cliente real y el rate limiting de
+  arriba queda inútil (o directamente `express-rate-limit` v8+ tira error por no poder confiar en
+  `X-Forwarded-For` sin este ajuste explícito).
+- **Pool de conexiones de Sequelize** (`database.ts`): antes sin configurar (default de Sequelize, `max:5`).
+  Ahora explícito (`max:10` por instancia) para que escalar horizontalmente el backend sea un número conocido
+  (réplicas × 10 conexiones) en vez de una sorpresa contra el límite de conexiones del plan de Postgres
+  contratado - ajustar ese `max` si el plan de BD cambia.
+
+Verificado con curl local: `OPTIONS` con un origen no permitido no devuelve `Access-Control-Allow-Origin` (el
+navegador lo bloquea solo); 10 intentos seguidos de login con clave incorrecta devuelven 401, el 11º en adelante
+429; las cabeceras de Helmet aparecen en cualquier respuesta.
 
 ## Pendiente
 

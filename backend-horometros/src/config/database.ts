@@ -19,7 +19,20 @@ export const sequelize = new Sequelize(
                 require: true,
                 rejectUnauthorized: false
             }
-        } : {}
+        } : {},
+        /*
+        Sin esto, Sequelize usa su default (max:5) - suficiente para probar local, pero cada instancia del
+        backend que corra en produccion abre su PROPIO pool: con 2 replicas seria 2x5=10 conexiones, con mas
+        replicas escala sin control y puede chocar contra el limite de conexiones que permita el plan de
+        Postgres. Se deja explicito y moderado (max:10 por instancia) para que escalar horizontalmente sea un
+        numero conocido, no una sorpresa - ajustar segun el limite real del plan de BD contratado.
+        */
+        pool: {
+            max: 10,
+            min: 0,
+            acquire: 30000,
+            idle: 10000,
+        },
     }
 );
 
