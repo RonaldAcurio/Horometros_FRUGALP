@@ -611,10 +611,12 @@ de negocio - O/X, timestamps - pero no auditoría técnica de acceso) · anális
 tiendas (certificados de firma, perfiles de aprovisionamiento, firmas, bill of materials de tienda, rendimiento
 nativo, compatibilidad entre dispositivos, analítica de app - todo esto se activa cuando se empaquete). Dos
 excepciones que sí aplican YA, como web, porque ya se maneja PII real de trabajadores en producción: política de
-privacidad ❌ (no existe) · términos y condiciones ❌ (no existen) · protección de datos personales ⚠️ (mismo
-hueco que cifrado de datos sensibles) · actualización de dependencias ✅ (arreglado 2026-09-25, Dependabot
-semanal en los 2 proyectos + Actions) · vulnerabilidades de terceros ✅ (arreglado 2026-09-25, `npm audit` corre
-en CI y quedó en 0 en ambos proyectos, ver abajo).
+privacidad ✅ (arreglado 2026-09-25, borrador redactado + gate de aceptación en el login, ver abajo - falta que
+la empresa cliente complete los datos legales entre corchetes antes de ir a producción real) · términos y
+condiciones ✅ (mismo documento/mismo arreglo) · protección de datos personales ⚠️ (mismo hueco que cifrado de
+datos sensibles) · actualización de dependencias ✅ (arreglado 2026-09-25, Dependabot semanal en los 2 proyectos
++ Actions) · vulnerabilidades de terceros ✅ (arreglado 2026-09-25, `npm audit` corre en CI y quedó en 0 en
+ambos proyectos, ver abajo).
 
 **Veredicto:** la base de código está sólida donde más cuesta acertar (ORM parametrizado, Angular sin XSS,
 claves con bcrypt, JWT bien diseñado, integridad referencial real). Como operación de producción con cientos de
@@ -693,6 +695,43 @@ navegador lo bloquea solo); 10 intentos seguidos de login con clave incorrecta d
   todavía, ver "Pendiente").
 - **`.github/dependabot.yml`** (nuevo): PRs semanales de actualización de dependencias para `backend-horometros`,
   `frontend-horometros` y las propias GitHub Actions - máximo 5 PRs abiertos a la vez por ecosistema.
+
+### Política de Privacidad/Términos de Uso + gate de aceptación en el primer login (2026-09-25)
+
+Redactado un borrador (responsable del tratamiento, datos que recopila el Sistema, base legal LOPDP, derechos
+ARCO+, seguridad, objeto del servicio, propiedad intelectual, ley aplicable) con datos entre corchetes `[ ]`
+para que la empresa cliente los complete (razón social, RUC, correo de contacto) antes de ir a producción real
+con un cliente puntual. El mismo texto se embebió en `TerminosModal` (frontend) para que el trabajador lo pueda
+leer sin salir de la app - no es solo un documento aparte.
+
+- **`terminos_aceptados_en`** (`DATE`, nullable) agregado a `usuarios` Y `operadores` (migración
+  `20260925000000-agregar-terminos-aceptados.js`) - `null` = todavía no aceptó. Aplica a las 2 tablas porque
+  ambas tienen login propio (ver "Login único" en `auth.controller.ts`).
+- **Login** (`auth.controller.ts`): el `perfil` que devuelve ahora siempre incluye `terminos_aceptados: boolean`
+  (para las 2 ramas, Usuario y Operador) - el frontend decide con esto solo, sin pedir nada aparte.
+- **`POST /api/auth/aceptar-terminos`** (nuevo, `verificarAutenticacion` sin `requireRol` - cualquier cuenta
+  logueada puede aceptar): pone `terminos_aceptados_en = NOW()` en la tabla que corresponda según
+  `req.auth.tipo`. No hay endpoint para "desaceptar" - si algún día cambia el documento y hace falta pedir de
+  nuevo, la forma de resetear es un `UPDATE ... SET terminos_aceptados_en = NULL` manual (no se construyó UI para
+  esto, es un caso raro).
+- **`TerminosModal`** (`shared/terminos-modal/`, nuevo, montado una sola vez en `app.html` fuera del
+  `router-outlet` para poder bloquear cualquier pantalla) - un solo componente para 2 modos, decididos con 2
+  signals computados:
+  - **Bloqueante** (`modoBloqueante`): `authService.estaAutenticado() && perfil().terminos_aceptados === false`.
+    Sin botón "Cerrar" - el único botón habilitado es "Aceptar y continuar", deshabilitado hasta marcar el
+    checkbox. Aparece automáticamente apenas el login trae `terminos_aceptados: false`, sin importar en qué
+    pantalla caiga el rol (Dashboard, `mi-jornada`, `escaner`, etc.) porque vive en `app.html`.
+  - **Libre** (`TerminosService.mostrarLibre`, signal nuevo e independiente): lo abre el botón "Política de
+    Privacidad" del header global (`app.html`) o del pie del login (`login.html`, visible SIN loguearse). Solo
+    tiene botón "Cerrar", nunca toca `terminos_aceptados_en` - es 100% para releer, no para volver a aceptar.
+  - El checkbox usa una propiedad plana (`aceptado = false`) con `[(ngModel)]`, no un signal directo - mismo
+    patrón que el resto de los formularios de la app (los signals se reservan para toggles con `(click)`, como
+    `mostrarClave`).
+- Probado end-to-end con Playwright contra Postgres+backend locales: login con `terminos_aceptados:false` →
+  modal bloqueante aparece, botón deshabilitado hasta marcar el checkbox → aceptar → recargar la página → el
+  modal YA NO vuelve a aparecer (perfil persistido en `localStorage` + confirmado con un segundo login real
+  que trae `terminos_aceptados:true` desde la BD) → botón del header abre el modo libre (solo "Cerrar", sin
+  checkbox ni botón de aceptar).
 
 ## Pendiente
 

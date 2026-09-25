@@ -49,6 +49,10 @@
 .sesion-rol {
   @apply text-[10px] uppercase tracking-wide text-green-700 font-medium;
 }
+
+.link-politica {
+  @apply text-xs text-gray-400 hover:text-gray-600 underline bg-transparent border-0 cursor-pointer p-0;
+}
 .main-content {
   @apply flex-1 max-w-6xl w-full mx-auto p-4 md:p-6;
 }

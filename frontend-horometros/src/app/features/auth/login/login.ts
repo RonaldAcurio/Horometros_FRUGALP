@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
+import { TerminosService } from '../../../core/services/terminos.service';
 import { rutaHomePorRol } from '../../../core/utils/rutas-por-rol';
 
 @Component({
@@ -15,6 +16,7 @@ import { rutaHomePorRol } from '../../../core/utils/rutas-por-rol';
 export class Login {
   private authService = inject(AuthService);
   private router = inject(Router);
+  protected terminosService = inject(TerminosService);
 
   usuario = '';
   clave = '';

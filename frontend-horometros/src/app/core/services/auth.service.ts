@@ -44,6 +44,20 @@ export class AuthService {
     return !!rol && roles.includes(rol);
   }
 
+  // Gate de primer login (ver TerminosModal): marca terminos_aceptados=true en el perfil guardado, sin volver
+  // a pedirle nada al backend en el proximo login (queda en 'usuarios'/'operadores', ver auth.controller.ts).
+  aceptarTerminos(): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${environment.apiUrl}/auth/aceptar-terminos`, {}).pipe(
+      tap(() => {
+        const perfilActual = this.perfil();
+        if (!perfilActual) return;
+        const perfilActualizado: PerfilCuenta = { ...perfilActual, terminos_aceptados: true };
+        localStorage.setItem(CLAVE_PERFIL, JSON.stringify(perfilActualizado));
+        this.perfil.set(perfilActualizado);
+      })
+    );
+  }
+
   private guardarSesion(respuesta: RespuestaLogin): void {
     localStorage.setItem(CLAVE_TOKEN, respuesta.token);
     localStorage.setItem(CLAVE_PERFIL, JSON.stringify(respuesta.perfil));

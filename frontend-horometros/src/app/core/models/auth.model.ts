@@ -20,6 +20,9 @@ export interface PerfilCuenta {
   el QR flotante. Es estricto: nunca se le ofrecen los dos caminos a la vez (ver CLAUDE.md).
   */
   hacienda_requiere_codigo?: boolean;
+  // false = todavia no acepto la Politica de Privacidad/Terminos de Uso (gate de primer login, ver CLAUDE.md
+  // y TerminosModal). El login SIEMPRE lo manda, para ambos tipos de cuenta.
+  terminos_aceptados: boolean;
 }
 
 export interface RespuestaLogin {

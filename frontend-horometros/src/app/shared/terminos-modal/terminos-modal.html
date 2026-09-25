@@ -1,0 +1,99 @@
+<div class="modal-backdrop" *ngIf="mostrar()">
+  <div class="modal-card terminos-card">
+    <h3 class="modal-title">Política de Privacidad y Términos de Uso</h3>
+    <p class="terminos-empresa">FRUGALP — Control Agrícola &amp; Horómetros</p>
+
+    <div class="terminos-texto">
+      <p class="terminos-nota">
+        <strong>Nota:</strong> los datos entre corchetes [ ] los completa la empresa que opera el sistema
+        (razón social, RUC, correo de contacto) antes de la puesta en marcha.
+      </p>
+
+      <h4>Política de Privacidad</h4>
+
+      <p>
+        <strong>1. Responsable y datos que se recopilan.</strong>
+        [Razón social de la empresa] ([RUC]), con domicilio en Santo Domingo, Ecuador, es responsable del
+        tratamiento de los siguientes datos, recopilados únicamente del personal que usa el Sistema en su rol
+        laboral:
+      </p>
+      <table class="terminos-tabla">
+        <thead>
+          <tr><th>Dato</th><th>De quién</th><th>Para qué se usa</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Nombre, cédula, teléfono, dirección</td><td>Mecánicos y Operadores</td><td>Identificación y hoja de asistencia</td></tr>
+          <tr><td>Firma digital (imagen)</td><td>Mecánicos y Operadores</td><td>Conformidad con el reporte diario</td></tr>
+          <tr><td>Usuario y clave</td><td>Todo el personal</td><td>Acceso individual y trazabilidad</td></tr>
+          <tr><td>Cargo, hacienda, supervisor</td><td>Todo el personal</td><td>Permisos y jerarquía de aprobación</td></tr>
+          <tr><td>Hora de entrada/salida</td><td>Mecánicos y Operadores</td><td>Control de asistencia</td></tr>
+          <tr><td>Actividades, observaciones, horómetro</td><td>Mecánicos y Operadores</td><td>Reporte diario de labores</td></tr>
+        </tbody>
+      </table>
+      <p>
+        El Sistema no recopila ubicación GPS en tiempo real, datos biométricos ni información financiera o de
+        salud.
+      </p>
+
+      <p>
+        <strong>2. Base legal, conservación y terceros.</strong>
+        El tratamiento se basa en la relación laboral y en la Ley Orgánica de Protección de Datos Personales
+        (LOPDP) del Ecuador. Los datos se conservan mientras dure la relación laboral y hasta [N años] después,
+        solo para fines de respaldo o requerimientos legales. El Sistema se aloja en proveedores de nube
+        (hosting) que actúan como encargados del tratamiento y pueden estar fuera de Ecuador; no se comparten
+        datos con terceros con fines comerciales.
+      </p>
+
+      <p>
+        <strong>3. Derechos y seguridad.</strong>
+        Todo trabajador puede ejercer gratuitamente sus derechos de acceso, rectificación, cancelación,
+        oposición y portabilidad sobre sus datos, escribiendo a [correo de contacto]. El Sistema protege la
+        información con claves cifradas (bcrypt), sesiones con expiración, comunicación HTTPS, límite de
+        intentos de acceso y acceso restringido por rol.
+      </p>
+
+      <h4>Términos y Condiciones de Uso</h4>
+
+      <p>
+        <strong>4. Objeto, cuentas y uso aceptable.</strong>
+        FRUGALP es un sistema interno de control de asistencia y actividades, de uso exclusivo del personal de
+        [Razón social de la empresa]. Cada cuenta es personal e intransferible; el titular es responsable de lo
+        que se registre desde ella. Está prohibido registrar información falsa o intentar acceder a cuentas
+        ajenas. El Sistema depende de internet y de proveedores externos, por lo que no se garantiza
+        disponibilidad ininterrumpida al 100%.
+      </p>
+
+      <p>
+        <strong>5. Propiedad intelectual y responsabilidad.</strong>
+        Estos Términos regulan solo el uso del Sistema por el trabajador; la propiedad del software se rige por
+        el contrato de compraventa/licencia firmado aparte entre el desarrollador y la empresa. Las hojas de
+        asistencia y reportes generados son propiedad de la empresa como registros laborales. La empresa no
+        responde por fallas de conectividad ajenas a su control.
+      </p>
+
+      <p>
+        <strong>6. Vigencia y ley aplicable.</strong>
+        Este documento rige desde que el trabajador recibe sus credenciales y mientras dure su relación laboral.
+        Se rige por las leyes de la República del Ecuador, en particular la LOPDP y el Código del Trabajo.
+        Contacto: [correo de contacto] — Santo Domingo, Ecuador.
+      </p>
+    </div>
+
+    <ng-container *ngIf="modoBloqueante(); else botonesLibre">
+      <label class="terminos-checkbox">
+        <input type="checkbox" [(ngModel)]="aceptado" name="aceptoTerminos" />
+        <span>He leído y acepto la Política de Privacidad y los Términos de Uso.</span>
+      </label>
+      <div class="flex justify-end gap-2 pt-3">
+        <button type="button" class="btn btn-primary" [disabled]="!aceptado || guardando()" (click)="aceptar()">
+          {{ guardando() ? 'Guardando…' : 'Aceptar y continuar' }}
+        </button>
+      </div>
+    </ng-container>
+    <ng-template #botonesLibre>
+      <div class="flex justify-end gap-2 pt-3">
+        <button type="button" class="btn btn-secondary" (click)="cerrar()">Cerrar</button>
+      </div>
+    </ng-template>
+  </div>
+</div>

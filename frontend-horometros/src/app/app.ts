@@ -4,12 +4,14 @@ import { RouterOutlet, RouterLink, Router, NavigationEnd } from '@angular/router
 import { filter } from 'rxjs/operators';
 import { Toast } from './shared/toast/toast';
 import { ConfirmModal } from './shared/confirm-modal/confirm-modal';
+import { TerminosModal } from './shared/terminos-modal/terminos-modal';
 import { AuthService } from './core/services/auth.service';
+import { TerminosService } from './core/services/terminos.service';
 import { rutaHomePorRol } from './core/utils/rutas-por-rol';
 
 @Component({
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, Toast, ConfirmModal],
+  imports: [CommonModule, RouterOutlet, RouterLink, Toast, ConfirmModal, TerminosModal],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',
@@ -18,6 +20,7 @@ export class App {
   protected readonly title = signal('frontend-horometros');
   private router = inject(Router);
   protected authService = inject(AuthService);
+  protected terminosService = inject(TerminosService);
 
   // Variables dinámicas para el botón del Header
   menuButtonText = 'Menú Principal';

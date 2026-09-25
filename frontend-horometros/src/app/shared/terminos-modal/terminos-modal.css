@@ -1,0 +1,62 @@
+.terminos-card {
+  max-width: 42rem;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.terminos-empresa {
+  @apply text-sm mb-3;
+  color: var(--text-muted);
+}
+
+.terminos-texto {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  padding-right: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-main);
+}
+
+.terminos-texto h4 {
+  margin: 1rem 0 0.5rem 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.terminos-texto h4:first-child {
+  margin-top: 0;
+}
+
+.terminos-nota {
+  background-color: rgba(242, 183, 5, 0.12);
+  border: 1px solid var(--amarillo-hover);
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+.terminos-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  margin: 0.5rem 0;
+}
+
+.terminos-tabla th,
+.terminos-tabla td {
+  border: 1px solid var(--border-card);
+  padding: 0.375rem 0.5rem;
+  text-align: left;
+}
+
+.terminos-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}

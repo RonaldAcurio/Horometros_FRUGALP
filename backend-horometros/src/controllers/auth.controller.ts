@@ -69,6 +69,7 @@ export const login = async(req: Request, res: Response):Promise<void> => {
                     rol: cuentaUsuario.cargo,
                     hacienda_id: cuentaUsuario.hacienda_id,
                     hacienda_nombre: haciendaNombre,
+                    terminos_aceptados: !!cuentaUsuario.terminos_aceptados_en,
                 },
             });
             return;
@@ -133,6 +134,7 @@ export const login = async(req: Request, res: Response):Promise<void> => {
                     rol: cuentaOperador.rol,
                     hacienda_id: haciendaId,
                     hacienda_requiere_codigo: haciendaRequiereCodigo,
+                    terminos_aceptados: !!cuentaOperador.terminos_aceptados_en,
                 },
             });
             return;
@@ -146,3 +148,27 @@ export const login = async(req: Request, res: Response):Promise<void> => {
 
     }
 }
+
+/*
+Aceptacion de la Politica de Privacidad/Terminos de Uso (ver CLAUDE.md): se pide una sola vez, en el primer login
+de cada cuenta (Usuario de oficina u Operador de campo, distinguidos por req.auth.tipo). Requiere JWT valido
+(cualquier rol) - no hay chequeo de rol adicional porque cualquier cuenta que se loguea debe poder aceptar.
+*/
+export const aceptarTerminos = async(req:Request, res:Response):Promise<void> => {
+    try{
+        if(!req.auth){
+            res.status(401).json({ message:'Falta el token de autenticacion.'});
+            return;
+        }
+
+        if(req.auth.tipo === 'usuario'){
+            await Usuario.update({ terminos_aceptados_en: new Date() }, { where: { id: req.auth.id }});
+        }else{
+            await Operador.update({ terminos_aceptados_en: new Date() }, { where: { id: req.auth.id }});
+        }
+
+        res.json({ message: 'Terminos aceptados correctamente.'});
+    }catch(err){
+        res.status(500).json({ message: 'Error al registrar la aceptacion de terminos.', err});
+    }
+};

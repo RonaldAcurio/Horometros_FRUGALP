@@ -22,6 +22,8 @@ export class Usuario extends Model< InferAttributes<Usuario>, InferCreationAttri
     puede tener a la vez 1 Supervisor y 1 Escaner, pero nunca 2 Supervisores ni 2 Escaneres.
     */
     declare hacienda_id: CreationOptional<number| null>;
+    // null = todavia no acepto la Politica de Privacidad/Terminos de Uso (ver CLAUDE.md, gate de primer login).
+    declare terminos_aceptados_en: CreationOptional<Date | null>;
 }
 
 Usuario.init(
@@ -62,6 +64,10 @@ Usuario.init(
                 model: 'haciendas',
                 key: 'id',
             },
+        },
+        terminos_aceptados_en:{
+            type: DataTypes.DATE,
+            allowNull: true,
         },
     },{
         sequelize,

@@ -20,6 +20,10 @@
           <span class="sesion-nombre">{{ perfil.nombre_completo }}</span>
           <span class="sesion-rol">{{ perfil.rol }}{{ perfil.hacienda_nombre ? ' · ' + perfil.hacienda_nombre : '' }}</span>
         </div>
+        <button type="button" (click)="terminosService.abrir()" class="link-politica">
+          Política de Privacidad
+        </button>
+
         <button type="button" *ngIf="authService.estaAutenticado()" (click)="cerrarSesion()" class="btn-menu">
           Cerrar sesión
         </button>
@@ -40,4 +44,6 @@
   <!-- Notificaciones y confirmaciones globales (con estilos propios, sin depender de alert()/confirm() del navegador) -->
   <app-toast></app-toast>
   <app-confirm-modal></app-confirm-modal>
+  <!-- Gate de Terminos: vive fuera del router-outlet para poder bloquear cualquier pantalla (ver terminos-modal.ts) -->
+  <app-terminos-modal></app-terminos-modal>
 </div>

@@ -50,3 +50,7 @@
 .login-boton {
   @apply w-full mt-3;
 }
+
+.login-link-politica {
+  @apply w-full text-center text-xs text-gray-400 hover:text-gray-600 underline bg-transparent border-0 cursor-pointer mt-4;
+}
