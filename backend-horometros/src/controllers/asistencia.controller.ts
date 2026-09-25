@@ -84,8 +84,8 @@ const validarCredencialesOperador = async(
             res.status(400).json({ message: 'usuario y clave van juntos: si envias uno, tienes que enviar el otro.'});
             return null;
         }
-        if(clave.length < 6){
-            res.status(400).json({ message: 'La clave debe tener al menos 6 caracteres.'});
+        if(clave.length < 8){
+            res.status(400).json({ message: 'La clave debe tener al menos 8 caracteres.'});
             return null;
         }
         const usuarioExistente = await Usuario.findOne({ where: { usuario }});
@@ -1029,8 +1029,8 @@ export const resetearClaveOperador = async(req:Request, res:Response):Promise<vo
         const { id } = req.params;
         const { clave } = req.body;
 
-        if(!clave || clave.length < 6){
-            res.status(400).json({message:'La clave debe tener al menos 6 caracteres.'});
+        if(!clave || clave.length < 8){
+            res.status(400).json({message:'La clave debe tener al menos 8 caracteres.'});
             return;
         }
 

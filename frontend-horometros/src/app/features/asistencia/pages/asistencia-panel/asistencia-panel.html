@@ -125,9 +125,9 @@
                 <input type="text" class="input-control" [(ngModel)]="credencialesOperador.usuario" placeholder="usuario">
               </div>
               <div class="form-group" *ngIf="credencialesOperador.usuario">
-                <label class="form-label">Clave (mínimo 6 caracteres)</label>
+                <label class="form-label">Clave (mínimo 8 caracteres)</label>
                 <div class="campo-clave">
-                  <input [type]="mostrarClaveCredenciales() ? 'text' : 'password'" class="input-control" [(ngModel)]="credencialesOperador.clave">
+                  <input [type]="mostrarClaveCredenciales() ? 'text' : 'password'" class="input-control" [(ngModel)]="credencialesOperador.clave" minlength="8">
                   <button type="button" class="boton-ojo" (click)="mostrarClaveCredenciales.set(!mostrarClaveCredenciales())">
                     {{ mostrarClaveCredenciales() ? '🙈' : '👁️' }}
                   </button>
@@ -401,13 +401,13 @@
           <input type="text" [(ngModel)]="nuevoOperador.usuario" name="usuario" class="input-control w-full">
         </div>
         <div *ngIf="nuevoOperador.usuario">
-          <label class="form-label">Clave (mínimo 6 caracteres)</label>
+          <label class="form-label">Clave (mínimo 8 caracteres)</label>
           <div class="campo-clave">
             <input
               [type]="mostrarClaveNuevoOperador() ? 'text' : 'password'"
               [(ngModel)]="nuevoOperadorClave"
               name="claveNuevoOperador"
-              minlength="6"
+              minlength="8"
               class="input-control w-full"
             >
             <button type="button" class="boton-ojo" (click)="mostrarClaveNuevoOperador.set(!mostrarClaveNuevoOperador())">
@@ -430,14 +430,14 @@
       <p class="text-muted-sm mb-3">La clave anterior no se puede recuperar - se reemplaza por esta nueva.</p>
       <form (ngSubmit)="guardarClaveResetOperador()" #formClaveOp="ngForm" class="space-y-3">
         <div class="form-group">
-          <label class="form-label">Clave nueva * (mínimo 6 caracteres)</label>
+          <label class="form-label">Clave nueva * (mínimo 8 caracteres)</label>
           <div class="campo-clave">
             <input
               [type]="mostrarClaveResetOperador() ? 'text' : 'password'"
               [(ngModel)]="claveResetOperador"
               name="claveResetOperador"
               required
-              minlength="6"
+              minlength="8"
               class="input-control w-full"
             >
             <button type="button" class="boton-ojo" (click)="mostrarClaveResetOperador.set(!mostrarClaveResetOperador())">

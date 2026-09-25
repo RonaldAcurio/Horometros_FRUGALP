@@ -27,8 +27,8 @@ export const crearUsuario = async(req:Request, res:Response):Promise<void> => {
             res.status(400).json({ message: `cargo debe ser uno de: ${CARGOS_VALIDOS.join(', ')}.`});
             return;
         }
-        if(clave.length < 6){
-            res.status(400).json({ message: 'La clave debe tener al menos 6 caracteres.'});
+        if(clave.length < 8){
+            res.status(400).json({ message: 'La clave debe tener al menos 8 caracteres.'});
             return;
         }
 
@@ -102,8 +102,8 @@ export const resetearClaveUsuario = async(req:Request, res:Response):Promise<voi
         const { id } = req.params;
         const { clave } = req.body;
 
-        if(!clave || clave.length<6 ){
-            res.status(400).json({message:'La clave debe tener al menos 6 caracteres.'});
+        if(!clave || clave.length < 8){
+            res.status(400).json({message:'La clave debe tener al menos 8 caracteres.'});
             return;
         }
 

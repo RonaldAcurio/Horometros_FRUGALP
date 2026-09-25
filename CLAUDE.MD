@@ -596,22 +596,25 @@ réplicas sin sorpresas, pero sin plan pago que dé las réplicas todavía) · c
 (no hace falta todavía) · tareas en segundo plano ❌ (nada corre solo, "Cerrar Jornada" es 100% manual).
 
 **Ciclo de desarrollo:** ambientes dev/stage/prod ⚠️ (solo dev y prod, sin staging) · secretos ✅ (`.env`
-gitignored, `JWT_SECRET` falla duro si falta) · CI/CD ❌ (sin GitHub Actions, deploy automático de la plataforma
-pero sin validación previa) · pruebas unitarias ❌ · integración ❌ · end-to-end ❌ (los Playwright de esta
-sesión fueron manuales, no quedaron en el repo) · carga ❌.
+gitignored, `JWT_SECRET` falla duro si falta) · CI/CD ✅ (arreglado 2026-09-25, GitHub Actions en cada push/PR a
+main, ver abajo) · pruebas unitarias ⚠️ (los specs por componente que ya traía Angular quedaron arreglados y
+corriendo en CI, pero siguen siendo el boilerplate default - "se crea sin errores" - no pruebas de lógica de
+negocio real) · integración ❌ · end-to-end ❌ (los Playwright de sesiones anteriores fueron manuales, no
+quedaron en el repo) · carga ❌.
 
-**Configuración y observabilidad:** login ✅/⚠️ (bien implementado, falta límite de intentos y política de clave
-más fuerte que 6 caracteres) · monitoreo de métricas ❌ · alertas ❌ · trazabilidad ⚠️ (hay auditoría de negocio
-- O/X, timestamps - pero no auditoría técnica de acceso) · análisis de errores ❌ (solo `console.error`, sin
-Sentry/similar) · observabilidad de caídas ❌ (existe `/api/health` pero nada lo monitorea).
+**Configuración y observabilidad:** login ✅ (arreglado 2026-09-25: rate limiting ya estaba de la ronda anterior,
+clave mínima subida de 6 a 8 caracteres) · monitoreo de métricas ❌ · alertas ❌ · trazabilidad ⚠️ (hay auditoría
+de negocio - O/X, timestamps - pero no auditoría técnica de acceso) · análisis de errores ❌ (solo
+`console.error`, sin Sentry/similar) · observabilidad de caídas ❌ (existe `/api/health` pero nada lo monitorea).
 
 **App móvil:** ➖ no aplica en su totalidad todavía - sigue siendo 100% web, sin build nativa ni presencia en
 tiendas (certificados de firma, perfiles de aprovisionamiento, firmas, bill of materials de tienda, rendimiento
 nativo, compatibilidad entre dispositivos, analítica de app - todo esto se activa cuando se empaquete). Dos
 excepciones que sí aplican YA, como web, porque ya se maneja PII real de trabajadores en producción: política de
 privacidad ❌ (no existe) · términos y condiciones ❌ (no existen) · protección de datos personales ⚠️ (mismo
-hueco que cifrado de datos sensibles) · actualización de dependencias ⚠️ (se limpiaron sueltas esta ronda, sin
-proceso automático tipo Dependabot) · vulnerabilidades de terceros ❌ (sin `npm audit` en ningún pipeline).
+hueco que cifrado de datos sensibles) · actualización de dependencias ✅ (arreglado 2026-09-25, Dependabot
+semanal en los 2 proyectos + Actions) · vulnerabilidades de terceros ✅ (arreglado 2026-09-25, `npm audit` corre
+en CI y quedó en 0 en ambos proyectos, ver abajo).
 
 **Veredicto:** la base de código está sólida donde más cuesta acertar (ORM parametrizado, Angular sin XSS,
 claves con bcrypt, JWT bien diseñado, integridad referencial real). Como operación de producción con cientos de
@@ -650,6 +653,46 @@ real (~950 trabajadores de campo como usuarios de la app, ~150 de oficina que no
 Verificado con curl local: `OPTIONS` con un origen no permitido no devuelve `Access-Control-Allow-Origin` (el
 navegador lo bloquea solo); 10 intentos seguidos de login con clave incorrecta devuelven 401, el 11º en adelante
 429; las cabeceras de Helmet aparecen en cualquier respuesta.
+
+### CI/CD, dependencias y clave mínima (2026-09-25)
+
+- **GitHub Actions** (`.github/workflows/ci.yml`, nuevo): corre en cada push y PR hacia `main`. Job `backend`:
+  `npm ci` + `npm run typecheck` (`tsc --noEmit`). Job `frontend`: `npm ci` + `npm run typecheck` + `npm test`
+  (Vitest vía el builder `@angular/build:unit-test` de Angular 22, no necesita browser/Chrome porque corre en
+  jsdom, a diferencia del Karma viejo) + `npm run build`. No reemplaza el despliegue automático de
+  Render/Vercel, lo complementa: si esto falla, el error queda visible en GitHub ANTES de que el push llegue a
+  producción.
+- **Specs rotos arreglados** (bloqueaban el `npm test` de arriba, 4 de 8 archivos fallaban con
+  `NG0201: No provider found for ActivatedRoute` porque sus componentes usan `RouterLink` en la plantilla y el
+  `TestBed` de cada spec no proveía ningún router): `app.spec.ts`, `dashboard.component.spec.ts`,
+  `asistencia-menu.spec.ts`, `supervisor-panel.spec.ts` (este último también necesitó `provideHttpClient()`,
+  sus servicios inyectados lo requieren). De paso, `app.spec.ts` tenía una aserción del boilerplate original de
+  `ng new` nunca actualizada (esperaba el texto `"Hello, frontend-horometros"`, que no existe en ningún lado de
+  la app real) - se corrigió para comprobar `"FRUGALP"` (el `<h1>` real de `app.html`).
+- **`marcacion-kiosco.spec.ts` excluido del test target** (`angular.json`, `test.options.exclude`): el
+  componente usa `ZXingScannerModule` (`@zxing/ngx-scanner`), que internamente importa `@zxing/library` - un
+  paquete CommonJS cuyos "named exports" (`BarcodeFormat`, etc.) Vitest no puede resolver en el entorno de
+  pruebas (`SyntaxError: Named export 'BarcodeFormat' not found`), aunque en el navegador real (`ng serve`/
+  `ng build`) funciona sin problema - es una incompatibilidad de bundler de pruebas con esa librería en
+  particular, no un bug de la app. Queda documentado en un comentario arriba del `describe()` del spec.
+- **`qcore` eliminado** (`frontend-horometros/package.json`): dependencia directa que nunca se usó en ningún
+  lado de `src/` (cero imports) - por el commit donde se agregó (junto a `@zxing/ngx-scanner`, en la integración
+  de QR) todo indica que fue una instalación accidental, no algo puesto a propósito. Era, ella sola, la fuente
+  de las 4 vulnerabilidades "high severity" que reportaba `npm audit` en el frontend (via su dependencia
+  `chalk-animation` → `meow` → `trim-newlines`, sin fix disponible). Al sacarla, `npm audit` del frontend quedó
+  en 0. En el backend, `npm audit fix` (sin `--force`) resolvió `qs`; queda una vulnerabilidad moderada
+  restante en `uuid` (vía `sequelize`) cuyo único fix downgradea `sequelize` a la v3 (breaking change real) - se
+  dejó como está a propósito, no se fuerza un downgrade de esa magnitud sin decisión explícita del usuario.
+- **Clave mínima subida de 6 a 8 caracteres**: las 4 validaciones del backend que la exigían
+  (`asistencia.controller.ts` x2, `usuario.controller.ts` x2) y los 5 lugares del frontend que la reflejaban
+  (`minlength`/texto de ayuda en `admin-panel.html` y `asistencia-panel.html`) - uno de esos 5 en el frontend no
+  tenía `minlength` en el `<input>`, solo el texto de ayuda, se le agregó de paso.
+- **`package.json` de ambos proyectos**: se agregó `typecheck` (antes solo existía como comando suelto de
+  `tsc`/`ng`) y se arregló `test` del backend, que literalmente fallaba siempre (`"echo Error: no test
+  specified && exit 1"`, el default de `npm init`) - ahora corre `typecheck` (no hay pruebas reales de backend
+  todavía, ver "Pendiente").
+- **`.github/dependabot.yml`** (nuevo): PRs semanales de actualización de dependencias para `backend-horometros`,
+  `frontend-horometros` y las propias GitHub Actions - máximo 5 PRs abiertos a la vez por ecosistema.
 
 ## Pendiente
 

@@ -1,0 +1,46 @@
+name: CI
+
+# Corre en cada push y en cada Pull Request hacia main - antes ningun cambio pasaba por ninguna
+# validacion automatica antes de llegar a producdcion (Render/Vercel despliegan directo del push).
+# Esto no reemplaza eso, lo complementa: si esto falla, el error queda visible en GitHub ANTES de
+# que alguien note algo raro ya en produccion.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend (typecheck)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend-horometros
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend-horometros/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+
+  frontend:
+    name: Frontend (typecheck, tests, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend-horometros
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend-horometros/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
