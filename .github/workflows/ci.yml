@@ -89,3 +89,56 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  # Necesita el backend Y el frontend corriendo juntos (Playwright los levanta solo, ver 'webServer' en
+  # playwright.config.ts) - job aparte de los de arriba. Ver CLAUDE.md, "Pruebas end-to-end".
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgre
+          POSTGRES_PASSWORD: postgres_ci
+          POSTGRES_DB: horometros_db_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: postgre
+      DB_PASSWORD: postgres_ci
+      DB_NAME: horometros_db_test
+      DB_NAME_TEST: horometros_db_test
+      # Claves de prueba, fijas y sin ningun valor real - mismo motivo que el job "backend-integration".
+      JWT_SECRET: clave_de_pruebas_e2e_no_usar_en_produccion
+      CIFRADO_CLAVE: '2222222222222222222222222222222222222222222222222222222222222222'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend-horometros/package-lock.json
+            frontend-horometros/package-lock.json
+      - run: npm ci
+        working-directory: backend-horometros
+      - run: npm ci
+        working-directory: frontend-horometros
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend-horometros
+      - run: npm run test:e2e
+        working-directory: frontend-horometros
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend-horometros/playwright-report/
+          retention-days: 7

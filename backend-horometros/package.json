@@ -7,6 +7,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.mts",
+    "e2e:server": "NODE_ENV=test sequelize-cli db:migrate && NODE_ENV=test tsx src/test-setup/sembrar-e2e.ts && NODE_ENV=test tsx watch src/index.ts",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "build": "npx tsc",

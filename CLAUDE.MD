@@ -602,8 +602,8 @@ gitignored, `JWT_SECRET`/`CIFRADO_CLAVE` fallan duro si faltan) · CI/CD ✅ (ar
 en cada push/PR a main, ver abajo) · pruebas unitarias ✅ (arreglado 2026-09-25: pruebas reales de lógica de
 negocio - validación de horas y vigencia del Token de Hacienda, backend y frontend - además de los specs por
 componente que ya traía Angular) · integración ✅ (arreglado 2026-09-25, ver abajo - contra Postgres real,
-corre en CI con un servicio de BD propio) · end-to-end ❌ (los Playwright de sesiones anteriores fueron
-manuales, no quedaron en el repo) · carga ❌.
+corre en CI con un servicio de BD propio) · end-to-end ✅ (arreglado 2026-09-25, ver abajo - Playwright real
+contra el navegador, backend y BD reales, esta vez sí quedó en el repo y corre en CI) · carga ❌.
 
 **Configuración y observabilidad:** login ✅ (arreglado 2026-09-25: rate limiting ya estaba de la ronda anterior,
 clave mínima subida de 6 a 8 caracteres) · monitoreo de métricas ❌ · alertas ❌ · trazabilidad ⚠️ (mejorado
@@ -944,6 +944,43 @@ era única (por la migración original que la agregó) - Sequelize no reconoce e
 SEGUNDO, redundante (`operadores_cedula_key1`, visible en la BD local de pruebas). Corregido: el `changeColumn`
 ya no repite `unique:true`, solo ensancha el tipo - un `ALTER COLUMN TYPE` no toca constraints existentes.
 Verificado con una migración desde cero: un solo índice UNIQUE en `cedula`, como corresponde.
+
+### Pruebas end-to-end reales (Playwright, 2026-09-25)
+
+Las últimas rondas de Playwright fueron siempre manuales (yo probando a mano antes de entregar un patch) y
+nunca quedaron en el repo. Esta vez sí: `@playwright/test` corre contra el navegador de verdad, el backend real
+(`tsx watch`) y la BD de test real (la misma infraestructura que ya armaron las pruebas de integración) - no es
+otro nivel de mocks, es la UI completa haciendo clics reales.
+
+- **`frontend-horometros/playwright.config.ts`**: `testDir: './e2e'` (fuera de `src/`, para no chocar con el
+  glob `src/**/*.spec.ts` de `ng test`/Vitest). `webServer` (un array: Playwright levanta y apaga los DOS
+  servidores solo, antes/después de toda la corrida) - backend vía `npm run e2e:server` (nuevo script del
+  backend: migra la BD de test + siembra una cuenta ADMIN fija + levanta el server, los tres con
+  `NODE_ENV=test`) y frontend vía `ng serve --configuration=e2e`. `fullyParallel:false`/`workers:1`: todos los
+  specs comparten el mismo backend y la misma BD real, en paralelo se pisarían entre sí.
+- **`environment.e2e.ts`** (nuevo, + configuración `e2e` en `angular.json` para `build`/`serve`): apunta a
+  `http://localhost:3000/api` (el backend de test) - separado de `environment.development.ts` a propósito, que
+  sigue apuntando a Render como siempre (nunca se toca para esto).
+- **`backend-horometros/src/test-setup/sembrar-e2e.ts`** (nuevo): limpia la BD de test y crea una cuenta
+  `e2e_admin` fija con `terminos_aceptados_en` ya seteado (para no interferir con specs que no son sobre ese
+  gate) - a diferencia de las pruebas de integración (que limpian entre cada test), e2e parte de un estado
+  inicial fijo una sola vez, porque navegar la UI real es mucho más lento.
+- **2 specs** (`frontend-horometros/e2e/`): `login.spec.ts` (clave incorrecta muestra error, login correcto
+  lleva al Dashboard, y el flujo completo del gate de Términos: `e2e_admin` crea una cuenta nueva vía la UI
+  real del Menú Admin, esa cuenta ve el modal bloqueante en su primer login, lo acepta, y no lo vuelve a ver
+  después de un refresh) · `admin-historial.spec.ts` (crear un usuario, resetear su clave, y confirmar que la
+  pestaña Historial muestra la fila correcta - quién, qué acción, sobre quién).
+- **Bug real encontrado en mis propios specs** (no en la app): el helper que confirma "el usuario ya aparece en
+  la tabla" buscaba por texto plano (`text=usuario123`) - el toast de éxito ("Usuario 'X' creado
+  correctamente") también contiene ese mismo texto, así que el locator matcheaba 2 elementos y Playwright lo
+  rechaza en "strict mode". Corregido apuntando a `.code-badge` (la celda real de la tabla), no a un texto
+  suelto.
+- CI: job nuevo `e2e` (`.github/workflows/ci.yml`), con su propio servicio de Postgres (mismo patrón que
+  `backend-integration`) - hace `npm ci` en las dos carpetas, `npx playwright install --with-deps chromium`, y
+  corre `npm run test:e2e` desde `frontend-horometros` (que levanta los dos servidores solo). Si algo falla,
+  sube el reporte de Playwright como artefacto para poder revisarlo sin tener que reproducirlo a mano.
+- Corrido 2 veces seguidas en local para confirmar que es repetible (usuarios de prueba con nombres únicos por
+  timestamp, no fijos) - 4/4 en ambas corridas.
 
 ## Pendiente
 
