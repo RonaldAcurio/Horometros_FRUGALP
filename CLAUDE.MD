@@ -618,8 +618,8 @@ Sentry/similar) · observabilidad de caídas ❌ (existe `/api/health` pero nada
 tiendas (certificados de firma, perfiles de aprovisionamiento, firmas, bill of materials de tienda, rendimiento
 nativo, compatibilidad entre dispositivos, analítica de app - todo esto se activa cuando se empaquete). Dos
 excepciones que sí aplican YA, como web, porque ya se maneja PII real de trabajadores en producción: política de
-privacidad ✅ (arreglado 2026-09-25, borrador redactado + gate de aceptación en el login, ver abajo - falta que
-la empresa cliente complete los datos legales entre corchetes antes de ir a producción real) · términos y
+privacidad ✅ (arreglado 2026-09-25, borrador redactado + gate de aceptación en el login + datos legales de
+FRUGALP AGRICOLA EXPORTADORA G-P CIA. LTDA. ya completados - RUC, correo de contacto, retención de 2 años) · términos y
 condiciones ✅ (mismo documento/mismo arreglo) · protección de datos personales ✅ (arreglado 2026-09-25, cifrado
 en reposo de cédula/teléfono/dirección, ver abajo) · actualización de dependencias ✅ (arreglado 2026-09-25, Dependabot semanal en los 2 proyectos
 + Actions) · vulnerabilidades de terceros ✅ (arreglado 2026-09-25, `npm audit` corre en CI y quedó en 0 en
