@@ -24,10 +24,14 @@ import { ConfirmacionService } from '../../../../core/services/confirmacion.serv
 export class AsistenciaPanel implements OnInit{
   operadores: Operador[] = [];
 
-  // Búsqueda y Paginación
+  // Búsqueda y Paginación (por servidor, ver cargarOperadores - antes filtraba/paginaba en el navegador sobre
+  // el arreglo completo, lo que salió lento en la prueba de carga apenas el volumen se acerca a los ~950
+  // operadores reales, ver CLAUDE.md "Pruebas de carga").
   terminoBusqueda: string = '';
   paginaActual: number = 1;
-  itemsPorPagina: number = 5;
+  totalPaginas: number = 1;
+  totalOperadores: number = 0;
+  private debounceOperadores?: ReturnType<typeof setTimeout>;
 
   // Operador Seleccionado
   operadorSeleccionado: Operador | null = null;
@@ -172,49 +176,30 @@ export class AsistenciaPanel implements OnInit{
   }
 
   cargarOperadores(): void {
-    this.asistenciaService.obtenerOperadores().subscribe({
-      next: (data: any) => {
-        this.operadores = Array.isArray(data) ? data : data?.data || [];
-        this.paginaActual = 1;
+    this.asistenciaService.obtenerOperadoresPaginado(this.paginaActual, 20, this.terminoBusqueda || undefined).subscribe({
+      next: (res) => {
+        this.operadores = res.data || [];
+        this.totalPaginas = res.totalPaginas || 1;
+        this.totalOperadores = res.total || 0;
         this.cdr.detectChanges();
       },
       error: (err) => console.error('Error cargando operadores:', err)
     });
   }
 
-  // FILTRADO Y PAGINACIÓN
-  get operadoresFiltrados(): Operador[] {
-    if (!this.operadores || !Array.isArray(this.operadores)) return [];
-    const termino = (this.terminoBusqueda || '').toLowerCase().trim();
-    if (!termino) return this.operadores;
-
-    return this.operadores.filter(op => {
-      const nombre = (op.nombre_completo || '').toString().toLowerCase();
-      const codigo = (op.codigo_megued || op.id || '').toString().toLowerCase();
-      const cedula = (op.cedula || '').toString().toLowerCase();
-      return nombre.includes(termino) || codigo.includes(termino) || cedula.includes(termino);
-    });
-  }
-
-  get operadoresPaginados(): Operador[] {
-    const filtrados = this.operadoresFiltrados;
-    if (filtrados.length === 0) return [];
-
-    const inicio = (this.paginaActual - 1) * this.itemsPorPagina;
-    return filtrados.slice(inicio, inicio + this.itemsPorPagina);
-  }
-
-  get totalPaginas(): number {
-    return Math.ceil(this.operadoresFiltrados.length / this.itemsPorPagina) || 1;
-  }
-
+  // BÚSQUEDA Y PAGINACIÓN (por servidor, ver cargarOperadores)
   onSearchChange(): void {
-    this.paginaActual = 1;
+    if (this.debounceOperadores) clearTimeout(this.debounceOperadores);
+    this.debounceOperadores = setTimeout(() => {
+      this.paginaActual = 1;
+      this.cargarOperadores();
+    }, 300);
   }
 
   cambiarPagina(nuevaPagina: number): void {
     if (nuevaPagina >= 1 && nuevaPagina <= this.totalPaginas) {
       this.paginaActual = nuevaPagina;
+      this.cargarOperadores();
     }
   }
 

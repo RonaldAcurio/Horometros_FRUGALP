@@ -1015,13 +1015,23 @@ entre sí y para encontrar problemas de diseño, no como SLA absoluto de producc
 | `GET /asistencia/hoy?pagina=1` | 950 asistencias hoy, paginado, 20 conc. | 109ms | 137ms | 161ms | ✅ |
 | `POST /asistencia/marcar-codigo` | 950 marcaciones distintas, 50 conc. | 3886ms | 6308ms | 9629ms | ✅ (0 errores, ver nota) |
 
-**Hallazgo real, pendiente de decisión:** `GET /asistencia/operadores` es el único de los 4 que NO tiene
-paginación (a diferencia de `/historial`, `/auditoria` y `/hoy`, que ya la tienen) - trae los 950+ Operadores de
-un solo golpe en cada carga del Menú Admin, y por eso es el más lento por lejos. Arreglarlo con el mismo patrón
-que los otros 3 es sencillo del lado del backend, pero el Menú Admin de hoy probablemente usa la lista completa
-para buscar/filtrar del lado del cliente - paginar en el servidor sin perder esa búsqueda instantánea necesita
-decidir si se agrega búsqueda por servidor o se vive con una carga inicial más pesada. Lo dejo marcado como
-pendiente en vez de tocarlo a ciegas, ver "Pendiente" más abajo.
+**Hallazgo resuelto (2026-09-25):** `GET /asistencia/operadores` era el único de los 4 sin paginación - traía
+los 950+ Operadores de un solo golpe en cada carga del Directorio de Operadores (Panel de Asistente), y por eso
+salía el más lento por lejos. Arreglado con el mismo patrón que `ObtenerActividades` (`actividades.controller.ts`):
+sin `pagina`/`limite` en la query sigue devolviendo el arreglo completo (compatibilidad hacia atrás, nadie más
+lo llamaba así pero se deja por si acaso), con `pagina`/`limite` responde paginado, y con `q` opcional filtra
+por `nombre_completo`/`codigo_megued` (`LIKE`) y por `cedula` (IGUALDAD EXACTA, no `LIKE` - la cédula está
+cifrada en la BD con cifrado determinístico, que preserva igualdad pero no permite buscar por un fragmento del
+texto plano; ver `models/operador.ts`). El frontend (`asistencia-panel.ts`) pasó de filtrar/paginar en el
+navegador sobre el arreglo completo a pedirle la página+búsqueda al backend, con debounce de 300ms en la
+cajita de búsqueda - mismo patrón ya usado en las pestañas Equipo/Actividad de este mismo componente.
+Probado con `curl` contra Postgres local: búsqueda parcial por nombre (2/2 coincidencias), por código
+(1/1), cédula exacta (1/1) y cédula parcial (0/0, la limitación documentada arriba, funciona como se espera).
+No se pudo probar en navegador real esta ronda - la versión de Node del entorno de esta sesión quedó por debajo
+del mínimo que exige Angular CLI 22 (bloquea `ng serve`/`ng build`/`ng test` por igual), así que la parte de
+Angular solo se verificó con `tsc --noEmit` + revisión manual del diff completo (no detecta errores de binding
+en el template, a diferencia de una build real - conviene una prueba visual rápida en el navegador tras aplicar
+este patch, antes de darlo por 100% verificado).
 
 **Nota sobre la ráfaga de `marcar-codigo`:** los 950/950 salieron exitosos, pero la latencia crece harto bajo
 50 conexiones a la vez (hasta 9.6s en el peor caso, ~74s en total). La causa no es el pool de Postgres (`max:10`,
@@ -1032,6 +1042,25 @@ segundo literal, llegan repartidos en 15-30 minutos al inicio del turno - pero s
 práctica, esta es la causa conocida, no un misterio a investigar de cero.
 
 ## Pendiente
+
+**Migración/transferencia de cuentas a la empresa cliente (recordatorio, no urgente todavía)**
+- Antes de entregar/vender el sistema, todas las cuentas de infraestructura (Render, Vercel, dominio, BD,
+  Sentry/uptime cuando existan) deben quedar a nombre de la empresa cliente, no del desarrollador - por
+  responsabilidad sobre los datos de los ~950 trabajadores (PII) y para que el soporte a futuro no dependa de
+  una cuenta personal. Revisar esto después de cerrar el resto de la checklist, antes de la entrega final.
+
+**Bug resuelto (causa raíz confirmada) - "Failed to fetch" en producción por CORS (2026-09-25)**
+- Causa raíz CONFIRMADA (consola del navegador, no solo sospecha): `Access to fetch at
+  'https://horometros-frugalp.onrender.com/api/auth/login' from origin
+  'https://horometros-frugalp-pmn1p4vdo-ronald-acurio-s-projects.vercel.app' has been blocked by CORS policy:
+  ... No 'Access-Control-Allow-Origin' header is present`. `CORS_ORIGIN` nunca estuvo seteada en Render, así que
+  `app.ts` cae al default hardcodeado (`https://horometros-frugalp.vercel.app` + `localhost:4200`) - la URL real
+  de Vercel del usuario (con sufijo de hash/proyecto) no matchea ninguno de los dos, el backend no la autoriza,
+  el navegador bloquea la respuesta. Nada del código estaba mal, era una variable de entorno sin configurar.
+- Descartado en el camino: spin-down del free tier de Render (esperado, no es esto - reintentar tras 50s seguía
+  fallando), `CIFRADO_CLAVE` faltante (confirmada seteada y con formato correcto).
+- **Arreglo:** agregar `CORS_ORIGIN` en Render → Environment con el dominio real de Vercel del usuario. Pendiente
+  de que el usuario lo aplique y confirme - no requiere ningún cambio de código ni patch, es 100% configuración.
 
 **Backend**
 - Filtrar `finalizarDia` por `hacienda_id` del Supervisor que ejecuta el cierre (ver Deuda técnica heredada) - es un

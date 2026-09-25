@@ -269,14 +269,57 @@ export const eliminarOperador = async (req: Request, res: Response): Promise<voi
 };
 
 //Obtener la lista de operadores
-export const obtenerOperadores = async(_req: Request, res:Response):Promise<void> => {
+/*
+Sin 'pagina'/'limite' en la query devuelve el arreglo completo (mismo patron que ObtenerActividades,
+actividades.controller.ts, para no romper a nadie que todavia dependa del arreglo plano). Con 'pagina'/'limite'
+responde paginado - lo usa el Directorio de Operadores (Panel de Asistente), que antes traia TODO de una sola
+vez y salio medible mas lento que el resto de listados en la prueba de carga (ver CLAUDE.md, "Pruebas de
+carga") apenas el volumen se acerca a los ~950 operadores reales.
+'q' (solo en modo paginado) filtra por nombre_completo/codigo_megued con LIKE, y por cedula con IGUALDAD
+EXACTA - la cedula esta cifrada en la BD (ver models/operador.ts) con cifrado DETERMINISTICO, que preserva
+igualdad pero NO permite un LIKE de substring sobre el texto plano (cifrar "12" nunca es un prefijo de cifrar
+"12345678"). Buscar el nombre/codigo completo o parcial funciona igual que antes; buscar la cedula requiere
+escribirla completa.
+*/
+export const obtenerOperadores = async(req: Request, res:Response):Promise<void> => {
     try{
-        const operadores = await Operador.findAll({
-            attributes: { exclude: ['clave_hash'] },
-            include: [{ model: Usuario, as: 'supervisor', attributes: { exclude: ['clave_hash'] } }],
+        const { pagina: paginaQuery, limite: limiteQuery, q: qQuery } = req.query;
+        const include = [{ model: Usuario, as: 'supervisor', attributes: { exclude: ['clave_hash'] } }];
+        const attributes = { exclude: ['clave_hash'] };
+
+        if(paginaQuery === undefined && limiteQuery === undefined){
+            const operadores = await Operador.findAll({
+                attributes,
+                include,
+                order: [['nombre_completo','ASC']],
+            });
+            res.json(operadores);
+            return;
+        }
+
+        const pagina = Math.max(1, Number(paginaQuery) || 1);
+        const limite = Math.min(100, Math.max(1, Number(limiteQuery) || 20));
+        const offset = (pagina - 1) * limite;
+        const q = typeof qQuery === 'string' ? qQuery.trim() : '';
+
+        const where = q ? {
+            [Op.or]: [
+                { nombre_completo: { [Op.iLike]: `%${q}%` } },
+                { codigo_megued: { [Op.iLike]: `%${q}%` } },
+                { cedula: cifrarDeterministico(q) },
+            ],
+        } : {};
+
+        const { rows: operadores, count: total } = await Operador.findAndCountAll({
+            where,
+            attributes,
+            include,
             order: [['nombre_completo','ASC']],
+            limit: limite,
+            offset,
         });
-        res.json(operadores);
+
+        res.json({ data: operadores, total, pagina, totalPaginas: Math.ceil(total / limite) || 1 });
     } catch(err){
         res.status(500).json({message:'Error al obtener operdadores',err});
     }

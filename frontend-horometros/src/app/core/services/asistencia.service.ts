@@ -19,9 +19,18 @@ export class AsistenciaService {
         return this.http.post<Operador>(`${this.baseUrl}/operadores`, operador);
     }
     
-    // GET -> https://.../api/asistencia/operadores
-    obtenerOperadores(): Observable<Operador[]> {
-        return this.http.get<Operador[]>(`${this.baseUrl}/operadores`);
+    // GET -> https://.../api/asistencia/operadores?pagina=1&limite=20&q=... - paginado y filtrable por texto
+    // (mandar pagina/limite activa esa respuesta en el backend, ver asistencia.controller.ts), lo consume el
+    // Directorio de Operadores del Panel de Asistente.
+    obtenerOperadoresPaginado(pagina: number, limite: number, q?: string): Observable<RespuestaPaginada<Operador>> {
+        let params = new HttpParams().set('pagina', pagina).set('limite', limite);
+        if (q) params = params.set('q', q);
+        return this.http.get<RespuestaPaginada<Operador>>(`${this.baseUrl}/operadores`, { params }).pipe(
+            catchError(err => {
+                console.warn('Error al obtener operadores paginados:', err);
+                return of({ data: [], total: 0, pagina, totalPaginas: 1 });
+            })
+        );
     }
 
     // PUT -> https://.../api/asistencia/operadores/:id

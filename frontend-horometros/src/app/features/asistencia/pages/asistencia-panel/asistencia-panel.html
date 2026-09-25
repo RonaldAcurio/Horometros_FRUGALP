@@ -53,7 +53,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let op of operadoresPaginados" (click)="seleccionarOperador(op)" class="row-hover">
+            <tr *ngFor="let op of operadores" (click)="seleccionarOperador(op)" class="row-hover">
               <td><strong class="code-badge">{{ op.codigo_megued || op.id }}</strong></td>
               <td class="font-medium nombre-operador">{{ op.nombre_completo }}</td>
               <td class="text-muted-sm">{{ op.rol === 'OPERADOR' ? 'Operador' : 'Mecánico' }}</td>
@@ -61,7 +61,7 @@
                 <button class="btn btn-secondary btn-sm">Seleccionar</button>
               </td>
             </tr>
-            <tr *ngIf="operadoresFiltrados.length === 0">
+            <tr *ngIf="operadores.length === 0">
               <td colspan="4" class="table-empty">No hay operadores registrados.</td>
             </tr>
           </tbody>
