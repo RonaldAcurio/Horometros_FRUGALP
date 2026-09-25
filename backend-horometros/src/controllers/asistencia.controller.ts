@@ -8,6 +8,7 @@ import { Usuario } from '../models/usuario';
 import { Hacienda } from '../models/hacienda';
 import bcrypt from 'bcryptjs';
 import { generarTokenQrJornada, verificarTokenQrJornada } from '../services/jwt.service';
+import { tokenHaciendaVigente } from '../utils/token-hacienda';
 
 /*
 Columnas que excluimos de los LISTADOS (hoy/historial): la foto pesa decenas/cientos de KB en Base64, y si el supervisor tiene
@@ -422,7 +423,7 @@ export const marcarConCodigo = async(req:Request, res:Response):Promise<void> =>
         }
 
         const hacienda = await Hacienda.findOne({ where: { token_actual: token_hacienda }});
-        if(!hacienda || !hacienda.token_expira_en || hacienda.token_expira_en.getTime() < Date.now()){
+        if(!hacienda || !tokenHaciendaVigente(hacienda)){
             res.status(401).json({ message: 'El codigo de la hacienda es invalido o ya expiro.'});
             return;
         }
@@ -480,7 +481,7 @@ export const marcarConMiCodigo = async(req:Request, res:Response):Promise<void> 
         }
 
         const hacienda = await Hacienda.findByPk(req.auth.hacienda_id);
-        if(!hacienda || hacienda.token_actual !== token_hacienda || !hacienda.token_expira_en || hacienda.token_expira_en.getTime() < Date.now()){
+        if(!hacienda || hacienda.token_actual !== token_hacienda || !tokenHaciendaVigente(hacienda)){
             res.status(401).json({ message: 'El codigo ingresado es invalido o ya expiro.'});
             return;
         }

@@ -597,9 +597,10 @@ réplicas sin sorpresas, pero sin plan pago que dé las réplicas todavía) · c
 
 **Ciclo de desarrollo:** ambientes dev/stage/prod ⚠️ (solo dev y prod, sin staging) · secretos ✅ (`.env`
 gitignored, `JWT_SECRET` falla duro si falta) · CI/CD ✅ (arreglado 2026-09-25, GitHub Actions en cada push/PR a
-main, ver abajo) · pruebas unitarias ⚠️ (los specs por componente que ya traía Angular quedaron arreglados y
-corriendo en CI, pero siguen siendo el boilerplate default - "se crea sin errores" - no pruebas de lógica de
-negocio real) · integración ❌ · end-to-end ❌ (los Playwright de sesiones anteriores fueron manuales, no
+main, ver abajo) · pruebas unitarias ⚠️ (arreglado 2026-09-25, ver abajo: ahora hay pruebas reales de lógica de
+negocio - validación de horas y vigencia del Token de Hacienda, backend y frontend - además de los specs por
+componente que ya traía Angular; sigue faltando cobertura de los controllers/servicios, que requieren mockear
+Sequelize/Express) · integración ❌ · end-to-end ❌ (los Playwright de sesiones anteriores fueron manuales, no
 quedaron en el repo) · carga ❌.
 
 **Configuración y observabilidad:** login ✅ (arreglado 2026-09-25: rate limiting ya estaba de la ronda anterior,
@@ -732,6 +733,42 @@ leer sin salir de la app - no es solo un documento aparte.
   modal YA NO vuelve a aparecer (perfil persistido en `localStorage` + confirmado con un segundo login real
   que trae `terminos_aceptados:true` desde la BD) → botón del header abre el modo libre (solo "Cerrar", sin
   checkbox ni botón de aceptar).
+
+### Pruebas unitarias reales de lógica de negocio (2026-09-25)
+
+Hasta ahora "pruebas unitarias" solo cubría el boilerplate default de Angular (`ng generate` - "el componente se
+crea sin errores"). El usuario pidió pruebas reales de la lógica de negocio de la app: validación de horas y
+cálculo/vigencia del Token de Hacienda. Estrategia: extraer esa lógica a funciones puras (sin Sequelize, sin
+Express, sin Angular/TestBed) para poder probarla directo, en vez de mockear media base de datos.
+
+- **Backend, `vitest` nuevo** (no existía ningún test runner - `npm test` literalmente corría `typecheck`
+  antes de esto): `vitest.config.mts` (extensión `.mts`, no `.ts`, para que Vite lo cargue como ESM sin
+  necesidad de tocar `"type"` del `package.json` - si no, tira un warning de config en cada corrida),
+  `include: ['src/**/*.test.ts']`. `npm test` ahora corre `vitest run` de verdad; CI (`ci.yml`, job `backend`)
+  agrega el paso `npm test` después de `npm run typecheck`.
+  - `utils/validar-orden-horas.ts` (+ `.test.ts`, 6 casos): `horaEsAnteriorARegistrosPrevios` y
+    `calcularUltimaHoraRegistrada`, extraídas tal cual de `crearRegistroActividad`
+    (`registro_actividad.controller.ts`) sin cambiar el comportamiento - ese controller ahora solo llama a la
+    función. Cubre: primera labor del día (nunca rechaza), labor previa cerrada, labor previa todavía abierta
+    (compara contra `hora_inicio`, no `hora_fin`), varias labores cerradas fuera de orden (compara contra la
+    MÁS reciente, no la última creada), y el límite exacto (hora igual a la última = no es "anterior", se
+    acepta).
+  - `utils/token-hacienda.ts` (+ `.test.ts`, 7 casos): `tokenHaciendaVigente`, que reemplaza 3 copias
+    inline casi idénticas de la misma comparación de fechas que vivían sueltas en `auth.controller.ts` (login)
+    y `asistencia.controller.ts` (`marcarConCodigo`, `marcarConMiCodigo`). De paso corrige una inconsistencia
+    microscópica que ya existía entre esas 3 copias (una comparaba con `>` estricto y las otras con `>=` en el
+    instante exacto de vencimiento) - a efectos prácticos, imposible de notar (una diferencia de milisegundos),
+    pero ahora las 3 quedan exactamente iguales.
+- **Frontend, mismo patrón** (ya había `vitest` vía el builder de Angular 22, ver ronda de CI/CD):
+  `core/utils/token-hacienda.util.ts` (+ `.spec.ts`, 8 casos) - `tokenHaciendaVencido`/`formatearTiempoRestante`,
+  extraídas de `admin-panel.ts` (antes eran métodos del componente, ahora el componente solo los llama pasando
+  `this.ahora`). También se aprovechó para agregarle spec a `rutas-por-rol.ts` (+ `.spec.ts`, 4 casos) - ya era
+  una función pura sin pruebas, "a qué pantalla pertenece cada rol" es lógica de negocio real y no tenía
+  ningún costo de extracción (ya vivía sola en su propio archivo).
+- **Deliberadamente NO cubierto todavía**: los controllers/endpoints en sí (requieren mockear Sequelize +
+  Express, o levantar una base de datos de prueba - más cerca de "integración" que de "unitaria") y los
+  componentes Angular con lógica async/HTTP (`AdminPanel`, `SupervisorPanel`, etc. - los specs que ya traían
+  siguen siendo el boilerplate, ver arriba). Buen candidato para la próxima ronda si el usuario lo pide.
 
 ## Pendiente
 

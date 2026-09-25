@@ -9,6 +9,7 @@ import { AuthService } from '../../../../core/services/auth.service';
 import { NuevoUsuario, Usuario } from '../../../../core/models/usuario.model';
 import { Hacienda } from '../../../../core/models/hacienda.model';
 import { CargoUsuario } from '../../../../core/models/auth.model';
+import { tokenHaciendaVencido, formatearTiempoRestante } from '../../../../core/utils/token-hacienda.util';
 
 // SUPERVISOR y ESCANER necesitan una hacienda fija desde su creacion (ver CLAUDE.md) - ADMIN/ASISTENTE no.
 const CARGOS_CON_HACIENDA: CargoUsuario[] = ['SUPERVISOR', 'ESCANER'];
@@ -87,20 +88,11 @@ export class AdminPanel implements OnInit, OnDestroy {
   ahora = Date.now();
 
   tokenVencido(hacienda: Hacienda): boolean {
-    if (!hacienda.token_actual || !hacienda.token_expira_en) return false;
-    return new Date(hacienda.token_expira_en).getTime() - this.ahora <= 0;
+    return tokenHaciendaVencido(hacienda.token_actual, hacienda.token_expira_en, this.ahora);
   }
 
   tiempoRestanteToken(hacienda: Hacienda): string {
-    if (!hacienda.token_expira_en) return '—';
-    const restanteMs = new Date(hacienda.token_expira_en).getTime() - this.ahora;
-    if (restanteMs <= 0) return 'Expirado';
-    const totalSegundos = Math.floor(restanteMs / 1000);
-    const horas = Math.floor(totalSegundos / 3600);
-    const minutos = Math.floor((totalSegundos % 3600) / 60);
-    const segundos = totalSegundos % 60;
-    const dosDigitos = (n: number) => String(n).padStart(2, '0');
-    return `${dosDigitos(horas)}:${dosDigitos(minutos)}:${dosDigitos(segundos)}`;
+    return formatearTiempoRestante(hacienda.token_expira_en, this.ahora);
   }
 
   cargarUsuarios(): void {

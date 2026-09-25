@@ -5,6 +5,7 @@ import { Operador } from '../models/operador';
 import { Asistencia } from '../models/asistencias';
 import { Hacienda } from '../models/hacienda';
 import { generarToken } from '../services/jwt.service';
+import { tokenHaciendaVigente } from '../utils/token-hacienda';
 
 const getFechaLocalEcuador = ():string => {
     return new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Guayaquil' });
@@ -116,7 +117,7 @@ export const login = async(req: Request, res: Response):Promise<void> => {
             let haciendaRequiereCodigo = false;
             if(haciendaId){
                 const hacienda = await Hacienda.findByPk(haciendaId);
-                haciendaRequiereCodigo = !!(hacienda?.token_actual && hacienda.token_expira_en && hacienda.token_expira_en.getTime() > Date.now());
+                haciendaRequiereCodigo = tokenHaciendaVigente(hacienda);
             }
 
             const token = generarToken({

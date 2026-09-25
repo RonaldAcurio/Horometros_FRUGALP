@@ -5,6 +5,7 @@ import { Asistencia } from "../models/asistencias";
 import { Equipo } from "../models/equipo";
 import { Actividad } from "../models/actividad";
 import { Seccion } from "../models/seccion";
+import { horaEsAnteriorARegistrosPrevios } from "../utils/validar-orden-horas";
 
 const ROLES_OFICINA = ['ADMIN','ASISTENTE','SUPERVISOR'];
 /*
@@ -89,15 +90,9 @@ export const crearRegistroActividad = async(req:Request, res:Response):Promise<v
             where: { asistencia_id: asistencia.id },
             attributes: ['hora_inicio', 'hora_fin'],
         });
-        if(registrosPrevios.length > 0){
-            const ultimaHoraRegistrada = registrosPrevios.reduce((maxHasta, r) => {
-                const horaRelevante = (r.hora_fin ?? r.hora_inicio).getTime();
-                return horaRelevante > maxHasta ? horaRelevante : maxHasta;
-            }, 0);
-            if(horaInicioFinal.getTime() < ultimaHoraRegistrada){
-                res.status(400).json({ message: 'La hora de inicio no puede ser anterior a la ultima labor ya registrada hoy.' });
-                return;
-            }
+        if(horaEsAnteriorARegistrosPrevios(horaInicioFinal, registrosPrevios)){
+            res.status(400).json({ message: 'La hora de inicio no puede ser anterior a la ultima labor ya registrada hoy.' });
+            return;
         }
 
         const registro = await RegistroActividad.create({
