@@ -6,10 +6,21 @@ import { HaciendaService } from '../../../../core/services/hacienda.service';
 import { NotificacionService } from '../../../../core/services/notificacion.service';
 import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
 import { AuthService } from '../../../../core/services/auth.service';
+import { AuditoriaService } from '../../../../core/services/auditoria.service';
 import { NuevoUsuario, Usuario } from '../../../../core/models/usuario.model';
 import { Hacienda } from '../../../../core/models/hacienda.model';
 import { CargoUsuario } from '../../../../core/models/auth.model';
+import { RegistroAuditoria, AccionAuditoria } from '../../../../core/models/auditoria.model';
 import { tokenHaciendaVencido, formatearTiempoRestante } from '../../../../core/utils/token-hacienda.util';
+
+// Etiquetas legibles para AccionAuditoria (ver auditoria.model.ts) - lo que se muestra en la pestaña Historial.
+const ETIQUETAS_ACCION: Record<AccionAuditoria, string> = {
+  RESETEAR_CLAVE_USUARIO: 'Reseteó la clave de',
+  RESETEAR_CLAVE_OPERADOR: 'Reseteó la clave de',
+  CAMBIAR_CREDENCIALES_OPERADOR: 'Cambió el usuario/clave de',
+  GENERAR_TOKEN_HACIENDA: 'Generó el Token de',
+  INVALIDAR_TOKEN_HACIENDA: 'Invalidó el Token de',
+};
 
 // SUPERVISOR y ESCANER necesitan una hacienda fija desde su creacion (ver CLAUDE.md) - ADMIN/ASISTENTE no.
 const CARGOS_CON_HACIENDA: CargoUsuario[] = ['SUPERVISOR', 'ESCANER'];
@@ -26,8 +37,10 @@ export class AdminPanel implements OnInit, OnDestroy {
   private haciendaService = inject(HaciendaService);
   private notificacionService = inject(NotificacionService);
   private confirmacionService = inject(ConfirmacionService);
+  private auditoriaService = inject(AuditoriaService);
   private cdr = inject(ChangeDetectorRef);
   protected authService = inject(AuthService);
+  protected etiquetasAccion = ETIQUETAS_ACCION;
 
   // La pestaña Haciendas (Token, crear hacienda) es exclusiva de ADMIN - un Asistente entra a esta misma
   // pagina (para Usuarios) pero no la ve, ver admin-panel.html.
@@ -35,11 +48,13 @@ export class AdminPanel implements OnInit, OnDestroy {
     return this.authService.tieneRol('ADMIN');
   }
 
-  tabActual: 'usuarios' | 'haciendas' = 'usuarios';
+  tabActual: 'usuarios' | 'haciendas' | 'historial' = 'usuarios';
   cargosDisponibles: CargoUsuario[] = ['ADMIN', 'ASISTENTE', 'SUPERVISOR', 'ESCANER'];
 
   usuarios: Usuario[] = [];
   haciendas: Hacienda[] = [];
+  auditoria: RegistroAuditoria[] = [];
+  cargandoAuditoria = false;
 
   // Modal: Nuevo Usuario
   mostrarModalUsuario = false;
@@ -79,8 +94,29 @@ export class AdminPanel implements OnInit, OnDestroy {
     if (this.intervaloReloj) clearInterval(this.intervaloReloj);
   }
 
-  cambiarTab(tab: 'usuarios' | 'haciendas'): void {
+  cambiarTab(tab: 'usuarios' | 'haciendas' | 'historial'): void {
     this.tabActual = tab;
+    // Se carga recien al entrar a la pestaña (no en ngOnInit): es la que menos se visita, y el backend ya la
+    // limita a ADMIN (ver auditoria.rutes.ts) - un ASISTENTE ni siquiera ve el boton de la pestaña.
+    if (tab === 'historial' && this.auditoria.length === 0) {
+      this.cargarAuditoria();
+    }
+  }
+
+  cargarAuditoria(): void {
+    this.cargandoAuditoria = true;
+    this.auditoriaService.obtenerAuditoria().subscribe({
+      next: (data) => {
+        this.auditoria = data;
+        this.cargandoAuditoria = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.notificacionService.error(err.error?.message || 'Error al cargar el historial.');
+        this.cargandoAuditoria = false;
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   // --- Cuenta regresiva del Token de Hacienda ---

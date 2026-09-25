@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from "express";
 import { verificarToken, PayloadToken } from "../services/jwt.service";
 import { Asistencia } from "../models/asistencias";
+import { Usuario } from "../models/usuario";
+import { Operador } from "../models/operador";
+import { sesionFueInvalidada } from "../utils/sesion-revocada";
 
 declare global {
     namespace Express{
@@ -11,10 +14,12 @@ declare global {
 }
 
 /*
-Verifica que venga un JWT valido en el header 'Authorization: Bearer <token>'.
-No consulta la base de datos: la firma ya garantizada que el contenido no fue alterado
+Verifica que venga un JWT valido en el header 'Authorization: Bearer <token>', Y que no haya sido revocado desde
+que se emitio (ver CLAUDE.md, "Revocacion de sesiones JWT"): la firma sola no alcanza, porque un JWT sigue
+firmando valido aunque la clave de la cuenta ya haya cambiado - por eso SI consulta la base de datos, a
+diferencia de antes. Solo trae 'sesion_valida_desde' (un solo campo) para que el costo extra sea minimo.
 */
-export const verificarAutenticacion = (req:Request, res:Response, next:NextFunction):void => {
+export const verificarAutenticacion = async(req:Request, res:Response, next:NextFunction):Promise<void> => {
     const header = req.headers.authorization;
     if(!header || !header.startsWith('Bearer ')){
         res.status(401).json({ message:'Falta el token de autenticacion.'});
@@ -22,13 +27,27 @@ export const verificarAutenticacion = (req:Request, res:Response, next:NextFunct
     }
 
     const token = header.slice('Bearer '.length);
+    let payload: PayloadToken;
     try{
-        req.auth = verificarToken(token);
-        next();
-
+        payload = verificarToken(token);
     } catch(err){
         res.status(401).json({message: 'Token invalido o expirado.'});
+        return;
+    }
 
+    try{
+        const cuenta = payload.tipo === 'usuario'
+            ? await Usuario.findByPk(payload.id, { attributes: ['sesion_valida_desde'] })
+            : await Operador.findByPk(payload.id, { attributes: ['sesion_valida_desde'] });
+        if(sesionFueInvalidada(payload.iat, cuenta?.sesion_valida_desde)){
+            res.status(401).json({ message: 'Tu sesion fue invalidada (se cambio la clave). Vuelve a iniciar sesion.'});
+            return;
+        }
+
+        req.auth = payload;
+        next();
+    }catch(err){
+        res.status(500).json({ message: 'Error al verificar la sesion.'});
     }
 };
 

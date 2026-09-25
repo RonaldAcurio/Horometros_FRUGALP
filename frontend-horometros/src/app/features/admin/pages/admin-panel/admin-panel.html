@@ -15,6 +15,10 @@
     <button *ngIf="esAdmin" class="tab-btn" [class.active]="tabActual === 'haciendas'" (click)="cambiarTab('haciendas')">
       🌾 Haciendas
     </button>
+    <!-- Historial de auditoría: solo ADMIN (mismo motivo que Haciendas) - el backend ya lo exige igual, ver auditoria.rutes.ts -->
+    <button *ngIf="esAdmin" class="tab-btn" [class.active]="tabActual === 'historial'" (click)="cambiarTab('historial')">
+      📋 Historial
+    </button>
   </div>
 
   <!-- PESTAÑA: USUARIOS -->
@@ -91,6 +95,41 @@
           </tr>
           <tr *ngIf="haciendas.length === 0">
             <td colspan="4" class="table-empty">No hay haciendas registradas.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PESTAÑA: HISTORIAL (solo ADMIN, ver *ngIf del boton de la pestaña arriba) -->
+  <div *ngIf="tabActual === 'historial' && esAdmin" class="card">
+    <div class="card-header">
+      <h5 class="card-title">📋 Historial de acciones sensibles</h5>
+      <p class="text-muted-sm">Reseteos de clave y Token de Hacienda generado/invalidado, quién y cuándo.</p>
+    </div>
+
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Quién</th>
+            <th>Acción</th>
+            <th>Sobre</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let r of auditoria">
+            <td>{{ r.createdAt | date:'dd/MM/yyyy HH:mm' }}</td>
+            <td class="nombre-operador">{{ r.actor?.nombre_completo || '—' }} <span class="text-muted-sm">({{ r.actor?.cargo }})</span></td>
+            <td>{{ etiquetasAccion[r.accion] }}</td>
+            <td>{{ r.objetivo_nombre }}</td>
+          </tr>
+          <tr *ngIf="!cargandoAuditoria && auditoria.length === 0">
+            <td colspan="4" class="table-empty">Todavía no hay acciones registradas.</td>
+          </tr>
+          <tr *ngIf="cargandoAuditoria">
+            <td colspan="4" class="table-empty">Cargando…</td>
           </tr>
         </tbody>
       </table>

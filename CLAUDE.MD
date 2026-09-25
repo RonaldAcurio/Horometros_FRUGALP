@@ -579,7 +579,8 @@ parcial/riesgo, `❌` no cumple, `➖` no aplica hoy.
 **Requisitos y diseño:** requerimientos funcionales ✅ (documentados arriba) · no funcionales ⚠️ (sin metas
 explícitas de tiempo de respuesta/uptime) · restricciones de integridad ✅ (FKs + UNIQUE reales en BD).
 
-**Seguridad de la app:** manejo de sesiones ⚠️ (JWT 8h sin revocación) · almacenamiento seguro ⚠️ (bcrypt bien,
+**Seguridad de la app:** manejo de sesiones ✅ (arreglado 2026-09-25, revocación real al cambiar la clave, ver
+abajo) · almacenamiento seguro ⚠️ (bcrypt bien,
 PII en texto plano) · cifrado de datos sensibles ❌ (nada a nivel app, solo lo que cifre Render en disco) ·
 SQL injection ✅ (Sequelize parametrizado, cero queries crudas) · XSS ✅ (Angular escapa por defecto, cero
 `innerHTML`/`bypassSecurityTrust`) · CSRF ✅ (JWT va en header, no en cookie) · rate limiting ✅ (arreglado
@@ -604,9 +605,11 @@ Sequelize/Express) · integración ❌ · end-to-end ❌ (los Playwright de sesi
 quedaron en el repo) · carga ❌.
 
 **Configuración y observabilidad:** login ✅ (arreglado 2026-09-25: rate limiting ya estaba de la ronda anterior,
-clave mínima subida de 6 a 8 caracteres) · monitoreo de métricas ❌ · alertas ❌ · trazabilidad ⚠️ (hay auditoría
-de negocio - O/X, timestamps - pero no auditoría técnica de acceso) · análisis de errores ❌ (solo
-`console.error`, sin Sentry/similar) · observabilidad de caídas ❌ (existe `/api/health` pero nada lo monitorea).
+clave mínima subida de 6 a 8 caracteres) · monitoreo de métricas ❌ · alertas ❌ · trazabilidad ⚠️ (mejorado
+2026-09-25: ahora hay auditoría técnica de acciones sensibles - reseteo de claves, Token de Hacienda - además de
+la auditoría de negocio que ya existía (O/X, timestamps), ver abajo; sigue sin haber auditoría técnica de acceso
+genérico, ej. "quién vio el listado de usuarios") · análisis de errores ❌ (solo `console.error`, sin
+Sentry/similar) · observabilidad de caídas ❌ (existe `/api/health` pero nada lo monitorea).
 
 **App móvil:** ➖ no aplica en su totalidad todavía - sigue siendo 100% web, sin build nativa ni presencia en
 tiendas (certificados de firma, perfiles de aprovisionamiento, firmas, bill of materials de tienda, rendimiento
@@ -769,6 +772,57 @@ Express, sin Angular/TestBed) para poder probarla directo, en vez de mockear med
   Express, o levantar una base de datos de prueba - más cerca de "integración" que de "unitaria") y los
   componentes Angular con lógica async/HTTP (`AdminPanel`, `SupervisorPanel`, etc. - los specs que ya traían
   siguen siendo el boilerplate, ver arriba). Buen candidato para la próxima ronda si el usuario lo pide.
+
+### Revocación de sesiones JWT + historial de auditoría (2026-09-25)
+
+El usuario preguntó, con razón, por qué un JWT viejo seguía funcionando después de que ADMIN/ASISTENTE resetea
+la clave de alguien - hoy (JWT stateless de 8h) no había forma de invalidarlo antes de su vencimiento natural.
+Junto con eso pidió una pestaña de historial: qué USUARIO de oficina resetó una clave o generó/invalidó un
+Token de Hacienda.
+
+**Revocación de sesiones** (no requiere Redis ni nada externo - un campo en la BD alcanza a esta escala):
+- **`sesion_valida_desde`** (`DATE`, nullable) agregado a `usuarios` Y `operadores` (migración
+  `20260925010000-agregar-sesion-valida-desde.js`). `null` = ningún JWT invalidado nunca (default de todas las
+  cuentas existentes - no rompe sesiones activas al desplegar esto). Se pisa con `NOW()` cada vez que la cuenta
+  cambia de clave: `resetearClaveUsuario` (`usuario.controller.ts`), `resetearClaveOperador` y `actualizarOperador`
+  cuando la edición incluyó una clave nueva (`asistencia.controller.ts`).
+- **`verificarAutenticacion`** (`middlewares/auth.middleware.ts`) pasó de sincrónico a asíncrono: ya no confía
+  solo en la firma del JWT, también consulta `sesion_valida_desde` de la cuenta (un solo campo, `findByPk` con
+  `attributes` acotado) y compara contra el `iat` del token (que `jsonwebtoken` agrega solo al firmar). Esto
+  agrega una consulta a la BD en CADA request autenticado de la app entera - aceptado a propósito: es el mismo
+  costo que ya paga `verificarJornadaOperadorActiva` para el tipo `operador`, y a esta escala (~1100 cuentas) un
+  `findByPk` indexado no es un problema real.
+- **`utils/sesion-revocada.ts`** (+ `.test.ts`, 6 casos): `sesionFueInvalidada`, la comparación extraída como
+  función pura, mismo patrón que `token-hacienda.ts`. **Bug real encontrado probando a mano** (no en el código
+  final, se corrigió antes de entregar): la primera versión comparaba milisegundos (`sesion_valida_desde`)
+  contra segundos×1000 (`iat`) - un login hecho en el MISMO segundo que el reseteo (caso real: alguien resetea
+  su propia clave y se loguea de nuevo al toque) quedaba marcado como "sesión vieja" por error, porque `iat`
+  solo tiene resolución de 1 segundo. Fix: ambos lados se truncan a segundos antes de comparar. Contrapartida
+  aceptada: un JWT viejo emitido en el MISMO segundo que el reseteo (antes, por milisegundos) sigue colándose
+  hasta que expira solo - un margen de 1 segundo, no de 8 horas.
+- Probado con curl de punta a punta contra Postgres+backend locales: token de antes del reseteo → 401 "Tu
+  sesión fue invalidada..." · login inmediato después del reseteo (mismo segundo) → 200, funciona normal.
+
+**Historial de auditoría** (tabla `registros_auditoria`, migración `20260925020000-crear-tabla-registros-auditoria.js`,
+modelo `RegistroAuditoria`, helper `utils/registrar-auditoria.ts`):
+- Append-only, nunca se edita ni se borra una fila. `objetivo_nombre` queda "congelado" en el momento de la
+  acción (no es un JOIN en vivo) para que el historial siga teniendo sentido aunque después renombren/eliminen
+  al operador/usuario/hacienda; `actor` SÍ es JOIN en vivo contra `usuarios` (el nombre de quien ejecuta la
+  acción prácticamente nunca cambia, y evita una consulta extra en el camino de escritura).
+- Se registra desde 5 puntos: `resetearClaveUsuario`, `resetearClaveOperador`, `actualizarOperador` (solo si
+  cambió la clave), `generarTokenHacienda`, `invalidarToken`. Un fallo al escribir la auditoría NUNCA tumba la
+  acción principal que ya se ejecutó (`registrarAuditoria` atrapa su propio error y solo lo deja en el log del
+  servidor) - resetear una clave no debe fallar porque el historial tuvo un problema.
+- **`GET /api/auditoria`** (nuevo, `auditoria.controller.ts`/`.rutes.ts`), exclusivo ADMIN - es la única cuenta
+  con visibilidad sobre lo que hacen tanto ADMIN como ASISTENTE, que es el punto de tener esto. Trae los
+  últimos 200 registros, más recientes primero.
+- Frontend: pestaña nueva **"Historial"** en el Menú Admin (`admin-panel.ts`/`.html`), visible solo con
+  `*ngIf="esAdmin"` (mismo patrón que la pestaña Haciendas). Se carga recién al entrar a la pestaña, no en
+  `ngOnInit` - es la que menos tráfico tiene. Tabla simple: fecha, quién (nombre + cargo), acción (etiqueta
+  legible vía `ETIQUETAS_ACCION`), sobre quién/qué.
+- Probado con Playwright contra el backend local: ADMIN resetea la clave de una cuenta de prueba dos veces +
+  login normal, la pestaña Historial muestra las 2 filas correctas (quién, qué acción, sobre quién), ordenadas
+  de más reciente a más antigua.
 
 ## Pendiente
 

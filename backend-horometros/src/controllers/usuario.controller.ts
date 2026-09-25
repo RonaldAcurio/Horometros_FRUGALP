@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { Usuario } from '../models/usuario';
 import { Operador } from '../models/operador';
 import { Hacienda } from '../models/hacienda';
+import { registrarAuditoria } from '../utils/registrar-auditoria';
 
 const CARGOS_VALIDOS = ['ADMIN', 'ASISTENTE', 'SUPERVISOR', 'ESCANER'];
 // SUPERVISOR y ESCANER viven fisicamente en una hacienda (por eso necesitan hacienda_id); ADMIN/ASISTENTE son de oficina y no.
@@ -114,7 +115,17 @@ export const resetearClaveUsuario = async(req:Request, res:Response):Promise<voi
         }
 
         const clave_hash = await bcrypt.hash(clave, 10);
-        await usuario.update({ clave_hash });
+        // sesion_valida_desde: cualquier JWT emitido ANTES de este instante deja de servir (ver CLAUDE.md,
+        // "Revocacion de sesiones JWT") - sin esto, la clave vieja quedaba inutil pero la SESION seguia viva.
+        await usuario.update({ clave_hash, sesion_valida_desde: new Date() });
+
+        await registrarAuditoria({
+            actorUsuarioId: req.auth!.id,
+            accion: 'RESETEAR_CLAVE_USUARIO',
+            objetivoTipo: 'usuario',
+            objetivoId: usuario.id,
+            objetivoNombre: usuario.nombre_completo,
+        });
 
         res.json({ message:'Clave del usuario actualizado correctamente.'});
 

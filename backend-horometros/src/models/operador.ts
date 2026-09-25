@@ -20,6 +20,9 @@ export class Operador extends Model <InferAttributes<Operador>, InferCreationAtt
     declare clave_hash: CreationOptional<string | null>;
     // null = todavia no acepto la Politica de Privacidad/Terminos de Uso (ver CLAUDE.md, gate de primer login).
     declare terminos_aceptados_en: CreationOptional<Date | null>;
+    // null = ningun JWT invalidado explicitamente. Se pisa con NOW() al cambiar la clave (ver CLAUDE.md,
+    // "Revocacion de sesiones JWT", y middlewares/auth.middleware.ts).
+    declare sesion_valida_desde: CreationOptional<Date | null>;
     // createdAt/updatedAt/deletedAt: Sequelize los maneja solo via timestamps+paranoid (ver init() abajo),
     // mismo patron que Actividad (models/actividad.ts) - no hace falta declararlos aqui.
 }
@@ -88,6 +91,10 @@ Operador.init(
             allowNull: true,
         },
         terminos_aceptados_en:{
+            type: DataTypes.DATE,
+            allowNull: true,
+        },
+        sesion_valida_desde:{
             type: DataTypes.DATE,
             allowNull: true,
         },

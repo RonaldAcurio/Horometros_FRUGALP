@@ -24,6 +24,9 @@ export class Usuario extends Model< InferAttributes<Usuario>, InferCreationAttri
     declare hacienda_id: CreationOptional<number| null>;
     // null = todavia no acepto la Politica de Privacidad/Terminos de Uso (ver CLAUDE.md, gate de primer login).
     declare terminos_aceptados_en: CreationOptional<Date | null>;
+    // null = ningun JWT invalidado explicitamente. Se pisa con NOW() al cambiar la clave (ver CLAUDE.md,
+    // "Revocacion de sesiones JWT", y middlewares/auth.middleware.ts).
+    declare sesion_valida_desde: CreationOptional<Date | null>;
 }
 
 Usuario.init(
@@ -66,6 +69,10 @@ Usuario.init(
             },
         },
         terminos_aceptados_en:{
+            type: DataTypes.DATE,
+            allowNull: true,
+        },
+        sesion_valida_desde:{
             type: DataTypes.DATE,
             allowNull: true,
         },

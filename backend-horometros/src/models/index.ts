@@ -7,6 +7,7 @@ import { Seccion } from "./seccion";
 import { RegistroActividad } from "./registro_actividad";
 import { Hacienda } from "./hacienda";
 import { Usuario } from "./usuario";
+import { RegistroAuditoria } from "./registro_auditoria";
 
 Asistencia.belongsTo(Operador, { foreignKey:'operador_id' ,as:'operador'});
 Asistencia.belongsTo(Actividad,{ foreignKey: 'actividad_id', as:'actividad'});
@@ -50,6 +51,10 @@ Usuario.hasMany(Operador, { foreignKey: 'supervisor_id', as: 'operadores' });
 Asistencia.belongsTo(Hacienda, { foreignKey: 'hacienda_prestamo_id', as: 'haciendaPrestamo' });
 Asistencia.belongsTo(Usuario, { foreignKey: 'admitido_por_usuario_id', as: 'admitidoPor' });
 
+// Historial de auditoria: el actor SI se resuelve por JOIN en vivo (ver registro_auditoria.ts) - el objetivo
+// (usuario/operador/hacienda) va "congelado" en objetivo_nombre, sin relacion, a proposito.
+RegistroAuditoria.belongsTo(Usuario, { foreignKey: 'actor_usuario_id', as: 'actor' });
+
 export{
     Equipo,
     Operador,
@@ -60,4 +65,5 @@ export{
     RegistroActividad,
     Hacienda,
     Usuario,
+    RegistroAuditoria,
 };

@@ -25,6 +25,9 @@ export interface PayloadToken {
     */
    rol:string;
    hacienda_id: number | null;
+   // No lo mandamos nosotros: jsonwebtoken lo agrega solo al firmar (segundos desde epoch). Presente siempre
+   // que verificarToken() tiene exito - usado para revocacion de sesiones (ver utils/sesion-revocada.ts).
+   iat?: number;
 }
 
 export const generarToken = (payload:PayloadToken):string => {

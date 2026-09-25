@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import crypto from 'crypto';
 import { Hacienda } from "../models/hacienda";
+import { registrarAuditoria } from "../utils/registrar-auditoria";
 
 //24h: vigencia del Token de Hacienda(distinto del JWT de sesion)
 const TOKEN_VIGENCIA_MS = 24*60*60*1000;
@@ -71,6 +72,14 @@ export const generarTokenHacienda = async(req:Request, res:Response):Promise<voi
             token_expira_en: expiraEn,
         });
 
+        await registrarAuditoria({
+            actorUsuarioId: req.auth!.id,
+            accion: 'GENERAR_TOKEN_HACIENDA',
+            objetivoTipo: 'hacienda',
+            objetivoId: hacienda.id,
+            objetivoNombre: hacienda.nombre,
+        });
+
         res.json({
             message:'Token de hacienda generado correctamente',
             token_actual: token,
@@ -105,6 +114,14 @@ export const invalidarToken = async(req:Request, res:Response):Promise<void> => 
         await hacienda.update({
             token_actual:null,
             token_expira_en:null,
+        });
+
+        await registrarAuditoria({
+            actorUsuarioId: req.auth!.id,
+            accion: 'INVALIDAR_TOKEN_HACIENDA',
+            objetivoTipo: 'hacienda',
+            objetivoId: hacienda.id,
+            objetivoNombre: hacienda.nombre,
         });
 
         res.json({ message:'Token de hacienda invalidado correctamente.'});

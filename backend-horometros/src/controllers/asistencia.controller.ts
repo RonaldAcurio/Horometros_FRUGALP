@@ -9,6 +9,7 @@ import { Hacienda } from '../models/hacienda';
 import bcrypt from 'bcryptjs';
 import { generarTokenQrJornada, verificarTokenQrJornada } from '../services/jwt.service';
 import { tokenHaciendaVigente } from '../utils/token-hacienda';
+import { registrarAuditoria } from '../utils/registrar-auditoria';
 
 /*
 Columnas que excluimos de los LISTADOS (hoy/historial): la foto pesa decenas/cientos de KB en Base64, y si el supervisor tiene
@@ -196,6 +197,10 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
         const credenciales = await validarCredencialesOperador(req, res, operador.id);
         if(!credenciales) return;
 
+        // Si esta edicion incluyo una clave nueva, invalida cualquier JWT de este Operador emitido antes de
+        // ahora (mismo motivo que resetearClaveOperador) - si no cambio la clave, no toca la sesion vigente.
+        const claveCambio = credenciales.clave_hash !== null;
+
         await operador.update({
             cedula: cedula || null, // ver nota en crearOperador: '' choca contra otro '' en el UNIQUE, null no.
             telefono,
@@ -205,7 +210,19 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
             supervisor_id: credenciales.supervisor_id ?? operador.supervisor_id,
             usuario: credenciales.usuario ?? operador.usuario,
             clave_hash: credenciales.clave_hash ?? operador.clave_hash,
+            sesion_valida_desde: claveCambio ? new Date() : operador.sesion_valida_desde,
         });
+
+        if(claveCambio){
+            await registrarAuditoria({
+                actorUsuarioId: req.auth!.id,
+                accion: 'CAMBIAR_CREDENCIALES_OPERADOR',
+                objetivoTipo: 'operador',
+                objetivoId: operador.id,
+                objetivoNombre: operador.nombre_completo,
+            });
+        }
+
         const { clave_hash: _omitido, ...perfil } = operador.toJSON() as any;
         res.json({message:"Operador actualizado exitosamente", operador: perfil});
     }
@@ -1046,7 +1063,17 @@ export const resetearClaveOperador = async(req:Request, res:Response):Promise<vo
         }
 
         const clave_hash = await bcrypt.hash(clave, 10);
-        await operador.update({ clave_hash});
+        // sesion_valida_desde: mismo motivo que en resetearClaveUsuario (usuario.controller.ts) - invalida
+        // cualquier JWT de este Operador emitido antes de este instante.
+        await operador.update({ clave_hash, sesion_valida_desde: new Date() });
+
+        await registrarAuditoria({
+            actorUsuarioId: req.auth!.id,
+            accion: 'RESETEAR_CLAVE_OPERADOR',
+            objetivoTipo: 'operador',
+            objetivoId: operador.id,
+            objetivoNombre: operador.nombre_completo,
+        });
 
         res.json({ message:'Clave del operador actualizada correctamente.'});
 
