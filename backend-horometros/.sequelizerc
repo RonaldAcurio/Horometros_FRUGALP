@@ -2,7 +2,15 @@
 const path = require('path');
 
 module.exports = {
-    'config':path.resolve('src','config','database.js'),
+    /*
+    Renombrado de 'database.js' a 'database.migrations.js' (ver CLAUDE.md, "Pruebas de integracion"): con los
+    dos archivos llamados igual ('database.js' aca, 'database.ts' el que usa la app), 'import {sequelize} from
+    "../config/database"' (sin extension, usado en toda la app) resolvia distinto segun la herramienta - tsx/
+    ts-node elegian el '.ts' correcto, pero Vite/Vitest elegian el '.js' de sequelize-cli por error (bug real
+    encontrado escribiendo las pruebas de integracion: los modelos se inicializaban con sequelize=undefined).
+    Sacarle la ambiguedad al nombre lo resuelve de raiz, sin tocar ningun import en el resto del codigo.
+    */
+    'config':path.resolve('src','config','database.migrations.js'),
     'models-path':path.resolve('src','models'),
     'migrations-path':path.resolve('src','migrations'),
     'seeders-path':path.resolve('src','seeders')

@@ -5,8 +5,17 @@ dotenv.config();
 
 const isProduction = process.env.NODE_ENV === 'production' || process.env.DB_HOST?.includes('render.com') || process.env.DB_HOST?.startsWith('dpg-');
 
+/*
+Con NODE_ENV=test (pruebas de integracion, ver CLAUDE.md) se conecta a una BD DISTINTA de la de desarrollo -
+mismo motivo y misma derivacion de nombre que config/database.migrations.js (usado por sequelize-cli para migrar). Sin
+esto, correr las pruebas de integracion locales truncaria/insertaria contra la BD que usas para probar a mano.
+*/
+const nombreBaseDatos = process.env.NODE_ENV === 'test'
+    ? (process.env.DB_NAME_TEST || `${process.env.DB_NAME || 'horometros_db'}_test`)
+    : (process.env.DB_NAME || 'horometros_db');
+
 export const sequelize = new Sequelize(
-    process.env.DB_NAME || 'horometros_db',
+    nombreBaseDatos,
     process.env.DB_USER || 'postgre',
     process.env.DB_PASSWORD || process.env.DB_PASWORD || '1234',
     {

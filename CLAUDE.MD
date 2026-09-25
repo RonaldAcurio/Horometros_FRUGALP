@@ -558,8 +558,9 @@ lo confirmado:
   en el frontend lo lee o escribe. Se sacó del modelo Sequelize (la columna de la BD no se tocó, ver Tablas).
 - **Script de debug suelto borrado**: `backend-horometros/src/test.model.ts` (probaba la API de Gemini a mano, no
   formaba parte de ningún flujo de la app ni de `package.json`).
-- `backend-horometros/src/config/database.js` (CommonJS) **no es** código muerto pese a parecer un duplicado de
-  `database.ts` - es el config que `sequelize-cli` lee para migraciones (`.sequelizerc`), se dejó intacto.
+- `backend-horometros/src/config/database.migrations.js` (CommonJS, antes `database.js` - renombrado
+  2026-09-25, ver "Pruebas de integración") **no es** código muerto pese a parecer un duplicado de `database.ts`
+  - es el config que `sequelize-cli` lee para migraciones (`.sequelizerc`).
 
 ## Deuda técnica heredada
 
@@ -597,12 +598,12 @@ réplicas sin sorpresas, pero sin plan pago que dé las réplicas todavía) · c
 (no hace falta todavía) · tareas en segundo plano ❌ (nada corre solo, "Cerrar Jornada" es 100% manual).
 
 **Ciclo de desarrollo:** ambientes dev/stage/prod ⚠️ (solo dev y prod, sin staging) · secretos ✅ (`.env`
-gitignored, `JWT_SECRET` falla duro si falta) · CI/CD ✅ (arreglado 2026-09-25, GitHub Actions en cada push/PR a
-main, ver abajo) · pruebas unitarias ⚠️ (arreglado 2026-09-25, ver abajo: ahora hay pruebas reales de lógica de
+gitignored, `JWT_SECRET`/`CIFRADO_CLAVE` fallan duro si faltan) · CI/CD ✅ (arreglado 2026-09-25, GitHub Actions
+en cada push/PR a main, ver abajo) · pruebas unitarias ✅ (arreglado 2026-09-25: pruebas reales de lógica de
 negocio - validación de horas y vigencia del Token de Hacienda, backend y frontend - además de los specs por
-componente que ya traía Angular; sigue faltando cobertura de los controllers/servicios, que requieren mockear
-Sequelize/Express) · integración ❌ · end-to-end ❌ (los Playwright de sesiones anteriores fueron manuales, no
-quedaron en el repo) · carga ❌.
+componente que ya traía Angular) · integración ✅ (arreglado 2026-09-25, ver abajo - contra Postgres real,
+corre en CI con un servicio de BD propio) · end-to-end ❌ (los Playwright de sesiones anteriores fueron
+manuales, no quedaron en el repo) · carga ❌.
 
 **Configuración y observabilidad:** login ✅ (arreglado 2026-09-25: rate limiting ya estaba de la ronda anterior,
 clave mínima subida de 6 a 8 caracteres) · monitoreo de métricas ❌ · alertas ❌ · trazabilidad ⚠️ (mejorado
@@ -878,6 +879,71 @@ texto plano en `req.body`/las respuestas JSON, solo lo que queda guardado en Pos
 - **No cubierto por este cambio** (fuera del alcance que se pidió - "cédula, teléfono y dirección"):
   `nombre_completo` (se usa para ordenar/mostrar en toda la app; cifrarlo rompería esas listas) y `codigo_megued`
   (código operativo interno, no dato personal en el sentido de la Política de Privacidad).
+
+### Pruebas de integración + 3 bugs reales de infraestructura encontrados al construirlas (2026-09-25)
+
+El usuario pidió seguir con lo que faltaba de la auditoría original. Se armaron pruebas de integración reales
+(HTTP de punta a punta contra Postgres real, con `supertest`, no mocks) para los 3 flujos más recientes y más
+complejos de la app: login + revocación de sesión, cifrado de PII del Operador, e historial de auditoría
+paginado. Construirlas destapó 3 problemas reales de infraestructura que nunca se habían notado porque nadie
+había intentado migrar una base de datos REALMENTE vacía hasta ahora - los tres ya están corregidos.
+
+**Infraestructura de pruebas:**
+- BD de test **separada** de development (`DB_NAME_TEST`, por defecto `<DB_NAME>_test` - no hace falta
+  configurar nada nuevo) - `config/database.ts` y `config/database.migrations.js` la usan cuando
+  `NODE_ENV=test`. Sin esto, correr las pruebas de integración locales habría truncado/insertado contra la
+  misma BD que se usa para probar a mano. Hay que crearla una vez a mano (`createdb horometros_db_test`) antes
+  de correr `npm run test:integration` local - en CI la crea sola el servicio de Postgres.
+- `vitest.integration.config.mts` (separado de `vitest.config.mts`, los unitarios) - filtra `*.itest.ts` (no
+  `*.integration.test.ts`, para no chocar con el glob `*.test.ts` de los unitarios), `globalSetup` corre las
+  migraciones reales contra la BD de test antes de la primera prueba, `fileParallelism:false` (las pruebas
+  comparten una sola BD real, en paralelo se pisarían entre sí).
+- `src/test-setup/helpers.ts`: `limpiarBaseDeDatosTest()` (trunca en el orden correcto por las FK) y
+  `crearUsuarioDePrueba()` (crea un Usuario directo por Sequelize, no por HTTP - no existe un endpoint público
+  para crear el primer Admin, mismo motivo que "Cuenta ADMIN de arranque").
+- `npm run test:integration` (nuevo script) - job nuevo en CI (`backend-integration`), **separado** del job
+  `backend` de siempre (que sigue sin BD, rápido) - con un servicio `postgres:16` real, migra y corre las
+  pruebas. Claves de prueba fijas y sin ningún valor real en el YAML (no son secretos de GitHub a propósito).
+- **3 archivos de pruebas** (`src/integration-tests/`): `auth.itest.ts` (login incorrecto, login exitoso,
+  y sobre todo la regresión completa de la revocación de sesión: token viejo se bloquea, login nuevo funciona)
+  · `operador.itest.ts` (la API devuelve PII en texto plano, la BD la guarda cifrada de verdad - `SELECT`
+  directo -, cédula duplicada rechazada sin exponer el texto cifrado, editar responde en texto plano) ·
+  `auditoria.itest.ts` (solo ADMIN puede verla, se registra un reseteo de clave, pagina con 25 registros).
+
+**Bug 1 - `config/database.js` renombrado a `config/database.migrations.js`.** Con dos archivos llamados igual
+(`database.js` para sequelize-cli, `database.ts` para la app), `import {sequelize} from "../config/database"`
+(sin extensión, usado en TODA la app) resolvía distinto según la herramienta: `tsx`/`ts-node` elegían el `.ts`
+correcto, pero Vite/Vitest elegían el `.js` de sequelize-cli por error - los modelos se inicializaban con
+`sequelize` `undefined` ("No Sequelize instance passed"), algo que nunca se notó porque nada había usado
+Vitest para importar el árbol de la app hasta estas pruebas. Sacarle la ambigüedad al nombre lo resuelve de
+raíz, sin tocar ningún `import` del resto del código - `.sequelizerc` es el único lugar que sabía el nombre
+real del archivo de config.
+
+**Bug 2 - las migraciones no podían reconstruir el esquema desde una base vacía.** `operadores`, `equipos` y
+`actividades` se crearon en producción ANTES de que existiera el sistema de migraciones (via un `sequelize.sync()`
+antiguo - el comentario de `20260916030830-reparar-primary-key-equipos.js` ya lo documentaba para `equipos`
+puntualmente). La primera migración tracked (`20260903054054`) las ALTERA asumiendo que ya existen - migrar una
+BD realmente vacía (la de CI, o una recuperación de desastre desde cero) fallaba ahí mismo. Esto era invisible
+hasta ahora porque nadie había migrado nunca desde cero: development/producción arrastran esas tablas desde
+antes de que hubiera migraciones. Nueva migración `20260101000000-esquema-base-legado-operadores-equipos-
+actividades.js` (fechada para correr PRIMERO) las crea con exactamente las columnas que ninguna migración
+tracked agrega después - todo lo demás lo siguen agregando las migraciones que ya existían, sin tocarlas.
+**Cada `createTable` chequea primero si la tabla ya existe y se salta si es así** (en vez de reventar) - crítico
+porque en una base real (donde las 3 tablas YA existen) esta migración de todos modos aparece como "pendiente"
+en el próximo `db:migrate` (por estar fechada antes que las que ya corrieron ahí); sin ese chequeo, ese
+`db:migrate` se habría cortado a la mitad con un error real. Verificado en los dos sentidos: contra la BD de
+desarrollo real (queda como no-op, ninguna columna se toca) y contra una BD vacía nueva (crea las 3 tablas y
+el resto de la cadena de migraciones corre normal encima).
+**De paso**, `20260916030830-reparar-primary-key-equipos.js` ganó un `.catch(() => {})` (mismo patrón ya usado
+en otras migraciones de esta ronda): en una BD nueva creada por la migración genesis, `equipos` ya nace con una
+primary key real, así que no hay nada que reparar ahí.
+
+**Bug 3 - índice UNIQUE duplicado en `cedula` (bug propio, introducido en la ronda de cifrado).**
+`20260925030000-cifrar-pii-operadores.js` le pasaba `unique:true` a un `changeColumn` sobre una columna que YA
+era única (por la migración original que la agregó) - Sequelize no reconoce el constraint existente y crea uno
+SEGUNDO, redundante (`operadores_cedula_key1`, visible en la BD local de pruebas). Corregido: el `changeColumn`
+ya no repite `unique:true`, solo ensancha el tipo - un `ALTER COLUMN TYPE` no toca constraints existentes.
+Verificado con una migración desde cero: un solo índice UNIQUE en `cedula`, como corresponde.
 
 ## Pendiente
 

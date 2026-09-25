@@ -28,6 +28,50 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+  # Job aparte del de arriba (no lo hace mas lento a proposito): necesita Postgres real, el job "backend" de
+  # arriba corre sin ninguna base de datos. Ver CLAUDE.md, "Pruebas de integracion".
+  backend-integration:
+    name: Backend (integración)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgre
+          POSTGRES_PASSWORD: postgres_ci
+          POSTGRES_DB: horometros_db_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: backend-horometros
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: postgre
+      DB_PASSWORD: postgres_ci
+      DB_NAME: horometros_db_test
+      DB_NAME_TEST: horometros_db_test
+      NODE_ENV: test
+      # Claves de prueba, fijas y sin ningun valor real - no son secretos de GitHub a proposito, no protegen
+      # nada real (ver vitest.integration.config.mts, que usa las mismas para correr local).
+      JWT_SECRET: clave_de_pruebas_integracion_no_usar_en_produccion
+      CIFRADO_CLAVE: '1111111111111111111111111111111111111111111111111111111111111111'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend-horometros/package-lock.json
+      - run: npm ci
+      - run: npm run test:integration
+
   frontend:
     name: Frontend (typecheck, tests, build)
     runs-on: ubuntu-latest

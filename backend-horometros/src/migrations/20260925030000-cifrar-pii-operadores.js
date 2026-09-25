@@ -60,7 +60,10 @@ module.exports = {
   async up(queryInterface, Sequelize) {
     // Ensanchar ANTES de escribir: el texto cifrado (base64 de iv+authTag+ciphertext, mas el prefijo) es
     // bastante mas largo que el original - ver models/operador.ts para el detalle de cada tamaño.
-    await queryInterface.changeColumn('operadores', 'cedula', { type: Sequelize.STRING(100), unique: true, allowNull: true });
+    // Sin 'unique: true' aca: la columna YA es unica (constraint creado por la migracion original que agrego
+    // 'cedula' - 20260903054054). Repetir 'unique:true' en un changeColumn le agrega un SEGUNDO indice UNIQUE
+    // redundante en vez de reconocer el que ya existe (bug real encontrado probando esto a mano).
+    await queryInterface.changeColumn('operadores', 'cedula', { type: Sequelize.STRING(100), allowNull: true });
     await queryInterface.changeColumn('operadores', 'telefono', { type: Sequelize.STRING(100), allowNull: true });
     await queryInterface.changeColumn('operadores', 'direccion', { type: Sequelize.STRING(500), allowNull: true });
 

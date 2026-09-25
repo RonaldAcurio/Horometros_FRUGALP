@@ -21,8 +21,20 @@ const config = {
   } : {}
 };
 
+/*
+'test' usa una BASE DE DATOS DISTINTA de 'development' (ver CLAUDE.md, "Pruebas de integracion") - las pruebas de
+integracion corren TRUNCATE/INSERT reales contra Postgres, y sin esto correrian contra la misma BD que usas para
+probar a mano, borrando datos de prueba que no tienen nada que ver. DB_NAME_TEST es opcional: sin configurarla,
+se deriva sola agregando '_test' al nombre de development (ej. 'horometros_db' -> 'horometros_db_test') - hay
+que crearla una vez a mano (createdb horometros_db_test) antes de correr 'npm run test:integration' local.
+*/
+const configTest = {
+  ...config,
+  database: process.env.DB_NAME_TEST || `${config.database}_test`,
+};
+
 module.exports = {
   development: config,
-  test: config,
+  test: configTest,
   production: config
 };
