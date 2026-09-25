@@ -569,6 +569,55 @@ lo confirmado:
 - `SequelizeMeta` de este checkout tenía un hueco (migraciones aplicadas a mano sin registrar) - ya reconciliado
   localmente, pero verificar en cualquier entorno nuevo con `sequelize-cli db:migrate:status`.
 
+## Checklist de seguridad/operación (auditoría, no repetir sin releer esto)
+
+Lista de chequeo que el usuario pidió evaluar (2026-09-24) para saber si la app cumple como para pasar a
+producción real. Estado resumido - el razonamiento completo de cada punto vive en la conversación donde se hizo
+la auditoría, esto es solo el veredicto para no tener que rehacerla de cero cada sesión. `✅` cumple, `⚠️`
+parcial/riesgo, `❌` no cumple, `➖` no aplica hoy.
+
+**Requisitos y diseño:** requerimientos funcionales ✅ (documentados arriba) · no funcionales ⚠️ (sin metas
+explícitas de tiempo de respuesta/uptime) · restricciones de integridad ✅ (FKs + UNIQUE reales en BD).
+
+**Seguridad de la app:** manejo de sesiones ⚠️ (JWT 8h sin revocación) · almacenamiento seguro ⚠️ (bcrypt bien,
+PII en texto plano) · cifrado de datos sensibles ❌ (nada a nivel app, solo lo que cifre Render en disco) ·
+SQL injection ✅ (Sequelize parametrizado, cero queries crudas) · XSS ✅ (Angular escapa por defecto, cero
+`innerHTML`/`bypassSecurityTrust`) · CSRF ✅ (JWT va en header, no en cookie) · rate limiting ❌ (sin límite de
+intentos en login) · helmet/cabeceras de seguridad ❌ (no instalado) · CORS ⚠️ (`cors()` sin restricción, abierto
+a cualquier origen) · certificados SSL ✅ (los da Render/Vercel automático).
+
+**Infraestructura:** balanceador de carga ❌ (hoy no aplica por escala, pero con ~950 trabajadores de campo
+como usuarios reales SÍ hay que resolverlo, ver Pendiente) · backups de BD ❌ (no verificado - urgente revisar
+plan de Render, el free tier expira solo) · firewall ➖ (lo maneja la plataforma) · redundancia ❌ (una sola
+instancia) · recuperación ante desastres ❌ (sin plan) · escalabilidad horizontal/vertical ⚠️ (diseño stateless
+ayuda, pero no configurado) · cache ❌ · cola de procesamiento ❌ (no hace falta todavía) · tareas en segundo
+plano ❌ (nada corre solo, "Cerrar Jornada" es 100% manual).
+
+**Ciclo de desarrollo:** ambientes dev/stage/prod ⚠️ (solo dev y prod, sin staging) · secretos ✅ (`.env`
+gitignored, `JWT_SECRET` falla duro si falta) · CI/CD ❌ (sin GitHub Actions, deploy automático de la plataforma
+pero sin validación previa) · pruebas unitarias ❌ · integración ❌ · end-to-end ❌ (los Playwright de esta
+sesión fueron manuales, no quedaron en el repo) · carga ❌.
+
+**Configuración y observabilidad:** login ✅/⚠️ (bien implementado, falta límite de intentos y política de clave
+más fuerte que 6 caracteres) · monitoreo de métricas ❌ · alertas ❌ · trazabilidad ⚠️ (hay auditoría de negocio
+- O/X, timestamps - pero no auditoría técnica de acceso) · análisis de errores ❌ (solo `console.error`, sin
+Sentry/similar) · observabilidad de caídas ❌ (existe `/api/health` pero nada lo monitorea).
+
+**App móvil:** ➖ no aplica en su totalidad todavía - sigue siendo 100% web, sin build nativa ni presencia en
+tiendas (certificados de firma, perfiles de aprovisionamiento, firmas, bill of materials de tienda, rendimiento
+nativo, compatibilidad entre dispositivos, analítica de app - todo esto se activa cuando se empaquete). Dos
+excepciones que sí aplican YA, como web, porque ya se maneja PII real de trabajadores en producción: política de
+privacidad ❌ (no existe) · términos y condiciones ❌ (no existen) · protección de datos personales ⚠️ (mismo
+hueco que cifrado de datos sensibles) · actualización de dependencias ⚠️ (se limpiaron sueltas esta ronda, sin
+proceso automático tipo Dependabot) · vulnerabilidades de terceros ❌ (sin `npm audit` en ningún pipeline).
+
+**Veredicto:** la base de código está sólida donde más cuesta acertar (ORM parametrizado, Angular sin XSS,
+claves con bcrypt, JWT bien diseñado, integridad referencial real). Como operación de producción con cientos de
+usuarios reales, no cumple: sin pruebas, sin CI/CD, sin observabilidad de ningún tipo, backups sin verificar, y
+3 huecos de seguridad baratos de cerrar (CORS abierto, sin rate limiting, sin helmet) que son la prioridad
+inmediata. Balanceador de carga/redundancia pasaron de "no aplica" a "sí aplica" en cuanto se confirmó la escala
+real (~950 trabajadores de campo como usuarios de la app, ~150 de oficina que no la usan, de un total de ~1100).
+
 ## Pendiente
 
 **Backend**
