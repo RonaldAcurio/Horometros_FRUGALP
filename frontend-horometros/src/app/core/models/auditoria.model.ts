@@ -17,3 +17,11 @@ export interface RegistroAuditoria {
   // el backend no pudo resolverlo, aunque en la practica un actor siempre existe (viene de req.auth).
   actor: { nombre_completo: string; cargo: string } | null;
 }
+
+// Misma forma de respuesta paginada que ya usa obtenerHistorial (asistencia.model.ts) - GET /api/auditoria.
+export interface RespuestaAuditoria {
+  data: RegistroAuditoria[];
+  total: number;
+  pagina: number;
+  totalPaginas: number;
+}

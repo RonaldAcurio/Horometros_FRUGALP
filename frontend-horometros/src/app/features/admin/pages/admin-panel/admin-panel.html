@@ -134,6 +134,14 @@
         </tbody>
       </table>
     </div>
+
+    <div class="pagination-bar" *ngIf="auditoria.length > 0">
+      <span>Página {{ paginaAuditoria }} de {{ totalPaginasAuditoria }} ({{ totalAuditoria }} registros)</span>
+      <div class="flex gap-2">
+        <button [disabled]="paginaAuditoria === 1" (click)="cambiarPaginaAuditoria(paginaAuditoria - 1)" class="btn btn-secondary btn-sm">◀</button>
+        <button [disabled]="paginaAuditoria === totalPaginasAuditoria" (click)="cambiarPaginaAuditoria(paginaAuditoria + 1)" class="btn btn-secondary btn-sm">▶</button>
+      </div>
+    </div>
   </div>
 
   <!-- MODAL: NUEVO USUARIO -->

@@ -1,5 +1,6 @@
 import { DataTypes, Model, CreationOptional, InferAttributes, InferCreationAttributes } from 'sequelize';
 import { sequelize } from '../config/database';
+import { cifrar, cifrarDeterministico, descifrar } from '../utils/cifrado';
 
 export class Operador extends Model <InferAttributes<Operador>, InferCreationAttributes<Operador>>{
     declare id: CreationOptional<number>;
@@ -46,18 +47,47 @@ Operador.init(
         nombre_hoja:{
             type: DataTypes.STRING(100),
         },
+        /*
+        Cifrado en reposo (ver CLAUDE.md, "Cifrado de datos sensibles" y utils/cifrado.ts): la columna guarda el
+        texto CIFRADO, get()/set() lo hacen transparente para el resto del codigo (controllers/JSON de
+        respuesta siguen viendo el valor real). 'cedula' usa cifrado DETERMINISTICO (mismo texto -> mismo
+        resultado) porque tiene UNIQUE en la BD y se busca por igualdad exacta
+        (verificarDuplicadosOperador, asistencia.controller.ts) - esas comparaciones NO pasan por este set(),
+        asi que cifran el valor buscado por su cuenta, de la misma forma. STRING(100), no 20: el texto cifrado
+        es bastante mas largo que una cedula de 10 digitos.
+        */
         cedula:{
-            type: DataTypes.STRING(20),
+            type: DataTypes.STRING(100),
             unique:true,
             allowNull:true,
+            get(): string | null {
+                return descifrar(this.getDataValue('cedula'));
+            },
+            set(valor: string | null){
+                this.setDataValue('cedula', cifrarDeterministico(valor) as any);
+            },
         },
+        // No determinístico (nunca se busca por igualdad) - STRING(100), no 20, mismo motivo que cedula.
         telefono:{
-            type: DataTypes.STRING(20),
+            type: DataTypes.STRING(100),
             allowNull:true,
+            get(): string | null {
+                return descifrar(this.getDataValue('telefono'));
+            },
+            set(valor: string | null){
+                this.setDataValue('telefono', cifrar(valor) as any);
+            },
         },
+        // No determinístico - STRING(500), no 255, mismo motivo que cedula/telefono.
         direccion:{
-            type: DataTypes.STRING(255),
+            type: DataTypes.STRING(500),
             allowNull:true,
+            get(): string | null {
+                return descifrar(this.getDataValue('direccion'));
+            },
+            set(valor: string | null){
+                this.setDataValue('direccion', cifrar(valor) as any);
+            },
         },
         rol:{
             type: DataTypes.STRING(20),

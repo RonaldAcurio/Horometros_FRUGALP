@@ -580,9 +580,9 @@ parcial/riesgo, `❌` no cumple, `➖` no aplica hoy.
 explícitas de tiempo de respuesta/uptime) · restricciones de integridad ✅ (FKs + UNIQUE reales en BD).
 
 **Seguridad de la app:** manejo de sesiones ✅ (arreglado 2026-09-25, revocación real al cambiar la clave, ver
-abajo) · almacenamiento seguro ⚠️ (bcrypt bien,
-PII en texto plano) · cifrado de datos sensibles ❌ (nada a nivel app, solo lo que cifre Render en disco) ·
-SQL injection ✅ (Sequelize parametrizado, cero queries crudas) · XSS ✅ (Angular escapa por defecto, cero
+abajo) · almacenamiento seguro ✅ (arreglado 2026-09-25: bcrypt para claves + AES-256-GCM para cédula/teléfono/
+dirección del Operador, ver abajo) · cifrado de datos sensibles ✅ (mismo arreglo, ver abajo - requiere
+`CIFRADO_CLAVE` configurada en Render antes de desplegar) · SQL injection ✅ (Sequelize parametrizado, cero queries crudas) · XSS ✅ (Angular escapa por defecto, cero
 `innerHTML`/`bypassSecurityTrust`) · CSRF ✅ (JWT va en header, no en cookie) · rate limiting ✅ (arreglado
 2026-09-25, ver abajo) · helmet/cabeceras de seguridad ✅ (arreglado 2026-09-25) · CORS ✅ (arreglado 2026-09-25,
 dominio de producción de Vercel ya viene por defecto, `CORS_ORIGIN` solo hace falta si agregan otro dominio) ·
@@ -617,8 +617,8 @@ nativo, compatibilidad entre dispositivos, analítica de app - todo esto se acti
 excepciones que sí aplican YA, como web, porque ya se maneja PII real de trabajadores en producción: política de
 privacidad ✅ (arreglado 2026-09-25, borrador redactado + gate de aceptación en el login, ver abajo - falta que
 la empresa cliente complete los datos legales entre corchetes antes de ir a producción real) · términos y
-condiciones ✅ (mismo documento/mismo arreglo) · protección de datos personales ⚠️ (mismo hueco que cifrado de
-datos sensibles) · actualización de dependencias ✅ (arreglado 2026-09-25, Dependabot semanal en los 2 proyectos
+condiciones ✅ (mismo documento/mismo arreglo) · protección de datos personales ✅ (arreglado 2026-09-25, cifrado
+en reposo de cédula/teléfono/dirección, ver abajo) · actualización de dependencias ✅ (arreglado 2026-09-25, Dependabot semanal en los 2 proyectos
 + Actions) · vulnerabilidades de terceros ✅ (arreglado 2026-09-25, `npm audit` corre en CI y quedó en 0 en
 ambos proyectos, ver abajo).
 
@@ -814,15 +814,70 @@ modelo `RegistroAuditoria`, helper `utils/registrar-auditoria.ts`):
   acción principal que ya se ejecutó (`registrarAuditoria` atrapa su propio error y solo lo deja en el log del
   servidor) - resetear una clave no debe fallar porque el historial tuvo un problema.
 - **`GET /api/auditoria`** (nuevo, `auditoria.controller.ts`/`.rutes.ts`), exclusivo ADMIN - es la única cuenta
-  con visibilidad sobre lo que hacen tanto ADMIN como ASISTENTE, que es el punto de tener esto. Trae los
-  últimos 200 registros, más recientes primero.
+  con visibilidad sobre lo que hacen tanto ADMIN como ASISTENTE, que es el punto de tener esto. **Paginado**
+  (agregado 2026-09-25, mismo patrón que `obtenerHistorial`/`obtenerAsistenciaHoy` en `asistencia.controller.ts`:
+  `?pagina=N`, respuesta `{ data, total, pagina, totalPaginas }`) - a diferencia del Historial de Asistencia, el
+  límite va FIJO en 20 por página (`LIMITE_POR_PAGINA`, no se deja elegir por query) porque esta pestaña no
+  tiene ningún filtro que justifique páginas más grandes.
 - Frontend: pestaña nueva **"Historial"** en el Menú Admin (`admin-panel.ts`/`.html`), visible solo con
   `*ngIf="esAdmin"` (mismo patrón que la pestaña Haciendas). Se carga recién al entrar a la pestaña, no en
   `ngOnInit` - es la que menos tráfico tiene. Tabla simple: fecha, quién (nombre + cargo), acción (etiqueta
-  legible vía `ETIQUETAS_ACCION`), sobre quién/qué.
-- Probado con Playwright contra el backend local: ADMIN resetea la clave de una cuenta de prueba dos veces +
-  login normal, la pestaña Historial muestra las 2 filas correctas (quién, qué acción, sobre quién), ordenadas
-  de más reciente a más antigua.
+  legible vía `ETIQUETAS_ACCION`), sobre quién/qué. Barra de paginación abajo (`.pagination-bar`, mismo
+  componente visual que ya usa el Historial de Asistencia) con "Página X de Y (N registros)" + botones ◀ ▶.
+- Probado con Playwright contra el backend local: ADMIN resetea la clave de una cuenta de prueba 25 veces
+  (para forzar 2 páginas) - página 1 muestra 20 filas con "◀" deshabilitado y "▶" habilitado, página 2 muestra
+  las 5 restantes con "▶" deshabilitado.
+
+### Cifrado en reposo de PII del Operador (2026-09-25)
+
+Cédula, teléfono y dirección de los Mecánicos/Operadores (~950 trabajadores) se guardaban en texto plano en la
+BD - el ítem que quedaba pendiente de la auditoría de seguridad original. Ahora se cifran a nivel de columna con
+AES-256-GCM (`utils/cifrado.ts`), transparente para el resto del código: el backend sigue leyendo/escribiendo
+texto plano en `req.body`/las respuestas JSON, solo lo que queda guardado en Postgres cambia.
+
+- **`CIFRADO_CLAVE`** (nueva variable de entorno OBLIGATORIA, 32 bytes en hex = 64 caracteres, generar con
+  `openssl rand -hex 32`) - mismo patrón que `JWT_SECRET`: si falta, el proceso no arranca en vez de correr sin
+  cifrado real. **Si esta clave se pierde, los datos cifrados quedan irrecuperables para siempre** - no hay
+  forma de "resetearla" sin perder todo lo que ya está cifrado con la anterior. Falta configurarla en Render
+  (además de en el `.env` local de quien desarrolle) antes de desplegar este cambio.
+- **`utils/cifrado.ts`** (+ `.test.ts`, 9 casos): `cifrar()` (AES-256-GCM, IV aleatorio - para `telefono`/
+  `direccion`, que nunca se buscan por igualdad) · `cifrarDeterministico()` (mismo texto de entrada → siempre el
+  mismo resultado, IV derivado del propio texto vía HMAC-SHA256 - SOLO para `cedula`, que tiene `UNIQUE` en la
+  BD y se busca por igualdad exacta) · `descifrar()` (sirve para los dos formatos, y devuelve tal cual un valor
+  legado sin el prefijo `enc1:` - o sea, texto plano de antes de activar el cifrado).
+- **`models/operador.ts`**: `cedula`/`telefono`/`direccion` ahora tienen `get()`/`set()` que cifran/descifran
+  automáticamente - `instance.cedula = 'x'`, `Operador.create({cedula:'x'})` y `Operador.update({cedula:'x'})`
+  pasan TODOS por el `set()` (Sequelize los intercepta), así que no hizo falta tocar `crearOperador`/
+  `actualizarOperador`. Columnas ensanchadas (`STRING(100)`/`STRING(100)`/`STRING(500)`, antes `20`/`20`/`255`)
+  porque el texto cifrado (base64 de iv+authTag+ciphertext, más el prefijo) es más largo que el original.
+- **Excepción real encontrada y corregida**: `verificarDuplicadosOperador` (`asistencia.controller.ts`) arma su
+  propio `where: { cedula: ... }` para chequear duplicados ANTES del insert/update - un `where` de Sequelize NO
+  pasa por el `set()` del modelo (eso solo aplica a asignaciones de instancia), así que sin arreglar esto la
+  búsqueda habría comparado texto plano contra cifrado y NUNCA habría encontrado coincidencias, dejando pasar
+  cédulas duplicadas en silencio. Se cifra el valor buscado a mano, con `cifrarDeterministico()`, antes de armar
+  el `where`. De paso, `mensajeDuplicadoGenerico` (el mensaje de respaldo ante una condición de carrera) dejó de
+  mostrar el valor crudo del error de Postgres para el campo `cedula` - ese valor ahora sería el texto CIFRADO,
+  no la cédula real, y mostrarlo confundiría en vez de ayudar.
+- **Migración `20260925030000-cifrar-pii-operadores.js`**: ensancha las 3 columnas y cifra (backfill) todo lo
+  que ya estaba en texto plano - reimplementa el mismo algoritmo en JS plano porque las migraciones corren
+  fuera de `tsx`/`ts-node`, sin acceso directo a los módulos TS del proyecto (si el algoritmo de `cifrado.ts`
+  cambia alguna vez, hay que replicar el cambio ahí también). Idempotente (un valor que ya empieza con `enc1:`
+  se salta - se puede interrumpir y correr de nuevo sin duplicar el cifrado ni perder datos) y sin `down()` real
+  (revertir cifrado ya aplicado en producción es una decisión manual, no un rollback de rutina).
+  **⚠️ Antes de correrla en producción: hacer un respaldo manual de la base de datos.** Reescribe PII real de
+  ~950 trabajadores - la migración en sí es segura e idempotente, pero un respaldo previo sigue siendo la única
+  forma real de deshacer un problema (ej. `CIFRADO_CLAVE` mal configurada).
+- Probado de punta a punta contra Postgres local: cédulas/teléfonos/direcciones que ya estaban en texto plano
+  (de sesiones de prueba anteriores) quedaron cifradas tras migrar (`SELECT` directo en `psql` confirma
+  `enc1:...`) · crear un Operador nuevo con esos 3 campos → la API devuelve texto plano, la BD guarda cifrado ·
+  crear otro Operador con la MISMA cédula → rechazado 409 con el nombre correcto (no el texto cifrado) · esa
+  misma verificación de duplicado TAMBIÉN funciona contra una cédula que fue migrada desde texto plano
+  (confirma que el cifrado determinístico de la migración y el del modelo producen el mismo resultado) · editar
+  teléfono/dirección de un Operador existente → responde en texto plano correctamente · listar operadores con
+  cédula/teléfono `null`/`''` (datos preexistentes) no revienta.
+- **No cubierto por este cambio** (fuera del alcance que se pidió - "cédula, teléfono y dirección"):
+  `nombre_completo` (se usa para ordenar/mostrar en toda la app; cifrarlo rompería esas listas) y `codigo_megued`
+  (código operativo interno, no dato personal en el sentido de la Política de Privacidad).
 
 ## Pendiente
 

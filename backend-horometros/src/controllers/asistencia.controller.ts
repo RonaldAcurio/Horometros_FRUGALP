@@ -10,6 +10,7 @@ import bcrypt from 'bcryptjs';
 import { generarTokenQrJornada, verificarTokenQrJornada } from '../services/jwt.service';
 import { tokenHaciendaVigente } from '../utils/token-hacienda';
 import { registrarAuditoria } from '../utils/registrar-auditoria';
+import { cifrarDeterministico } from '../utils/cifrado';
 
 /*
 Columnas que excluimos de los LISTADOS (hoy/historial): la foto pesa decenas/cientos de KB en Base64, y si el supervisor tiene
@@ -48,7 +49,14 @@ const verificarDuplicadosOperador = async(
         }
     }
     if(datos.cedula){
-        const where: any = { cedula: datos.cedula };
+        /*
+        cedula se guarda CIFRADA de forma deterministica (ver models/operador.ts) - el 'where' de Sequelize NO
+        pasa por el set() del modelo (eso solo aplica a instance.cedula = x / .create()/.update()), asi que hay
+        que cifrar el valor buscado ACA, a mano, de la misma forma, para poder comparar contra lo que ya esta
+        en la BD. Sin esto, esta busqueda nunca encontraria coincidencias (comparando texto plano contra
+        cifrado) y dejaria pasar cedulas duplicadas silenciosamente.
+        */
+        const where: any = { cedula: cifrarDeterministico(datos.cedula) };
         if(idAExcluir) where.id = { [Op.ne]: idAExcluir };
         const existente = await Operador.findOne({ where });
         if(existente){
@@ -113,7 +121,10 @@ const mensajeDuplicadoGenerico = (err: any): string | null => {
     const campo = err.errors?.[0]?.path;
     const valor = err.errors?.[0]?.value;
     if(campo === 'codigo_megued') return `El código MEGUED "${valor}" ya está en uso.`;
-    if(campo === 'cedula') return `La cédula "${valor}" ya está en uso.`;
+    // Sin el valor en el mensaje (a diferencia de codigo_megued/usuario, abajo): 'cedula' se guarda cifrada
+    // (ver models/operador.ts), asi que 'valor' aca seria el texto cifrado, no la cedula real - mostrarlo
+    // confundiria en vez de ayudar.
+    if(campo === 'cedula') return 'Esa cédula ya está registrada a nombre de otro operador.';
     if(campo === 'usuario') return `El usuario "${valor}" ya está en uso.`;
     return 'Ese dato ya está en uso por otro registro.';
 };

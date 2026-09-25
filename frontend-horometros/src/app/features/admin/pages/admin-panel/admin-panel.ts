@@ -55,6 +55,9 @@ export class AdminPanel implements OnInit, OnDestroy {
   haciendas: Hacienda[] = [];
   auditoria: RegistroAuditoria[] = [];
   cargandoAuditoria = false;
+  paginaAuditoria = 1;
+  totalPaginasAuditoria = 1;
+  totalAuditoria = 0;
 
   // Modal: Nuevo Usuario
   mostrarModalUsuario = false;
@@ -103,11 +106,20 @@ export class AdminPanel implements OnInit, OnDestroy {
     }
   }
 
+  cambiarPaginaAuditoria(nuevaPagina: number): void {
+    if (nuevaPagina >= 1 && nuevaPagina <= this.totalPaginasAuditoria) {
+      this.paginaAuditoria = nuevaPagina;
+      this.cargarAuditoria();
+    }
+  }
+
   cargarAuditoria(): void {
     this.cargandoAuditoria = true;
-    this.auditoriaService.obtenerAuditoria().subscribe({
-      next: (data) => {
-        this.auditoria = data;
+    this.auditoriaService.obtenerAuditoria(this.paginaAuditoria).subscribe({
+      next: (res) => {
+        this.auditoria = res.data || [];
+        this.totalPaginasAuditoria = res.totalPaginas || 1;
+        this.totalAuditoria = res.total || 0;
         this.cargandoAuditoria = false;
         this.cdr.detectChanges();
       },
