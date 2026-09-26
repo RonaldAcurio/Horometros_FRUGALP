@@ -1,11 +1,24 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>FrontendHorometros</title>
+  <title>FRUGALP - Control Agrícola & Horómetros</title>
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Control de asistencia y actividades agrícolas de FRUGALP.">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <!--
+  manifest.json + apple-touch-icon: permite "Agregar a pantalla de inicio" en Android e iPhone (icono propio,
+  abre a pantalla completa sin la barra del navegador) sin necesidad de empaquetar como app nativa ni pagar
+  ninguna cuenta de desarrollador - ver CLAUDE.md, "Empaquetado". No sustituye al APK de Android (Capacitor),
+  es la opcion gratuita para iPhone (donde el APK no aplica) y un extra para quien prefiera no instalar el APK.
+  -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="theme-color" content="#16a34a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="FRUGALP">
 </head>
 <body>
   <app-root></app-root>

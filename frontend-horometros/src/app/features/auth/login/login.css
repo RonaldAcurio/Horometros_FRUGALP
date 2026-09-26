@@ -51,6 +51,10 @@
   @apply w-full mt-3;
 }
 
+/*
+text-gray-600 (no gray-400): Lighthouse detecto contraste insuficiente en gray-400 sobre fondo blanco (2.53:1,
+minimo WCAG AA es 4.5:1) - relevante aca en particular, trabajadores de campo usando el celular bajo el sol.
+*/
 .login-link-politica {
-  @apply w-full text-center text-xs text-gray-400 hover:text-gray-600 underline bg-transparent border-0 cursor-pointer mt-4;
+  @apply w-full text-center text-xs text-gray-600 hover:text-gray-800 underline bg-transparent border-0 cursor-pointer mt-4;
 }

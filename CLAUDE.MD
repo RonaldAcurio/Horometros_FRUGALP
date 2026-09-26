@@ -1041,7 +1041,51 @@ Node se van encolando. En producción real esto no es un problema: 950 trabajado
 segundo literal, llegan repartidos en 15-30 minutos al inicio del turno - pero si alguna vez se ve lento en la
 práctica, esta es la causa conocida, no un misterio a investigar de cero.
 
+### Empaquetado con Capacitor (2026-09-26)
+
+Plan acordado: **Android** se distribuye como `.apk` instalable directo (sin Play Store, sin costo) - **iPhone**
+se queda como web normal (Safari), sin app nativa, para evitar el Apple Developer Enterprise Program ($299/año,
+necesario para distribuir sin pasar por el App Store a los empleados de una empresa). Decisión de negocio del
+usuario, no técnica - ver "Pendiente" para lo que falta confirmar.
+
+- **`frontend-horometros/capacitor.config.ts`** (nuevo): `appId: 'com.frugalp.horometros'` (placeholder
+  razonable, cambiarlo despues de publicado no es trivial - reinstala como app distinta, no actualiza la
+  existente), `appName: 'FRUGALP'`, `webDir: 'dist/frontend-horometros/browser'`.
+- **`frontend-horometros/android/`** (nuevo, generado por `npx cap add android`): proyecto nativo completo
+  (Gradle, `AndroidManifest.xml`, `MainActivity.java`). Iconos/splash son los genéricos de Capacitor todavía -
+  falta correr `@capacitor/assets` con el logo real de la empresa antes de distribuir de verdad (ver Pendiente).
+- **CORS: `https://localhost` agregado al default de `app.ts`** - la app empaquetada de Android sirve su
+  contenido desde ese origen fijo (el WebView de Capacitor), no desde el dominio de Vercel. Si `CORS_ORIGIN` SI
+  esta configurada en Render (como ahora), hay que agregar `https://localhost` a esa lista a mano tambien - el
+  default del código no aplica cuando la variable de entorno está seteada.
+- **No se pudo compilar el `.apk` en este sandbox**: Java 21 y Gradle sí están disponibles, pero
+  `dl.google.com` (repositorio Maven de Android, de donde Gradle baja el Android Gradle Plugin) está bloqueado
+  por la política de red del entorno - confirmado con el error exacto de Gradle (403 Forbidden). Compilar el
+  `.apk` real necesita Android Studio en una máquina con internet normal (abre la carpeta `android/`, Android
+  Studio maneja el SDK solo) - o ampliar el acceso de red de este entorno (agregar `dl.google.com`) para
+  terminarlo aquí mismo.
+- **PWA-lite gratis para iPhone** (`manifest.json`, `apple-touch-icon.png`, meta tags en `index.html`): permite
+  "Agregar a pantalla de inicio" en Safari - ícono propio, abre a pantalla completa, sin ninguna cuenta ni
+  costo. No es una app nativa de verdad, pero cubre el caso de iPhone sin pagar el Enterprise Program.
+- **Auditoría con Lighthouse** (local, contra el build de producción): antes de tocar nada - Rendimiento 76,
+  Accesibilidad 94, Buenas prácticas 100, SEO 90. Dos hallazgos reales corregidos: contraste insuficiente del
+  link "Política de Privacidad" en el login (`text-gray-400` sobre blanco, 2.53:1 - `text-gray-600`, ahora pasa
+  WCAG AA) y faltaba `<meta name="description">`. Después de los arreglos: Accesibilidad 100, SEO 100,
+  Rendimiento 80, Buenas prácticas 100.
+
 ## Pendiente
+
+**Empaquetado con Capacitor (ver arriba) - pasos que faltan**
+- Compilar el `.apk` real: necesita Android Studio (máquina del usuario) o ampliar el acceso de red de este
+  entorno a `dl.google.com`.
+- Reemplazar los íconos/splash genéricos de Capacitor por el logo real de la empresa (`@capacitor/assets`).
+- Probar en un iPhone real y 2-3 marcas de Android distintas antes de distribuir a los 950 trabajadores
+  (cámara/QR son el punto de riesgo real entre fabricantes, ver auditoría de dispositivos).
+- Offline-first (guardar marcación localmente sin señal, sincronizar después) - sigue sin implementar, ver
+  conversación del 2026-09-25/26 para el diseño acordado (manual/periódico, no background sync automático, por
+  la limitación real de iOS).
+- Pendiente de confirmación del usuario: ¿de verdad hay iPhones entre los 950 trabajadores? Si es casi todo
+  Android, no hace falta ni pensar en el costo de Apple.
 
 **Migración/transferencia de cuentas a la empresa cliente (recordatorio, no urgente todavía)**
 - Antes de entregar/vender el sistema, todas las cuentas de infraestructura (Render, Vercel, dominio, BD,

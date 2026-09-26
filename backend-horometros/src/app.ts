@@ -28,10 +28,15 @@ Vercel. Si la variable no esta configurada en el entorno, cae al dominio real de
 "Domain" estable del proyecto, no las URLs de preview con hash que cambian en cada deploy) + localhost para
 desarrollo - antes `cors()` sin argumentos aceptaba CUALQUIER origen, cualquier sitio en internet podia llamar a
 esta API usando la sesion de quien la tuviera abierta.
+
+IMPORTANTE si CORS_ORIGIN SI esta configurada en el entorno (Render): 'https://localhost' tiene que estar en
+esa lista tambien (ver CLAUDE.md, "Empaquetado con Capacitor") - la app empaquetada de Android sirve el
+contenido desde ese origen fijo (el WebView de Capacitor, no el dominio de Vercel), asi que sin esto el login
+fallaria con el mismo error de CORS que el del navegador, pero DENTRO de la app instalada en el celular.
 */
 const origenesPermitidos = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
-    : ['https://horometros-frugalp.vercel.app', 'http://localhost:4200'];
+    : ['https://horometros-frugalp.vercel.app', 'http://localhost:4200', 'https://localhost'];
 
 //Middleware Globales
 app.use(helmet());
