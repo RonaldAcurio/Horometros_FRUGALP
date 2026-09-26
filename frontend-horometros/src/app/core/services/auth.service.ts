@@ -2,6 +2,8 @@ import { Injectable, signal, computed, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { Observable, tap } from 'rxjs';
+import { Capacitor } from '@capacitor/core';
+import { Device } from '@capacitor/device';
 import { environment } from '../../../environments/environment';
 import { PerfilCuenta, RespuestaLogin, RolCuenta } from '../models/auth.model';
 
@@ -63,6 +65,28 @@ export class AuthService {
     localStorage.setItem(CLAVE_PERFIL, JSON.stringify(respuesta.perfil));
     this.token.set(respuesta.token);
     this.perfil.set(respuesta.perfil);
+    this.reportarDispositivoSiAplica();
+  }
+
+  /*
+  Reporta la version de Android/iOS al backend (ver CLAUDE.md, "Auditoria MobSF" - minSdk se bajo a 28 sin poder
+  mapear a mano el parque real de celulares de los ~950 trabajadores; esto junta el dato real solo). Solo corre
+  DENTRO de la app empaquetada (Capacitor.isNativePlatform()) - en el navegador normal la version de Android no
+  aporta nada a esa decision. No bloquea ni afecta el login si falla: es telemetria secundaria, dispara-y-olvida.
+  */
+  private reportarDispositivoSiAplica(): void {
+    if (!Capacitor.isNativePlatform()) return;
+    Device.getInfo()
+      .then((info) => {
+        this.http
+          .post(`${environment.apiUrl}/auth/registrar-dispositivo`, {
+            so_plataforma: info.platform,
+            so_version: info.osVersion,
+            modelo_dispositivo: info.model,
+          })
+          .subscribe({ error: () => {} });
+      })
+      .catch(() => {});
   }
 
   private leerPerfilGuardado(): PerfilCuenta | null {

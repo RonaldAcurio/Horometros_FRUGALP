@@ -1,5 +1,12 @@
 ext {
-    minSdkVersion = 24
+    // Android 9 (API 28, 2018) - MobSF recomienda >=29 (Android 10), pero eso arriesgaba dejar afuera a
+    // trabajadores con celulares mas modestos que no habia forma practica de mapear (ver CLAUDE.md,
+    // "Auditoria MobSF"). 28 sigue cortando el rango realmente viejo/vulnerable que senalo MobSF (Android 7-8),
+    // con margen extra para no excluir a nadie. Si alguien no puede instalar, Android se lo dice clarito al
+    // momento de instalar (no falla en silencio) - y con el registro de dispositivo nuevo (ver auth.controller.ts)
+    // vamos a tener el dato real del parque de celulares despues de una semana de uso real, para ajustar esto
+    // con informacion en vez de estimar.
+    minSdkVersion = 28
     compileSdkVersion = 36
     targetSdkVersion = 36
     androidxActivityVersion = '1.11.0'

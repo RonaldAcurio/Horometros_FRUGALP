@@ -4,6 +4,7 @@ import { Usuario } from '../models/usuario';
 import { Operador } from '../models/operador';
 import { Asistencia } from '../models/asistencias';
 import { Hacienda } from '../models/hacienda';
+import { RegistroDispositivo } from '../models/registro_dispositivo';
 import { generarToken } from '../services/jwt.service';
 import { tokenHaciendaVigente } from '../utils/token-hacienda';
 
@@ -171,5 +172,40 @@ export const aceptarTerminos = async(req:Request, res:Response):Promise<void> =>
         res.json({ message: 'Terminos aceptados correctamente.'});
     }catch(err){
         res.status(500).json({ message: 'Error al registrar la aceptacion de terminos.', err});
+    }
+};
+
+/*
+Registro liviano de que version de Android/iOS reporta la app empaquetada en cada login - ver CLAUDE.md,
+"Auditoria MobSF": se bajo minSdk a 28 (Android 9) sin poder mapear a mano el parque real de celulares de los
+~950 trabajadores. Solo lo llama el frontend cuando corre DENTRO de la app nativa (Capacitor.isNativePlatform()),
+nunca desde el navegador normal - ahi la version de Android no aporta nada a esa decision. No bloquea el login
+si falla (se llama aparte, despues, ver AuthService) - es telemetria secundaria, no debe interrumpir a nadie
+que solo quiere marcar su asistencia.
+*/
+export const registrarDispositivo = async(req:Request, res:Response):Promise<void> => {
+    try{
+        if(!req.auth){
+            res.status(401).json({ message:'Falta el token de autenticacion.'});
+            return;
+        }
+
+        const { so_plataforma, so_version, modelo_dispositivo } = req.body;
+        if(!so_plataforma){
+            res.status(400).json({ message:'so_plataforma es obligatorio.'});
+            return;
+        }
+
+        await RegistroDispositivo.create({
+            actor_tipo: req.auth.tipo,
+            actor_id: req.auth.id,
+            so_plataforma,
+            so_version: so_version ?? null,
+            modelo_dispositivo: modelo_dispositivo ?? null,
+        });
+
+        res.status(201).json({ message: 'Dispositivo registrado.' });
+    }catch(err){
+        res.status(500).json({ message: 'Error al registrar el dispositivo.', err});
     }
 };

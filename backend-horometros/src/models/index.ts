@@ -8,6 +8,7 @@ import { RegistroActividad } from "./registro_actividad";
 import { Hacienda } from "./hacienda";
 import { Usuario } from "./usuario";
 import { RegistroAuditoria } from "./registro_auditoria";
+import { RegistroDispositivo } from "./registro_dispositivo";
 
 Asistencia.belongsTo(Operador, { foreignKey:'operador_id' ,as:'operador'});
 Asistencia.belongsTo(Actividad,{ foreignKey: 'actividad_id', as:'actividad'});
@@ -66,4 +67,5 @@ export{
     Hacienda,
     Usuario,
     RegistroAuditoria,
+    RegistroDispositivo,
 };

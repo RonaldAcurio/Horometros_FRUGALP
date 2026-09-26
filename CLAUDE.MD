@@ -1137,10 +1137,31 @@ hallazgos en `com/frugalp/horometros/*` (el código propio de la app).
   temporal), todos en código de Capacitor, no propio - detecciones "Anti-Debug"/"Anti-VM" de APKiD (falso
   positivo común contra librerías estándar) - permiso `INTERNET` listado entre "permisos abusados por malware"
   (necesario para cualquier app que hable con un servidor).
-- **Pendiente de decisión del usuario, NO tocado:** `minSdk=24` (Android 7.0) - MobSF recomienda `>=29` para
-  que los celulares reciban actualizaciones de seguridad, pero subirlo excluiría a trabajadores con celulares
-  más viejos/económicos de poder instalar la app. Ver "Pendiente" - necesito saber que tan viejos son los
-  celulares reales de los ~950 trabajadores antes de tocar esto.
+- **Decidido 2026-09-26:** `minSdk` bajado de 24 a **28** (Android 9) - punto intermedio entre lo que
+  recomienda MobSF (Android 10/API 29) y no arriesgar excluir a nadie sin poder mapear a mano el parque real
+  de celulares de los ~950 trabajadores. Sigue cortando el rango realmente viejo (Android 7-8) que MobSF
+  señaló. Si algún celular no cumple, Android se lo avisa claro al intentar instalar (no falla en silencio).
+
+### Registro automático de versión de Android/iOS (2026-09-26)
+
+En vez de intentar mapear a mano qué celulares tiene cada uno de los ~950 trabajadores (inviable, ver arriba),
+se agregó un registro liviano y automático: cada vez que alguien inicia sesión DESDE LA APP EMPAQUETADA (no
+desde el navegador, donde este dato no aporta nada a la decisión de `minSdk`), se manda la versión de su
+sistema operativo al backend. Después de una semana de uso real, se puede consultar `registros_dispositivo`
+para tener el dato real del parque de celulares y ajustar `minSdk` con información en vez de estimar.
+
+- **`backend-horometros/src/migrations/20260926000000-...`** (nueva tabla `registros_dispositivo`) +
+  **`models/registro_dispositivo.ts`**: mismo patrón append-only y polimórfico (`actor_tipo`/`actor_id`, puede
+  ser `'usuario'` u `'operador'`) que `registros_auditoria` - ninguna de las dos cuentas tiene una sola tabla
+  en común para un FK normal.
+- **`auth.controller.ts` → `registrarDispositivo`** (nuevo, `POST /auth/registrar-dispositivo`, protegido por
+  `verificarAutenticacion`, acepta JWT de cualquier tipo): inserta `{ so_plataforma, so_version,
+  modelo_dispositivo }` tomando el actor del propio token.
+- **`frontend-horometros`: `@capacitor/device`** (nuevo) + `AuthService.reportarDispositivoSiAplica()`: se
+  llama sola después de cada login exitoso, pero solo hace algo si `Capacitor.isNativePlatform()` es true.
+  Dispara-y-olvida (no bloquea el login si falla, es telemetría secundaria) - probado con `curl` contra
+  Postgres local: caso feliz (201), sin token (401), sin `so_plataforma` (400), y confirmada la fila real en
+  la base de datos.
 
 ## Pendiente
 
@@ -1148,9 +1169,8 @@ hallazgos en `com/frugalp/horometros/*` (el código propio de la app).
 - ~~Compilar el `.apk` real~~ - hecho 2026-09-26, el usuario lo compiló en Android Studio en su propia máquina
   (Fedora), lo instaló en su celular real, y el login funcionó (confirma el arreglo de `https://localhost` en
   `CORS_ORIGIN`).
-- Decidir `minSdk` (hoy 24/Android 7.0) según qué tan viejos son los celulares reales de los ~950 trabajadores -
-  ver hallazgo de MobSF arriba. MobSF recomienda `>=29` mínimo, pero subirlo sin saber los celulares reales
-  podría dejar a alguien sin poder instalar la app.
+- ~~Decidir `minSdk`~~ - hecho 2026-09-26, bajado a 28 (Android 9), ver "Registro automático de versión de
+  Android/iOS" abajo - se va a poder ajustar con datos reales después de una semana de uso.
 - Compilar un build de **release** (firmado con clave propia, no la de debug) antes de distribuir de verdad -
   resuelve automáticamente los hallazgos HIGH de certificado/debuggable que MobSF marcó.
 - ~~Reemplazar los íconos/splash genéricos de Capacitor por el logo real de la empresa~~ - hecho 2026-09-26 (ver
