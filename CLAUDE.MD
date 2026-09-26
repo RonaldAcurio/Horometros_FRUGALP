@@ -1099,6 +1099,26 @@ rama de versión, ver GHSA-34x7-hfp2-rc4v y relacionadas) en una dependencia ani
 conocido (48/72/96/144/192px por densidad), así que se generaron directo con `sharp` (que ya estaba en uso
 para los íconos del navegador) sin necesidad de esa herramienta ni su cadena de dependencias.
 
+### .apk compilado y probado - 2 hallazgos más de Lighthouse contra producción real (2026-09-26)
+
+El usuario compiló el `.apk` el mismo en su máquina (Android Studio, Fedora) siguiendo la guía de arriba, lo
+instaló en su celular, y el login funcionó - confirma que el arreglo de `https://localhost` en `CORS_ORIGIN`
+está bien. Corrió Lighthouse contra `horometros-frugalp.vercel.app/dashboard` (producción real, no el build
+local) y encontró 2 hallazgos más, no cubiertos por la auditoría anterior (esa fue solo sobre `/login`):
+
+- **Contraste insuficiente en el header global** (`app.html`/`app.css`, compartido por TODAS las pantallas
+  autenticadas, a diferencia del hallazgo anterior que solo tocaba el login): `.btn-menu` ("Cerrar sesión" y
+  el botón de menú dinámico) usaba `text-gray-500` sobre fondo `bg-gray-100` (no blanco puro, así que el
+  contraste real es peor que el nominal) - corregido a `text-gray-700`. `.link-politica` (el mismo link,
+  ahora en el header en vez del login) tenía el mismo `text-gray-400` de antes - mismo arreglo,
+  `text-gray-600`.
+- **`robots.txt` no existía** - Vercel, al no encontrar ese archivo, cae al fallback de SPA (le sirve
+  `index.html` a cualquier ruta no reconocida) - Lighthouse literalmente veía HTML donde esperaba
+  reglas de robots ("Syntax not understood" en las 26 líneas). Se agregó `public/robots.txt` con
+  `Disallow: /` - a propósito: esta es una app privada con PII real de trabajadores detrás de un login, NO
+  se busca que Google la indexe. Esto hace que el audit "is-crawlable" de Lighthouse marque "blocked from
+  indexing" como fallo - es el comportamiento correcto para esta app, no perseguir ese punto de SEO.
+
 ## Pendiente
 
 **Empaquetado con Capacitor (ver arriba) - pasos que faltan**

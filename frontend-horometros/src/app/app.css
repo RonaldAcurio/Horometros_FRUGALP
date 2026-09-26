@@ -30,8 +30,12 @@
   @apply text-xs text-green-700 font-medium;
 }
 
+/*
+text-gray-700 (no gray-500): Lighthouse detecto contraste insuficiente - gray-500 sobre el fondo bg-gray-100
+del boton (no blanco puro) cae por debajo del minimo WCAG AA (4.5:1). Mismo motivo que login.css.
+*/
 .btn-menu {
-  @apply text-xs text-gray-500 hover:text-[#7a1f3d] transition-colors bg-gray-100 px-3 py-1.5 rounded-lg border border-gray-200 cursor-pointer;
+  @apply text-xs text-gray-700 hover:text-[#7a1f3d] transition-colors bg-gray-100 px-3 py-1.5 rounded-lg border border-gray-200 cursor-pointer;
 }
 
 .header-acciones {
@@ -50,8 +54,9 @@
   @apply text-[10px] uppercase tracking-wide text-green-700 font-medium;
 }
 
+/* text-gray-600 (no gray-400): mismo hallazgo de contraste que login.css (2.53:1, minimo WCAG AA es 4.5:1). */
 .link-politica {
-  @apply text-xs text-gray-400 hover:text-gray-600 underline bg-transparent border-0 cursor-pointer p-0;
+  @apply text-xs text-gray-600 hover:text-gray-800 underline bg-transparent border-0 cursor-pointer p-0;
 }
 .main-content {
   @apply flex-1 max-w-6xl w-full mx-auto p-4 md:p-6;
