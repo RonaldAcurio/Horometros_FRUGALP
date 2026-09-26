@@ -1,13 +1,16 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
 import * as QRCode from 'qrcode';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 import { RegistroActividadService } from '../../../../core/services/registro-actividad.service';
 import { AuthService } from '../../../../core/services/auth.service';
 import { NotificacionService } from '../../../../core/services/notificacion.service';
 import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
+import { OfflineSyncService } from '../../../../core/services/offline-sync.service';
 import { Equipo, Actividad, RegistroActividad } from '../../../../core/models/asistencia.model';
+import { OperacionCrearLabor } from '../../../../core/models/offline.model';
 
 type FaseJornada = 'cargando' | 'codigo' | 'qr' | 'actividades' | 'terminado';
 
@@ -47,7 +50,11 @@ export class MiJornada implements OnInit, OnDestroy {
 
   // --- Fase actividades ---
   asistenciaId: number | null = null;
+  // Vista combinada: lo que ya confirmó el servidor + lo que quedó guardado localmente sin sincronizar (ver
+  // OfflineSyncService/recalcularVistaRegistros). Las pendientes de crear tienen id NEGATIVO a propósito.
   registros: RegistroActividad[] = [];
+  private registrosServidor: RegistroActividad[] = [];
+  private subCambiosOffline?: Subscription;
 
   /*
   Los selectores de equipo/actividad del formulario son autocompletar: el trabajador escribe y van apareciendo
@@ -111,6 +118,7 @@ export class MiJornada implements OnInit, OnDestroy {
     private authService: AuthService,
     private notificacionService: NotificacionService,
     private confirmacionService: ConfirmacionService,
+    protected offlineSyncService: OfflineSyncService,
     private cdr: ChangeDetectorRef,
   ) {}
 
@@ -120,6 +128,11 @@ export class MiJornada implements OnInit, OnDestroy {
     const perfil = this.authService.perfil();
     this.esMecanico = perfil?.rol !== 'OPERADOR';
     this.requiereCodigo = !!perfil?.hacienda_requiere_codigo;
+
+    // Cualquier cambio en la cola offline (se agregó algo, se sincronizó, volvió la señal) refresca la vista.
+    this.subCambiosOffline = this.offlineSyncService.cambios$.subscribe(() => {
+      if (this.asistenciaId) this.cargarRegistros();
+    });
 
     /*
     Consultamos mi-estado ANTES de decidir la fase inicial: si el trabajador vuelve a entrar (refresco de
@@ -160,6 +173,7 @@ export class MiJornada implements OnInit, OnDestroy {
     this.detenerIntervalos();
     if (this.debounceEquipo) clearTimeout(this.debounceEquipo);
     if (this.debounceActividad) clearTimeout(this.debounceActividad);
+    this.subCambiosOffline?.unsubscribe();
   }
 
   private detenerIntervalos(): void {
@@ -430,17 +444,54 @@ export class MiJornada implements OnInit, OnDestroy {
   private cargarRegistros(): void {
     if (!this.asistenciaId) return;
     this.registroActividadService.obtenerPorAsistencia(this.asistenciaId).subscribe({
-      next: (data) => { this.registros = data; this.cdr.detectChanges(); },
-      error: (err) => console.error('Error cargando registros de actividad:', err),
+      next: (data) => { this.registrosServidor = data; this.recalcularVistaRegistros(); this.cdr.detectChanges(); },
+      error: (err) => {
+        console.error('Error cargando registros de actividad:', err);
+        // Sin señal: igual mostramos lo que ya tengamos guardado localmente sin sincronizar.
+        this.recalcularVistaRegistros();
+        this.cdr.detectChanges();
+      },
     });
+  }
+
+  // Junta lo que ya confirmó el servidor con lo que sigue pendiente de sincronizar de ESTA jornada (ver
+  // OfflineSyncService) - las pendientes se arman con lo que el celular ya tenía cargado (equipo/actividad de
+  // los catálogos), sin depender del servidor para poder mostrarlas.
+  private recalcularVistaRegistros(): void {
+    if (!this.asistenciaId) { this.registros = this.registrosServidor; return; }
+    const pendientes = this.offlineSyncService
+      .pendientesCrearDeAsistencia(this.asistenciaId)
+      .map((op) => this.opACamposDeVista(op));
+    this.registros = [...this.registrosServidor, ...pendientes];
+  }
+
+  private opACamposDeVista(op: OperacionCrearLabor): RegistroActividad {
+    return {
+      id: op.idLocal,
+      asistencia_id: op.payload.asistencia_id,
+      equipo_id: op.payload.equipo_id,
+      actividad_id: op.payload.actividad_id,
+      area: op.payload.area ?? null,
+      horometro_inicio: op.payload.horometro_inicio ?? null,
+      horometro_final: null,
+      observaciones: op.payload.observaciones ?? null,
+      hora_inicio: op.payload.hora_inicio ?? op.creadoEn,
+      hora_fin: null,
+      equipo: op.equipo,
+      actividad: op.actividad,
+    };
+  }
+
+  // Usado por el template para distinguir una fila todavía sin sincronizar (ver mi-jornada.html).
+  esPendienteDeSincronizar(registroId: number): boolean {
+    return registroId < 0;
   }
 
   guardarNuevoRegistro(): void {
     if (!this.asistenciaId || !this.nuevoRegistro.equipo_id || !this.nuevoRegistro.actividad_id) return;
     if (this.horaInicioHH === null || this.horaInicioMM === null) return;
 
-    this.guardandoRegistro = true;
-    this.registroActividadService.crear({
+    const payload = {
       asistencia_id: this.asistenciaId,
       equipo_id: this.nuevoRegistro.equipo_id,
       actividad_id: this.nuevoRegistro.actividad_id,
@@ -448,25 +499,48 @@ export class MiJornada implements OnInit, OnDestroy {
       horometro_inicio: !this.esMecanico && this.nuevoRegistro.horometro_inicio !== null ? this.nuevoRegistro.horometro_inicio : undefined,
       observaciones: this.nuevoRegistro.observaciones || undefined,
       hora_inicio: this.horaComponentesAIso(this.horaInicioHH, this.horaInicioMM),
-    }).subscribe({
+    };
+
+    this.guardandoRegistro = true;
+    this.registroActividadService.crear(payload).subscribe({
       next: () => {
         this.notificacionService.exito('Labor registrada.');
-        this.nuevoRegistro = { equipo_id: null, actividad_id: null, area: '', horometro_inicio: null, observaciones: '' };
-        const { hh, mm } = this.horaActualComponentes();
-        this.horaInicioHH = hh;
-        this.horaInicioMM = mm;
-        this.equipoBusqueda = '';
-        this.actividadBusqueda = '';
+        this.limpiarFormularioNuevoRegistro();
         this.guardandoRegistro = false;
         this.cargarRegistros();
         this.cdr.detectChanges();
       },
       error: (err) => {
-        this.notificacionService.error(err.error?.message || 'Error al registrar la labor.');
         this.guardandoRegistro = false;
+        /*
+        status 0: la peticion nunca llego al servidor (sin señal) - se guarda localmente en vez de perderla.
+        Cualquier otro status SI llego al servidor y este la rechazo (validacion, etc) - eso no se arregla
+        reintentando despues, se le avisa al trabajador como error normal.
+        */
+        if (err.status === 0) {
+          const equipoSel = this.equipos.find((e) => e.id === payload.equipo_id);
+          const actividadSel = this.actividadesCatalogoPanel.find((a) => a.id === payload.actividad_id);
+          this.offlineSyncService.encolarCrearLabor(payload, equipoSel, actividadSel).then(() => {
+            this.notificacionService.exito('Sin señal: la labor quedó guardada en el celular y se sincroniza sola cuando vuelva la conexión.');
+            this.limpiarFormularioNuevoRegistro();
+            this.recalcularVistaRegistros();
+            this.cdr.detectChanges();
+          });
+          return;
+        }
+        this.notificacionService.error(err.error?.message || 'Error al registrar la labor.');
         this.cdr.detectChanges();
       },
     });
+  }
+
+  private limpiarFormularioNuevoRegistro(): void {
+    this.nuevoRegistro = { equipo_id: null, actividad_id: null, area: '', horometro_inicio: null, observaciones: '' };
+    const { hh, mm } = this.horaActualComponentes();
+    this.horaInicioHH = hh;
+    this.horaInicioMM = mm;
+    this.equipoBusqueda = '';
+    this.actividadBusqueda = '';
   }
 
   // Abre el pequeño formulario inline (en la misma fila) para elegir la hora de fin, en vez de cerrarla al
@@ -488,13 +562,12 @@ export class MiJornada implements OnInit, OnDestroy {
   confirmarFinalizarRegistro(): void {
     if (!this.registroFinalizandoId || this.horaFinHH === null || this.horaFinMM === null) return;
 
+    const id = this.registroFinalizandoId;
+    const horaFin = this.horaComponentesAIso(this.horaFinHH, this.horaFinMM);
+    const horometroFinal = !this.esMecanico && this.horometroFinal !== null ? this.horometroFinal : undefined;
+
     this.guardandoFinalizacion = true;
-    this.registroActividadService.finalizar(
-      this.registroFinalizandoId,
-      undefined,
-      this.horaComponentesAIso(this.horaFinHH, this.horaFinMM),
-      !this.esMecanico && this.horometroFinal !== null ? this.horometroFinal : undefined,
-    ).subscribe({
+    this.registroActividadService.finalizar(id, undefined, horaFin, horometroFinal).subscribe({
       next: () => {
         this.notificacionService.exito('Labor finalizada.');
         this.registroFinalizandoId = null;
@@ -503,11 +576,25 @@ export class MiJornada implements OnInit, OnDestroy {
         this.cdr.detectChanges();
       },
       error: (err) => {
-        this.notificacionService.error(err.error?.message || 'Error al finalizar la labor.');
         this.guardandoFinalizacion = false;
+        if (err.status === 0) {
+          this.offlineSyncService.encolarFinalizarLabor(id, undefined, horaFin, horometroFinal).then(() => {
+            this.notificacionService.exito('Sin señal: el cierre quedó guardado en el celular y se sincroniza solo cuando vuelva la conexión.');
+            this.registroFinalizandoId = null;
+            this.cdr.detectChanges();
+          });
+          return;
+        }
+        this.notificacionService.error(err.error?.message || 'Error al finalizar la labor.');
         this.cdr.detectChanges();
       },
     });
+  }
+
+  // Botón manual "Sincronizar ahora" (diseño acordado: manual/periódico, no hay sync automático en segundo
+  // plano - ver OfflineSyncService). También se dispara solo al volver la señal.
+  sincronizarAhora(): void {
+    this.offlineSyncService.sincronizar();
   }
 
   /*

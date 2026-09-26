@@ -1230,6 +1230,42 @@ No se pudo probar en un dispositivo real (mismas limitaciones de siempre) - veri
 (20/20) y revisión de código contra la documentación oficial de `@capacitor/app` (el evento `backButton` cubre
 tanto el botón como el gesto de deslizar, ambos pasan por el mismo despachador nativo de Android).
 
+### Offline-first del Panel de Actividades (2026-09-26)
+
+Diseño acordado (ver conversación 2026-09-25/26): manual/periódico, sin background sync automático (iOS no lo
+permite de forma confiable). Solo el **Panel de Actividades** (crear/finalizar una labor dentro de una jornada
+ya abierta) es offline-capaz - la ENTRADA/SALIDA (código o QR) sigue necesitando señal sí o sí, porque el
+código lo valida el backend contra el Token de Hacienda vigente y el QR lo tiene que generar el servidor; no
+tiene sentido (ni se intentó) hacer eso offline.
+
+- **`OfflineSyncService`** (nuevo, `core/services/offline-sync.service.ts`): cola de operaciones pendientes
+  (`crear_labor`/`finalizar_labor`), persistida con **`@capacitor/preferences`** (nuevo - sobrevive cierres de
+  la app, a diferencia de `localStorage` en Android) y sincronizada sola al detectar conexión vía
+  **`@capacitor/network`** (nuevo), o manualmente con el botón "Sincronizar ahora". Al recorrer la cola: un
+  fallo de RED (`status 0` - la request nunca llegó al servidor) corta todo el recorrido, deja el resto tal
+  cual para el próximo intento; un error REAL del servidor (validación, etc - sí hubo señal) marca ese ítem
+  con su error y sigue con el resto, en vez de bloquear toda la cola por uno solo que nunca va a poder
+  sincronizar tal cual está. Cubierto con pruebas unitarias reales (`offline-sync.service.spec.ts`, 7 casos:
+  encolar, sincronizar OK, corte por falla de red, marcar+continuar por error de servidor, descartar,
+  filtrado por jornada) - las implementaciones "web" de `@capacitor/network`/`@capacitor/preferences`
+  (`navigator.onLine`/`localStorage`) corren tal cual en el entorno de pruebas, no hicieron falta mocks.
+- **`mi-jornada.ts`/`.html`**: `guardarNuevoRegistro()`/`confirmarFinalizarRegistro()` intentan el servidor
+  primero como siempre; si la respuesta es `status 0` (sin señal), la operación se encola en vez de perderse
+  y se le avisa al trabajador con un toast ("Sin señal: la labor quedó guardada en el celular..."). La lista
+  de labores (`registros`) es una vista combinada: lo que ya confirmó el servidor + lo que sigue pendiente de
+  sincronizar de ESA jornada (`recalcularVistaRegistros`), armada con lo que el celular ya tenía cargado
+  (catálogos de equipo/actividad) para no depender del servidor para poder mostrarla. Una labor recién creada
+  sin señal usa un **id NEGATIVO inventado en el celular** (nunca choca con un id real de la base, que siempre
+  es positivo) - mientras tenga ese id, el botón "Finalizar" queda bloqueado (no se puede cerrar algo que
+  todavía no existe en el servidor); se habilita solo cuando le llega su id real tras sincronizar. Banner
+  arriba del panel: "Sin conexión" cuando no hay señal, o "N labores pendientes de sincronizar" + botón
+  "Sincronizar ahora" cuando sí hay señal pero quedó algo en cola de un momento sin ella.
+
+No se pudo probar en un dispositivo real con señal cortada de verdad (mismas limitaciones de sandbox de
+siempre) - verificado con `ng build`/`ng test` (27/27, incluye los 7 casos nuevos) y revisión de código contra
+la documentación oficial de `@capacitor/network`/`@capacitor/preferences`. Falta que el usuario lo pruebe en
+el celular real, apagando datos/wifi a mitad de una jornada.
+
 ## Pendiente
 
 **Empaquetado con Capacitor (ver arriba) - pasos que faltan**
@@ -1246,9 +1282,10 @@ tanto el botón como el gesto de deslizar, ambos pasan por el mismo despachador 
   distribuir de verdad, se van a ver mejor sobre todo en las pantallas de splash grandes.
 - Probar en un iPhone real y 2-3 marcas de Android distintas antes de distribuir a los 950 trabajadores
   (cámara/QR son el punto de riesgo real entre fabricantes, ver auditoría de dispositivos).
-- Offline-first (guardar marcación localmente sin señal, sincronizar después) - sigue sin implementar, ver
-  conversación del 2026-09-25/26 para el diseño acordado (manual/periódico, no background sync automático, por
-  la limitación real de iOS).
+- ~~Offline-first (guardar marcación localmente sin señal, sincronizar después)~~ - hecho 2026-09-26 (ver
+  "Offline-first del Panel de Actividades" arriba), alcance: solo el Panel de Actividades (crear/finalizar
+  labor), la ENTRADA/SALIDA sigue necesitando señal por diseño. Falta que el usuario lo pruebe en el celular
+  real con la señal cortada de verdad.
 - Pendiente de confirmación del usuario: ¿de verdad hay iPhones entre los 950 trabajadores? Si es casi todo
   Android, no hace falta ni pensar en el costo de Apple.
 
@@ -1282,8 +1319,7 @@ tanto el botón como el gesto de deslizar, ambos pasan por el mismo despachador 
   búsqueda por servidor (query `?buscar=`) o aceptar que la carga inicial siga siendo pesada.
 
 **Frontend** (sobre lo ya construido, ver sección de arriba)
-- Offline/sync: la app empaqueta nativo (no PWA, así que no aplica la limitación de Background Sync de iOS/Safari de
-  todas formas), pero se mantiene el diseño de sync manual/periódico ya acordado para cuando no hay señal en campo.
+- ~~Offline/sync~~ - hecho 2026-09-26 (ver "Offline-first del Panel de Actividades" arriba).
 - **Diseños de Figma confirmados, pendientes de construir** (el usuario los compartió, existen en su Figma):
   - "Descargar" (exporta a Excel, formato pendiente de que el usuario lo proporcione) e "Imprimir" general en el
     Directorio de Operadores - este último solo se habilita cuando el Historial está filtrado a **un solo día**

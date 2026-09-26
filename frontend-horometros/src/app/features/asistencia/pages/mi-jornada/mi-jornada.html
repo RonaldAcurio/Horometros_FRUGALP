@@ -72,6 +72,18 @@
 
   <!-- FASE: PANEL DE ACTIVIDADES (ya escaneado, jornada abierta) -->
   <div class="panel-actividades" *ngIf="fase === 'actividades'">
+    <!-- Offline-first (ver OfflineSyncService): sin señal, "Iniciar labor"/"Finalizar" se siguen guardando en
+         el celular y se sincronizan solas al volver la conexión, o al tocar "Sincronizar ahora". -->
+    <div class="alert alert-offline" *ngIf="!offlineSyncService.conectado()">
+      📴 Sin conexión — lo que registres se guarda en el celular y se sincroniza solo cuando vuelva la señal.
+    </div>
+    <div class="alert alert-pendientes" *ngIf="offlineSyncService.conectado() && offlineSyncService.cola().length > 0">
+      🔄 {{ offlineSyncService.cola().length }} {{ offlineSyncService.cola().length === 1 ? 'labor pendiente' : 'labores pendientes' }} de sincronizar.
+      <button type="button" class="btn-link-sincronizar" [disabled]="offlineSyncService.sincronizando()" (click)="sincronizarAhora()">
+        {{ offlineSyncService.sincronizando() ? 'Sincronizando...' : 'Sincronizar ahora' }}
+      </button>
+    </div>
+
     <div class="card">
       <div class="card-header flex justify-between items-center">
         <h5 class="card-title">🛠️ Panel de Actividades</h5>
@@ -202,9 +214,17 @@
               <td>
                 <span *ngIf="reg.hora_fin" class="time-badge">{{ reg.hora_fin | date:'HH:mm':'-0500' }}</span>
 
-                <!-- Sin finalizar y NO es la fila que se esta editando: solo el boton para abrir el editor -->
+                <!-- Recien creada sin señal (id negativo, ver esPendienteDeSincronizar): todavia no existe en
+                     el servidor, así que no se puede pedir su cierre hasta que le llegue su id real. -->
+                <span *ngIf="esPendienteDeSincronizar(reg.id)" class="badge-status status-pendiente-sync">⏳ Sin sincronizar</span>
+
+                <!-- Ya existe en el servidor pero su cierre quedó guardado sin señal (ver
+                     offlineSyncService.tieneFinalizacionPendiente): evita mandar un segundo cierre por error. -->
+                <span *ngIf="!esPendienteDeSincronizar(reg.id) && !reg.hora_fin && offlineSyncService.tieneFinalizacionPendiente(reg.id)" class="badge-status status-pendiente-sync">⏳ Cierre sin sincronizar</span>
+
+                <!-- Sin finalizar, sincronizada, y NO es la fila que se esta editando: solo el boton para abrir el editor -->
                 <button
-                  *ngIf="!reg.hora_fin && registroFinalizandoId !== reg.id"
+                  *ngIf="!reg.hora_fin && !esPendienteDeSincronizar(reg.id) && !offlineSyncService.tieneFinalizacionPendiente(reg.id) && registroFinalizandoId !== reg.id"
                   class="btn btn-secondary btn-sm"
                   (click)="abrirFinalizarRegistro(reg)"
                 >Finalizar</button>

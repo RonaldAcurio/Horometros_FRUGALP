@@ -324,6 +324,14 @@ html, body {
   border: 1px solid #7a1f3d;
 }
 
+/* Offline-first (Panel de Actividades, ver OfflineSyncService): labor creada o cerrada sin señal, todavía
+   guardada solo en el celular. */
+.status-pendiente-sync {
+  background-color: rgba(242, 183, 5, 0.18);
+  color: #a67c00;
+  border: 1px solid #d4a017;
+}
+
 .time-badge {
   background-color: #2b1a1f;
   color: #ffffff;
