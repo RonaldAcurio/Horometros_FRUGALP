@@ -1073,12 +1073,41 @@ usuario, no técnica - ver "Pendiente" para lo que falta confirmar.
   WCAG AA) y faltaba `<meta name="description">`. Después de los arreglos: Accesibilidad 100, SEO 100,
   Rendimiento 80, Buenas prácticas 100.
 
+### Logo real de FRUGALP en todos los íconos (2026-09-26)
+
+El usuario pasó el logo real de la empresa (imagen PNG con fondo ya transparente, "piña/corona + sol +
+franjas verdes" + el texto "FRUGALP Agrícola Exportadora" al lado). Se recortó solo el ícono (sin el texto,
+sin el que no cabe/no se lee en un ícono chico), se limpió y se generaron TODOS los tamaños que hoy usa el
+proyecto - reemplaza los placeholders genéricos (mi "F" verde de patch 0046, y el "X" azul default de
+Capacitor) en un solo lugar:
+
+- `public/logo-source.png`: el recorte limpio a 1024x1024 con margen, transparente - fuente de verdad para
+  regenerar cualquier ícono futuro (no hace falta volver a pedirle la imagen original al usuario).
+- `public/favicon.ico`, `public/icon-192.png`, `public/icon-512.png`, `public/apple-touch-icon.png`: ícono de
+  pestaña del navegador + PWA-lite de iPhone (ver arriba).
+- `android/app/src/main/res/mipmap-*/ic_launcher*.png` (las 5 densidades): ícono de la app instalada en
+  Android. Generados a mano con `sharp` con el logo sobre fondo blanco (`ic_launcher`/`ic_launcher_round`) y
+  una copia transparente más chica, dentro de la "safe zone" (~62% del lienzo) para `ic_launcher_foreground`
+  (ícono adaptativo, evita que el logo se recorte con la máscara circular/squircle del launcher).
+- `android/app/src/main/res/drawable*/splash.png` (las 11 variantes de densidad/orientación): pantalla de
+  carga de la app, logo centrado sobre blanco.
+
+**Por qué a mano con `sharp` y no con `@capacitor/assets`** (la herramienta "oficial" para esto): al
+instalarla trajo una vulnerabilidad CRÍTICA real (`tar`, path traversal via hardlinks, sin arreglo en esa
+rama de versión, ver GHSA-34x7-hfp2-rc4v y relacionadas) en una dependencia anidada de su copia interna de
+`@capacitor/cli`. Se desinstaló de inmediato - los tamaños de ícono de Android son un estándar público
+conocido (48/72/96/144/192px por densidad), así que se generaron directo con `sharp` (que ya estaba en uso
+para los íconos del navegador) sin necesidad de esa herramienta ni su cadena de dependencias.
+
 ## Pendiente
 
 **Empaquetado con Capacitor (ver arriba) - pasos que faltan**
 - Compilar el `.apk` real: necesita Android Studio (máquina del usuario) o ampliar el acceso de red de este
   entorno a `dl.google.com`.
-- Reemplazar los íconos/splash genéricos de Capacitor por el logo real de la empresa (`@capacitor/assets`).
+- ~~Reemplazar los íconos/splash genéricos de Capacitor por el logo real de la empresa~~ - hecho 2026-09-26 (ver
+  "Logo real de FRUGALP" abajo), pero con un logo fuente de baja resolución (~109x116px) - si la empresa tiene
+  el logo en alta resolución o vectorial (AI/SVG/EPS/PDF), vale la pena regenerar los íconos desde ahí antes de
+  distribuir de verdad, se van a ver mejor sobre todo en las pantallas de splash grandes.
 - Probar en un iPhone real y 2-3 marcas de Android distintas antes de distribuir a los 950 trabajadores
   (cámara/QR son el punto de riesgo real entre fabricantes, ver auditoría de dispositivos).
 - Offline-first (guardar marcación localmente sin señal, sincronizar después) - sigue sin implementar, ver
