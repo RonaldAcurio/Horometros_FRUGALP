@@ -1119,11 +1119,40 @@ local) y encontró 2 hallazgos más, no cubiertos por la auditoría anterior (es
   se busca que Google la indexe. Esto hace que el audit "is-crawlable" de Lighthouse marque "blocked from
   indexing" como fallo - es el comportamiento correcto para esta app, no perseguir ese punto de SEO.
 
+### Auditoría MobSF del .apk (2026-09-26)
+
+El usuario corrió MobSF (Docker, `opensecurity/mobile-security-framework-mobsf`) contra el `app-debug.apk`.
+Security Score 41/100 en el dashboard, pero la mayoría de los hallazgos "HIGH" son artefactos de ser un build
+de DEBUG (firmado con el certificado debug de Android, `debuggable=true`) - se resuelven solos el día que se
+compile un build de **release** firmado con clave propia, antes de distribuir de verdad. Dato importante:
+**todos** los hallazgos de "Code Analysis" caen en `com/getcapacitor/*` (framework de Capacitor) - cero
+hallazgos en `com/frugalp/horometros/*` (el código propio de la app).
+
+- **Arreglado:** `android:allowBackup="true"` → `"false"` en `AndroidManifest.xml` (WARNING real, independiente
+  de debug/release - sin esto, cualquiera con acceso USB + depuración activada en el celular podía extraer los
+  datos de la app vía `adb backup`).
+- **Ruido esperado, no se toca:** receptor `androidx.profileinstaller.ProfileInstallReceiver` exportado
+  (protegido por permiso de sistema `DUMP`, estándar en cualquier app AndroidX moderna) - los 4 hallazgos de
+  "Code Analysis" (logging, lectura de almacenamiento externo, posibles credenciales hardcodeadas, archivo
+  temporal), todos en código de Capacitor, no propio - detecciones "Anti-Debug"/"Anti-VM" de APKiD (falso
+  positivo común contra librerías estándar) - permiso `INTERNET` listado entre "permisos abusados por malware"
+  (necesario para cualquier app que hable con un servidor).
+- **Pendiente de decisión del usuario, NO tocado:** `minSdk=24` (Android 7.0) - MobSF recomienda `>=29` para
+  que los celulares reciban actualizaciones de seguridad, pero subirlo excluiría a trabajadores con celulares
+  más viejos/económicos de poder instalar la app. Ver "Pendiente" - necesito saber que tan viejos son los
+  celulares reales de los ~950 trabajadores antes de tocar esto.
+
 ## Pendiente
 
 **Empaquetado con Capacitor (ver arriba) - pasos que faltan**
-- Compilar el `.apk` real: necesita Android Studio (máquina del usuario) o ampliar el acceso de red de este
-  entorno a `dl.google.com`.
+- ~~Compilar el `.apk` real~~ - hecho 2026-09-26, el usuario lo compiló en Android Studio en su propia máquina
+  (Fedora), lo instaló en su celular real, y el login funcionó (confirma el arreglo de `https://localhost` en
+  `CORS_ORIGIN`).
+- Decidir `minSdk` (hoy 24/Android 7.0) según qué tan viejos son los celulares reales de los ~950 trabajadores -
+  ver hallazgo de MobSF arriba. MobSF recomienda `>=29` mínimo, pero subirlo sin saber los celulares reales
+  podría dejar a alguien sin poder instalar la app.
+- Compilar un build de **release** (firmado con clave propia, no la de debug) antes de distribuir de verdad -
+  resuelve automáticamente los hallazgos HIGH de certificado/debuggable que MobSF marcó.
 - ~~Reemplazar los íconos/splash genéricos de Capacitor por el logo real de la empresa~~ - hecho 2026-09-26 (ver
   "Logo real de FRUGALP" abajo), pero con un logo fuente de baja resolución (~109x116px) - si la empresa tiene
   el logo en alta resolución o vectorial (AI/SVG/EPS/PDF), vale la pena regenerar los íconos desde ahí antes de
