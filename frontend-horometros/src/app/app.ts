@@ -1,7 +1,9 @@
 import { Component, signal, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { CommonModule, Location } from '@angular/common';
 import { RouterOutlet, RouterLink, Router, NavigationEnd } from '@angular/router';
 import { filter } from 'rxjs/operators';
+import { Capacitor } from '@capacitor/core';
+import { App as CapacitorApp } from '@capacitor/app';
 import { Toast } from './shared/toast/toast';
 import { ConfirmModal } from './shared/confirm-modal/confirm-modal';
 import { TerminosModal } from './shared/terminos-modal/terminos-modal';
@@ -19,6 +21,7 @@ import { rutaHomePorRol } from './core/utils/rutas-por-rol';
 export class App {
   protected readonly title = signal('frontend-horometros');
   private router = inject(Router);
+  private location = inject(Location);
   protected authService = inject(AuthService);
   protected terminosService = inject(TerminosService);
 
@@ -72,6 +75,35 @@ export class App {
           this.mostrarBotonMenu = url !== home;
         }
       });
+
+    this.registrarBotonAtrasSiAplica();
+  }
+
+  /*
+  En el WebView de Capacitor, el botón/gesto "Atrás" de Android (incluido el deslizar desde el borde en
+  Xiaomi/MIUI - usa el mismo mecanismo nativo) por defecto CIERRA la app en vez de navegar hacia atrás dentro
+  de ella, porque el WebView no tiene historial de páginas reales (todo es una sola SPA de Angular) - se
+  reportó probando el .apk real. @capacitor/app permite escuchar ese evento y decidir: si hay a dónde volver
+  dentro de la app, se navega ahí (this.location.back()); si no hay más historial, se deja salir de la app
+  (App.exitApp() - si no se llama nada, el back queda "muerto", no hace nada).
+
+  Excepción a propósito: MECANICO/OPERADOR en el Panel de Actividades es una pantalla cautiva (ver
+  mostrarBotonMenu arriba, mismo motivo) - ahí el botón/gesto Atrás se bloquea del todo (ni navega ni sale),
+  para que no puedan volver por accidente a la pantalla de login en medio de una jornada.
+  */
+  private registrarBotonAtrasSiAplica(): void {
+    if (!Capacitor.isNativePlatform()) return;
+    CapacitorApp.addListener('backButton', ({ canGoBack }) => {
+      const perfil = this.authService.perfil();
+      const esCautivo = perfil?.rol === 'MECANICO' || perfil?.rol === 'OPERADOR';
+      if (esCautivo) return;
+
+      if (canGoBack) {
+        this.location.back();
+      } else {
+        CapacitorApp.exitApp();
+      }
+    });
   }
 
   cerrarSesion(): void {

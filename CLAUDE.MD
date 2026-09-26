@@ -1207,6 +1207,29 @@ Studio/compilación real ni a un WebView de verdad, ver limitaciones de red de s
 oficial de `@capacitor/share`/`@capacitor/filesystem`. Falta confirmación del usuario compilando e instalando
 el .apk de nuevo.
 
+### 2 hallazgos más tras probar patch anterior + botón/gesto Atrás del WebView (2026-09-26)
+
+El usuario probó el patch de los 5 bugs y encontró 2 cosas más, la segunda mucho más importante que un ajuste
+visual:
+
+- **Panel de Supervisor: la fila de controles (Escanear/Supervisor/Fecha/Cerrar Jornada) se salía de la
+  pantalla en celular**, mismo patrón que los otros 2 hallazgos de layout del patch anterior (una fila `flex`
+  sin `flex-wrap`) - esta vez en `supervisor-panel.html`, no en `asistencia-panel` (que ya se había arreglado).
+  Arreglado agregando `flex-wrap` a esa fila.
+- **El gesto nativo de "Atrás" de Android (deslizar desde el borde, o el botón físico/virtual) cerraba la app
+  en vez de navegar hacia atrás dentro de ella.** Causa: el WebView de Capacitor no tiene páginas/historial real
+  (todo es una SPA de Angular) - por defecto, Android interpreta que "no hay a dónde volver" y sale de la app
+  directamente. Se agregó **`@capacitor/app`** (nuevo) con un listener de `backButton` en `app.ts`
+  (`registrarBotonAtrasSiAplica`): si hay historial de navegación dentro de la app (`canGoBack`), navega ahí
+  (`Location.back()`); si no, deja salir de la app (`App.exitApp()`). **Excepción a propósito**, pedida
+  explícitamente por el usuario: para MECANICO/OPERADOR (Panel de Actividades, pantalla cautiva) el gesto se
+  bloquea del todo - ni navega ni sale - para que no puedan volver por accidente a la pantalla de login en
+  medio de una jornada. El resto de roles sí pueden usar el gesto normalmente ahora.
+
+No se pudo probar en un dispositivo real (mismas limitaciones de siempre) - verificado con `ng build`/`ng test`
+(20/20) y revisión de código contra la documentación oficial de `@capacitor/app` (el evento `backButton` cubre
+tanto el botón como el gesto de deslizar, ambos pasan por el mismo despachador nativo de Android).
+
 ## Pendiente
 
 **Empaquetado con Capacitor (ver arriba) - pasos que faltan**

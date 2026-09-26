@@ -4,7 +4,10 @@
       <h2 class="main-title">Panel de Control de Supervisor</h2>
       <p class="subtitle">Revisión de actividades diarias y cierre de jornada</p>
     </div>
-    <div class="flex items-center gap-2">
+    <!-- flex-wrap: en celular estos 4 controles (Escanear/Supervisor/Fecha/Cerrar Jornada) no cabían en una
+         sola fila y se salían de la pantalla - había que rotar a horizontal para llegar a "Cerrar Jornada"
+         (reportado probando el .apk real). Ahora se acomodan en más de una fila si hace falta. -->
+    <div class="flex items-center gap-2 flex-wrap">
       <a routerLink="/asistencia/escanear" class="btn btn-secondary">📷 Escanear</a>
       <!-- Solo ADMIN: esta pantalla mezcla TODAS las haciendas (ver esAdmin/supervisorIdFiltro en supervisor-panel.ts) -->
       <select *ngIf="esAdmin" class="input-control" [(ngModel)]="supervisorIdFiltro" (change)="onCambioSupervisor()">
