@@ -1163,6 +1163,50 @@ para tener el dato real del parque de celulares y ajustar `minSdk` con informaci
   Postgres local: caso feliz (201), sin token (401), sin `so_plataforma` (400), y confirmada la fila real en
   la base de datos.
 
+### 5 bugs de UI/UX encontrados probando el .apk real en el celular (2026-09-26)
+
+El usuario instaló el .apk recién compilado (con `minSdk`=28 + registro de dispositivo) en su celular real y
+reportó 5 problemas concretos - todos con causa raíz en cómo el WebView de Capacitor se comporta distinto a un
+navegador de escritorio, no bugs de lógica:
+
+- **Pestañas del Panel de Asistente no se podían desplazar** (había que rotar el celular a horizontal para ver
+  "Actividad"): `.tabs-bar` no tenía `overflow-x`, así que en pantallas angostas el navegador achicaba/apilaba
+  las 4 pestañas en vez de dejarlas desplazables. Arreglado con `overflow-x:auto` + `white-space:nowrap` en los
+  botones (`asistencia-panel.css`) - ahora se desliza con el dedo, igual que cualquier tab-bar de app móvil.
+- **Filtros Desde/Hasta del Historial se veían amontonados/superpuestos, saliéndose de la tarjeta blanca**:
+  `.filter-group` no envolvía (sin `flex-wrap`) y el `min-width:18rem` de los inputs de texto no dejaba lugar
+  para los 4 campos (Desde/Hasta/Hacienda/Supervisor) en una fila angosta. Arreglado con `flex-wrap` +
+  `@media (max-width:640px)` que apila todo en una sola columna a ancho completo en celular.
+- **"Imprimir Carnet" (QR) dejaba atrapado al usuario en un selector de navegador externo, sin poder volver**
+  (tuvo que forzar el cierre de la app): `imprimirQR()` usaba `window.open('','_blank')` - el WebView de
+  Capacitor no implementa multi-ventana, así que Android lo interpreta como "abrir afuera de la app". Arreglado:
+  en nativo (`Capacitor.isNativePlatform()`) ya no se abre ninguna ventana - se escribe el PNG del QR a
+  `Directory.Cache` (`@capacitor/filesystem`, nuevo) y se comparte con el selector nativo de Android
+  (`@capacitor/share`, nuevo) para guardar/enviar por WhatsApp/correo o abrir en un visor con opción de
+  imprimir. El flujo de escritorio (`window.open`+`window.print()`) se mantiene sin cambios para el navegador.
+- **Los botones "Imprimir" de los reportes de labores no hacían nada al tocarlos**: `imprimirHoja()` llamaba
+  `window.print()` a secas, que el WebView de Android simplemente ignora (no trae integrado el diálogo de
+  impresión como sí lo hace un navegador de escritorio). Arreglado con el mismo patrón: en nativo se genera un
+  resumen en texto plano de la hoja (operador, fecha, filas, observaciones) y se comparte vía `Share.share`
+  en vez de intentar imprimir silenciosamente; la vista previa en el modal (que sí funciona igual en ambos)
+  sigue siendo la forma real de "ver" la hoja desde el celular. Imprimir de verdad (papel) sigue siendo una
+  tarea de escritorio, donde `window.print()` sí funciona - razonable, dado que este panel es una herramienta
+  de oficina/supervisor.
+- **El nombre de usuario aparecía debajo del logo en vez de al lado, y pedían un menú compacto para Cerrar
+  sesión/Menú (no un modal centrado)**: `.header-content` con `flex-wrap` hacía que toda la fila de acciones
+  (nombre + Política + Cerrar sesión + Menú) se cayera debajo del `brand-box` en pantallas angostas. Se
+  reemplazó por un dropdown ancorado (`.cuenta-trigger`/`.cuenta-dropdown` en `app.html`/`app.css`, estado en
+  `App.menuCuentaAbierto`) - un solo botón compacto con el nombre que despliega Política/Menú/Cerrar sesión
+  debajo, se cierra tocando afuera (overlay transparente, sin oscurecer la pantalla) o al navegar. De paso se
+  reemplazó el ícono SVG genérico de placeholder del logo por el logo real (`public/icon-192.png`), que el
+  usuario también pidió integrar en esa esquina.
+
+No se pudo probar en un dispositivo Android real desde este entorno (sigue sin acceso a Android
+Studio/compilación real ni a un WebView de verdad, ver limitaciones de red de siempre) - verificado con
+`ng build`/`ng test` (20/20 tests, build de producción limpio) y revisión de código contra la documentación
+oficial de `@capacitor/share`/`@capacitor/filesystem`. Falta confirmación del usuario compilando e instalando
+el .apk de nuevo.
+
 ## Pendiente
 
 **Empaquetado con Capacitor (ver arriba) - pasos que faltan**

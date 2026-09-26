@@ -2,6 +2,9 @@ import { Component, ChangeDetectorRef, OnInit, signal } from '@angular/core';
 import { Observable, forkJoin, map } from 'rxjs';
 import { Operador, Asistencia, RegistroActividad, Equipo, Actividad } from '../../../../core/models/asistencia.model';
 import * as QRCode from 'qrcode';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 import { UsuarioService } from '../../../../core/services/usuario.service';
 import { RegistroActividadService } from '../../../../core/services/registro-actividad.service';
@@ -357,9 +360,39 @@ export class AsistenciaPanel implements OnInit{
     });
   }
 
-  imprimirQR(): void {
+  /*
+  window.open('', '_blank') solo tiene sentido en un navegador de escritorio: dentro del WebView de la app
+  empaquetada (Capacitor), el WebView no implementa multi-ventana, así que Android lo interpreta como "abrir
+  un enlace externo" y manda al usuario a elegir un navegador afuera de la app - de ahí quedaba atrapado sin
+  poder volver (reportado probando el .apk real, ver CLAUDE.md "Empaquetado con Capacitor"). En la app nativa
+  se comparte el QR como imagen via el selector nativo de Android (Share) en vez de intentar imprimir - de ahí
+  puede guardarlo, enviarlo por WhatsApp, o abrirlo en un visor que sí tenga opción de imprimir.
+  */
+  async imprimirQR(): Promise<void> {
+    if (!this.operadorSeleccionado || !this.qrCodeUrl) return;
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const base64 = this.qrCodeUrl.split(',')[1];
+        const nombreArchivo = `carnet-qr-${this.operadorSeleccionado.codigo_megued || this.operadorSeleccionado.id}.png`;
+        const escrito = await Filesystem.writeFile({
+          path: nombreArchivo,
+          data: base64,
+          directory: Directory.Cache,
+        });
+        await Share.share({
+          title: `Carnet QR - ${this.operadorSeleccionado.nombre_completo}`,
+          dialogTitle: 'Compartir o guardar carnet',
+          files: [escrito.uri],
+        });
+      } catch (err) {
+        this.notificacionService.error('No se pudo compartir el carnet QR.');
+      }
+      return;
+    }
+
     const ventanaImpresion = window.open('', '_blank');
-    if (ventanaImpresion && this.operadorSeleccionado) {
+    if (ventanaImpresion) {
       ventanaImpresion.document.write(`
         <html>
           <head><title>Carnet QR - ${this.operadorSeleccionado.nombre_completo}</title></head>
@@ -486,8 +519,67 @@ export class AsistenciaPanel implements OnInit{
     }
   }
 
+  /*
+  window.print() no hace nada dentro del WebView de la app empaquetada - a diferencia de un navegador de
+  escritorio, el WebView de Android no trae integrado el dialogo de impresion (ni Chrome ni Capacitor lo
+  agregan solos), asi que los botones "Imprimir" quedaban sin efecto visible al tocarlos en el celular
+  (reportado probando el .apk real). En nativo se comparte un resumen en texto plano via el selector nativo
+  de Android en su lugar (enviar por WhatsApp/correo, o pegarlo en cualquier app) - la vista previa en pantalla
+  (el modal, que sí funciona igual en ambos) sigue siendo la forma real de "ver" la hoja.
+  */
   imprimirHoja(): void {
+    if (Capacitor.isNativePlatform()) {
+      this.compartirHoja();
+      return;
+    }
     window.print();
+  }
+
+  private async compartirHoja(): Promise<void> {
+    try {
+      await Share.share({
+        title: 'Reporte de labores',
+        dialogTitle: 'Compartir reporte',
+        text: this.generarTextoHoja(),
+      });
+    } catch (err) {
+      this.notificacionService.error('No se pudo compartir el reporte.');
+    }
+  }
+
+  private generarTextoHoja(): string {
+    const lineas: string[] = [];
+    for (const grupo of this.hojaGrupos) {
+      const esOperador = grupo.operador.rol === 'OPERADOR';
+      lineas.push(esOperador ? 'REPORTE DE LABORES MAQUINARIAS' : 'REPORTE DE LABORES DIARIOS');
+      lineas.push(
+        `${esOperador ? 'Operador' : 'Mecánico'}: ${grupo.operador.nombre_completo}` +
+          (grupo.operador.codigo_megued ? ` · ${grupo.operador.codigo_megued}` : '')
+      );
+      if (this.hojaFechaUnica) lineas.push(`Fecha: ${this.hojaFechaUnica}`);
+      lineas.push('');
+
+      if (grupo.registros.length === 0) {
+        lineas.push('Sin labores registradas.');
+      } else {
+        for (const reg of grupo.registros) {
+          const fecha = this.hojaFechaUnica ? '' : `${reg.asistencia?.fecha || '—'} - `;
+          const equipo = reg.equipo ? `${reg.equipo.codigo_megued} - ${reg.equipo.nombre_equipo}` : '—';
+          const detalle = esOperador
+            ? `Horómetro ${reg.horometro_inicio ?? '—'} → ${reg.horometro_final ?? '—'}`
+            : `OT ${reg.area || '—'}`;
+          const observaciones = reg.observaciones ? ` | ${reg.observaciones}` : '';
+          lineas.push(`${fecha}${equipo} | ${detalle} | ${this.duracionLabor(reg)}${observaciones}`);
+        }
+      }
+
+      if (this.hojaFechaUnica) {
+        lineas.push('');
+        lineas.push(`Observaciones del Supervisor: ${this.hojaObservacionesSupervisor || 'Sin observaciones.'}`);
+      }
+      lineas.push('');
+    }
+    return lineas.join('\n').trim();
   }
 
   cerrarModalHoja(): void {

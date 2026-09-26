@@ -3,36 +3,47 @@
   <header class="main-header" *ngIf="mostrarHeader">
     <div class="header-content">
       <div class="brand-box">
-        <div class="brand-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" class="icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-        </div>
+        <img src="/icon-192.png" alt="FRUGALP" class="brand-icon" />
         <div>
           <h1 class="brand-title">FRUGALP</h1>
           <p class="brand-subtitle">Control Agrícola & Horómetros</p>
         </div>
       </div>
 
-      <div class="header-acciones">
-        <!-- Sesión activa: nombre + rol (y hacienda si la cuenta tiene una fija) + botón de salir -->
-        <div class="sesion-chip" *ngIf="authService.perfil() as perfil">
-          <span class="sesion-nombre">{{ perfil.nombre_completo }}</span>
-          <span class="sesion-rol">{{ perfil.rol }}{{ perfil.hacienda_nombre ? ' · ' + perfil.hacienda_nombre : '' }}</span>
+      <!-- Cuenta: un solo botón con el nombre que despliega un dropdown compacto (rol, Política, Menú, Cerrar
+           sesión) anclado debajo - no un modal centrado. Se cierra tocando afuera (cuenta-overlay, transparente)
+           o al navegar (ver menuCuentaAbierto en app.ts). -->
+      <div class="cuenta-box" *ngIf="authService.perfil() as perfil; else soloPolitica">
+        <button type="button" class="cuenta-trigger" (click)="menuCuentaAbierto.set(!menuCuentaAbierto())">
+          <span class="cuenta-nombre">{{ perfil.nombre_completo }}</span>
+          <span class="cuenta-caret" [class.abierto]="menuCuentaAbierto()">▾</span>
+        </button>
+
+        <div class="cuenta-overlay" *ngIf="menuCuentaAbierto()" (click)="menuCuentaAbierto.set(false)"></div>
+
+        <div class="cuenta-dropdown" *ngIf="menuCuentaAbierto()">
+          <div class="cuenta-info">
+            <span class="sesion-nombre">{{ perfil.nombre_completo }}</span>
+            <span class="sesion-rol">{{ perfil.rol }}{{ perfil.hacienda_nombre ? ' · ' + perfil.hacienda_nombre : '' }}</span>
+          </div>
+
+          <!-- BOTÓN DINÁMICO: oculto para roles cautivos (MECANICO/OPERADOR) o cuando ya estamos en su "hogar" -->
+          <a *ngIf="mostrarBotonMenu" [routerLink]="menuButtonLink" class="cuenta-opcion" (click)="menuCuentaAbierto.set(false)">
+            {{ menuButtonText }}
+          </a>
+          <button type="button" class="cuenta-opcion" (click)="terminosService.abrir(); menuCuentaAbierto.set(false)">
+            Política de Privacidad
+          </button>
+          <button type="button" class="cuenta-opcion cuenta-opcion-salir" (click)="cerrarSesion()">
+            Cerrar sesión
+          </button>
         </div>
+      </div>
+      <ng-template #soloPolitica>
         <button type="button" (click)="terminosService.abrir()" class="link-politica">
           Política de Privacidad
         </button>
-
-        <button type="button" *ngIf="authService.estaAutenticado()" (click)="cerrarSesion()" class="btn-menu">
-          Cerrar sesión
-        </button>
-
-        <!-- BOTÓN DINÁMICO: oculto para roles cautivos (MECANICO/OPERADOR) o cuando ya estamos en su "hogar" -->
-        <a *ngIf="mostrarBotonMenu" [routerLink]="menuButtonLink" class="btn-menu">
-          {{ menuButtonText }}
-        </a>
-      </div>
+      </ng-template>
     </div>
   </header>
 

@@ -42,11 +42,19 @@
 }
 
 /* Tabs */
+/*
+overflow-x:auto + white-space:nowrap en los botones: en pantallas angostas (celular) las 4 pestañas no cabían
+en una sola fila y el navegador las achicaba/apilaba en vez de dejarlas en su ancho normal - el usuario tenía
+que rotar el celular a horizontal para alcanzar a ver "Actividad". Ahora se puede desplazar la barra con el dedo
+(swipe) sin salir de vertical, igual que cualquier tab-bar de app móvil.
+*/
 .tabs-bar {
   display: flex;
   gap: 0.5rem;
   border-bottom: 1px solid #dbe6d3;
   margin-bottom: 1.5rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .tab-btn {
@@ -59,6 +67,8 @@
   cursor: pointer;
   border-bottom: 2px solid transparent;
   transition: all 0.2s;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .tab-btn:hover {
@@ -89,12 +99,39 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 /* Buscadores de texto (pestañas Equipo/Actividad) - sin esto el input queda con el ancho intrínseco del
    navegador y el placeholder se corta. Los filtros de fecha/hacienda del Historial no lo necesitan. */
 .filter-group input[type="text"] {
   min-width: 18rem;
+}
+
+/*
+En celular, el min-width:18rem de arriba y los 4 campos de fecha/hacienda/supervisor en una sola fila (sin
+wrap explícito) se salían del ancho de la tarjeta blanca en vez de acomodarse - se veían amontonados/superpuestos
+(reportado probando el .apk real). Se apilan en una sola columna a ancho completo, más cómodo para tocar con el
+dedo que forzar varios campos angostos en la misma fila.
+*/
+@media (max-width: 640px) {
+  .filter-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-group {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .filter-group input[type="text"],
+  .filter-group .date-input,
+  .filter-group .input-control {
+    width: 100%;
+    min-width: 0;
+  }
 }
 
 .filter-label {

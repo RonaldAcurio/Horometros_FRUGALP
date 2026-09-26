@@ -34,6 +34,10 @@ export class App {
   */
   mostrarBotonMenu = true;
 
+  // Dropdown compacto de cuenta en el header (nombre/rol, Política, Menú, Cerrar sesión) - ver app.html.
+  // No es un modal centrado: se cierra solo al tocar afuera (cuenta-overlay) o al navegar.
+  menuCuentaAbierto = signal(false);
+
   constructor() {
     this.router.events
       .pipe(filter((event): event is NavigationEnd => event instanceof NavigationEnd))
@@ -44,6 +48,7 @@ export class App {
 
         this.mostrarHeader = url !== '/login';
         this.mostrarBotonMenu = perfil?.rol !== 'MECANICO' && perfil?.rol !== 'OPERADOR';
+        this.menuCuentaAbierto.set(false);
 
         if (perfil?.rol === 'ESCANER') {
           // Unica excepcion propia: "Menú" siempre vuelve a /escaner (apaga la camara al salir de
