@@ -47,7 +47,8 @@ export const ObtenerActividades = async( req:Request, res:Response ) => {
         return res.status(200).json({ data: actividades, total, pagina, totalPaginas: Math.ceil(total / limite) || 1 });
 
     } catch(err){
-        return res.status(500).json({ message:'No se pudo procesar su solicitud', err });
+        console.error('No se pudo procesar su solicitud', err);
+        return res.status(500).json({ message: 'No se pudo procesar su solicitud' });
     }
 }
 
@@ -64,7 +65,8 @@ export const  obtenerActividadPorId = async(req: Request, res: Response) => {
         return res.status(200).json(categoriaId);
 
     } catch(err){
-        return res.status(500).json({ message: 'No se puede procesar solicitud de esta categoria', err});
+        console.error('No se puede procesar solicitud de esta categoria', err);
+        return res.status(500).json({ message: 'No se puede procesar solicitud de esta categoria' });
     }
 }
 
@@ -89,7 +91,8 @@ export const crearActividad = async(req:Request, res:Response ) => {
         if( err.name === 'SequelizeUniqueConstraintError'){
             return res.status(400).json({ message:'El codigo MEGUED ya esta existente'});
         }
-        return res.status(500).json({ message: 'Error al crear una Nueva Actividad', err});
+        console.error('Error al crear una Nueva Actividad', err);
+        return res.status(500).json({ message: 'Error al crear una Nueva Actividad' });
     }
 }
 
@@ -117,7 +120,8 @@ export const actualizarActividad = async(req: Request, res:Response) => {
 
     } catch(err){
 
-        return res.status(500).json({ message:'Error al actualziar la tabla',err });
+        console.error('Error al actualziar la tabla', err);
+        return res.status(500).json({ message: 'Error al actualziar la tabla' });
     }
 }
 

@@ -90,7 +90,8 @@ export const obtenerUsuarios = async(_req:Request, res:Response):Promise<void> =
         });
         res.json(usuarios);
     }catch(err){
-        res.status(500).json({ message: 'Error al obtener los usuarios.', err});
+        console.error('Error al obtener los usuarios.', err);
+        res.status(500).json({ message: 'Error al obtener los usuarios.' });
     }
 };
 
@@ -130,7 +131,8 @@ export const resetearClaveUsuario = async(req:Request, res:Response):Promise<voi
         res.json({ message:'Clave del usuario actualizado correctamente.'});
 
     }catch(err){
-        res.status(500).json({message:'Error al rescatar la clave del usuario.',err});
+        console.error('Error al rescatar la clave del usuario.', err);
+        res.status(500).json({ message: 'Error al rescatar la clave del usuario.' });
 
     }
 };

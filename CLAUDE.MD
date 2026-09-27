@@ -1266,6 +1266,47 @@ siempre) - verificado con `ng build`/`ng test` (27/27, incluye los 7 casos nuevo
 la documentación oficial de `@capacitor/network`/`@capacitor/preferences`. Falta que el usuario lo pruebe en
 el celular real, apagando datos/wifi a mitad de una jornada.
 
+### Auditoría OWASP ZAP (Active Scan) contra backend local - 2 hallazgos reales, 1 falso positivo (2026-09-26)
+
+El usuario corrió ZAP (Flatpak - necesitó forzar X11 con `flatpak override --socket=x11 --nosocket=wayland`,
+la GUI no arranca sobre Wayland puro) con Active Scan contra su backend LOCAL (nunca contra Render - ver más
+abajo por qué importaba). Resultado: 10 tipos de alerta, la mayoría ruido esperado (headers informativos,
+"Modern Web Application", etc.), pero 2 reales y 1 falso positivo interesante de explicar:
+
+- **Bug real: `GET /api/asistencia/historial` y `/hoy` tiraban 500 en una base recién migrada desde cero**
+  (`SequelizeDatabaseError`, code `42703 undefined_column`, columna `operador.nombre_hoja`). Causa: la
+  migración GENESIS (`20260101000000-...`) SÍ declara `nombre_hoja` al crear `operadores`, pero ese
+  `createTable` se salta con un guard ("si la tabla YA existe, no la toques") pensado para no romper
+  producción/desarrollo (que ya tenían la tabla de antes del sistema de migraciones) - y en al menos un
+  entorno migrado desde cero (el local del usuario), la columna terminó faltando. Reproducido y confirmado acá
+  mismo (Postgres local del sandbox, quitando la columna a mano y viendo el mismo 500) antes de arreglarlo.
+  **Arreglo:** nueva migración `20260926010000-reparar-nombre-hoja-operadores.js`, protegida igual que la
+  GENESIS (revisa si la columna ya existe antes de agregarla) - segura de correr sin importar el estado real
+  de cada entorno. Probado en el sandbox: quitar la columna a mano + `db:migrate:undo`/`db:migrate` la
+  restaura y los 500 desaparecen.
+- **Bug real (el que de verdad importaba de todo el scan): 38 lugares en los 8 controllers devolvían el
+  objeto de error de Sequelize CRUDO en el `res.status(500).json({..., err})`** - eso filtraba el texto
+  completo de la consulta SQL, nombres de tablas/columnas, y detalles internos a cualquiera que provocara un
+  500 (bastaba con un parámetro inválido). Ninguno de esos catch loggeaba el error server-side aparte - era la
+  ÚNICA forma de verlo. **Arreglo:** en los 8 controllers, cada uno pasa a `console.error(mensaje, err)`
+  (server-side, para no perder capacidad de debug) + `res.status(500).json({ message })` (sin el objeto de
+  error) - verificado con `tsc --noEmit` limpio y los 27 tests unitarios en verde.
+- **Falso positivo: "SQL Injection (3)" (severidad alta en ZAP).** ZAP prueba mandar una expresión aritmética
+  equivalente al valor original (ej. `limite=22-2` en vez de `limite=20`) y si la respuesta es idéntica, lo
+  interpreta como que la base de datos evaluó la resta - señal clásica de inyección. Pero en este código
+  `Number("22-2")` en JavaScript NO es 20, es `NaN` (JS no evalúa expresiones, solo parsea números literales)
+  - cae al valor por defecto (`Number(valor) || 20`), y por eso coincide con el original: es el fallback del
+  propio código, no la base de datos calculando nada. Confirmado con `Number("abc") || 20` dando el mismo
+  resultado que `Number("22-2") || 20` - cualquier basura cae igual, no hay aritmética real de por medio.
+  Sequelize además usa siempre consultas parametrizadas (bind parameters), la inyección clásica por
+  concatenación no es posible por diseño del ORM. **No requiere ningún arreglo.**
+
+Nota aparte, no un bug: para esta auditoría fue necesario levantar el backend contra un Postgres LOCAL (no
+Render) - la sesión anterior confirmó con el usuario que su `.env` local apuntaba sin querer a la base de
+producción real, y armar un Active Scan (manda payloads de ataque de verdad) contra eso hubiera sido
+arriesgado. Ver flujo completo: Docker Postgres local + `db:migrate` + `CIFRADO_CLAVE`/admin insertado a mano,
+documentado en la conversación del 2026-09-26.
+
 ## Pendiente
 
 **Empaquetado con Capacitor (ver arriba) - pasos que faltan**

@@ -109,7 +109,8 @@ export const crearRegistroActividad = async(req:Request, res:Response):Promise<v
         res.status(201).json(registro);
 
     }catch(err){
-        res.status(500).json({message: 'Error al crear el registro de actividad.',err});
+        console.error('Error al crear el registro de actividad.', err);
+        res.status(500).json({ message: 'Error al crear el registro de actividad.' });
 
     }
 };
@@ -161,7 +162,8 @@ export const finalizarRegistroActividad = async(req:Request, res:Response):Promi
         res.json({ message: 'Labor fibalizada correctamente.',registro });
 
     }catch(err){
-        res.status(500).json({ message: 'Error al finalizar el registro de actividad.', err});
+        console.error('Error al finalizar el registro de actividad.', err);
+        res.status(500).json({ message: 'Error al finalizar el registro de actividad.' });
 
     }
 };
@@ -200,7 +202,8 @@ export const obtenerRegistrosPorAsistencia = async (req:Request, res:Response):P
         res.json(registros);
 
     } catch(err){
-        res.status(500).json({ message: 'Error al obtener los registros de actividad.',err});
+        console.error('Error al obtener los registros de actividad.', err);
+        res.status(500).json({ message: 'Error al obtener los registros de actividad.' });
 
     }
 };
@@ -247,6 +250,7 @@ export const obtenerRegistrosPorOperador = async (req:Request, res:Response):Pro
         res.json(registros);
 
     } catch(err){
-        res.status(500).json({ message: 'Error al obtener el historial de labores del operador.', err});
+        console.error('Error al obtener el historial de labores del operador.', err);
+        res.status(500).json({ message: 'Error al obtener el historial de labores del operador.' });
     }
 };

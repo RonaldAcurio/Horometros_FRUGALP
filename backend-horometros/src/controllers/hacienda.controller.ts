@@ -15,7 +15,8 @@ export const obtenerHaciendas = async(_req:Request, res:Response):Promise<void> 
         const haciendas = await Hacienda.findAll({ order: [['nombre', 'ASC']] });
         res.json(haciendas);
     }catch(err){
-        res.status(500).json({ message: 'Error al obtener las haciendas.', err});
+        console.error('Error al obtener las haciendas.', err);
+        res.status(500).json({ message: 'Error al obtener las haciendas.' });
     }
 };
 
@@ -40,7 +41,8 @@ export const crearHacienda = async(req:Request, res:Response):Promise<void> => {
         const hacienda = await Hacienda.create({ nombre: nombre.trim() });
         res.status(201).json(hacienda);
     }catch(err){
-        res.status(500).json({ message: 'Error al crear la hacienda.', err});
+        console.error('Error al crear la hacienda.', err);
+        res.status(500).json({ message: 'Error al crear la hacienda.' });
     }
 };
 
@@ -87,7 +89,8 @@ export const generarTokenHacienda = async(req:Request, res:Response):Promise<voi
         });
 
     }catch(err){
-        res.status(500).json({ message:'Error al generar el token de la hacienda',err});
+        console.error('Error al generar el token de la hacienda', err);
+        res.status(500).json({ message: 'Error al generar el token de la hacienda' });
 
     }
 };
@@ -127,7 +130,8 @@ export const invalidarToken = async(req:Request, res:Response):Promise<void> => 
         res.json({ message:'Token de hacienda invalidado correctamente.'});
 
     }catch(err){
-        res.status(500).json({message:'Error al invalidar el token de hacienda.',err});
+        console.error('Error al invalidar el token de hacienda.', err);
+        res.status(500).json({ message: 'Error al invalidar el token de hacienda.' });
 
     }
 };

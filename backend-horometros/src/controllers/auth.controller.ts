@@ -146,7 +146,8 @@ export const login = async(req: Request, res: Response):Promise<void> => {
         res.status(401).json({ message:'Usuario o clave incorrectos.'});
 
     }catch(err){
-        res.status(500).json({ message:'Error al iniciar sesion.', err});
+        console.error('Error al iniciar sesion.', err);
+        res.status(500).json({ message: 'Error al iniciar sesion.' });
 
     }
 }
@@ -171,7 +172,8 @@ export const aceptarTerminos = async(req:Request, res:Response):Promise<void> =>
 
         res.json({ message: 'Terminos aceptados correctamente.'});
     }catch(err){
-        res.status(500).json({ message: 'Error al registrar la aceptacion de terminos.', err});
+        console.error('Error al registrar la aceptacion de terminos.', err);
+        res.status(500).json({ message: 'Error al registrar la aceptacion de terminos.' });
     }
 };
 
@@ -206,6 +208,7 @@ export const registrarDispositivo = async(req:Request, res:Response):Promise<voi
 
         res.status(201).json({ message: 'Dispositivo registrado.' });
     }catch(err){
-        res.status(500).json({ message: 'Error al registrar el dispositivo.', err});
+        console.error('Error al registrar el dispositivo.', err);
+        res.status(500).json({ message: 'Error al registrar el dispositivo.' });
     }
 };

@@ -33,6 +33,7 @@ export const obtenerAuditoria = async(req:Request, res:Response):Promise<void> =
             totalPaginas: Math.ceil(total / LIMITE_POR_PAGINA) || 1,
         });
     }catch(err){
-        res.status(500).json({ message: 'Error al obtener el historial de auditoria.', err});
+        console.error('Error al obtener el historial de auditoria.', err);
+        res.status(500).json({ message: 'Error al obtener el historial de auditoria.' });
     }
 };

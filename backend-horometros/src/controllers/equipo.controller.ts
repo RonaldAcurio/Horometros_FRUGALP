@@ -33,7 +33,8 @@ export const obtenerEquipos = async(req: Request, res: Response): Promise<void> 
         });
         res.json({ data: equipos, total, pagina, totalPaginas: Math.ceil(total / limite) || 1 });
     } catch (err) {
-        res.status(500).json({ message: 'Error al obtener los equipos.', err });
+        console.error('Error al obtener los equipos.', err);
+        res.status(500).json({ message: 'Error al obtener los equipos.' });
     }
 };
 
@@ -53,7 +54,8 @@ export const crearEquipo = async (req: Request, res: Response): Promise<void> =>
             res.status(400).json({ message: 'Ya existe un equipo con ese código o nombre.' });
             return;
         }
-        res.status(500).json({ message: 'Error al crear el equipo.', err });
+        console.error('Error al crear el equipo.', err);
+        res.status(500).json({ message: 'Error al crear el equipo.' });
     }
 };
 
@@ -80,7 +82,8 @@ export const actualizarEquipo = async (req: Request, res: Response): Promise<voi
             res.status(400).json({ message: 'Ya existe un equipo con ese código o nombre.' });
             return;
         }
-        res.status(500).json({ message: 'Error al actualizar el equipo.', err });
+        console.error('Error al actualizar el equipo.', err);
+        res.status(500).json({ message: 'Error al actualizar el equipo.' });
     }
 };
 
@@ -99,6 +102,7 @@ export const eliminarEquipo = async (req: Request, res: Response): Promise<void>
         await equipo.destroy();
         res.status(200).json({ message: 'Equipo eliminado exitosamente.' });
     } catch (err) {
-        res.status(500).json({ message: 'Error al intentar eliminar el equipo.', err });
+        console.error('Error al intentar eliminar el equipo.', err);
+        res.status(500).json({ message: 'Error al intentar eliminar el equipo.' });
     }
 };

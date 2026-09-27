@@ -321,7 +321,8 @@ export const obtenerOperadores = async(req: Request, res:Response):Promise<void>
 
         res.json({ data: operadores, total, pagina, totalPaginas: Math.ceil(total / limite) || 1 });
     } catch(err){
-        res.status(500).json({message:'Error al obtener operdadores',err});
+        console.error('Error al obtener operdadores', err);
+        res.status(500).json({ message: 'Error al obtener operdadores' });
     }
 };
 
@@ -473,7 +474,8 @@ export const registrarMacarcoQR= async(req:Request, res:Response):Promise<void> 
         const { status, body } = await procesarMarcacion(operador, { actividades_ids, foto_ingreso });
         res.status(status).json(body);
     } catch(err){
-        res.status(500).json({message:'Error procesando marca QR',err});
+        console.error('Error procesando marca QR', err);
+        res.status(500).json({ message: 'Error procesando marca QR' });
     }
 };
 
@@ -525,7 +527,8 @@ export const marcarConCodigo = async(req:Request, res:Response):Promise<void> =>
         const { status, body } = await procesarMarcacion(operador, { actividades_ids, foto_ingreso }, contexto);
         res.status(status).json(body);
     }catch(err){
-        res.status(500).json({ message: 'Error procesando la marcacion con codigo.', err});
+        console.error('Error procesando la marcacion con codigo.', err);
+        res.status(500).json({ message: 'Error procesando la marcacion con codigo.' });
     }
 };
 
@@ -566,7 +569,8 @@ export const marcarConMiCodigo = async(req:Request, res:Response):Promise<void> 
         const { status, body } = await procesarMarcacion(operador, { actividades_ids, foto_ingreso });
         res.status(status).json(body);
     }catch(err){
-        res.status(500).json({ message: 'Error procesando la marcacion con codigo.', err});
+        console.error('Error procesando la marcacion con codigo.', err);
+        res.status(500).json({ message: 'Error procesando la marcacion con codigo.' });
     }
 };
 
@@ -608,7 +612,8 @@ export const marcarSalidaOlvidada = async(req:Request, res:Response):Promise<voi
 
         res.json({ message: 'Tu salida quedó marcada. Tu supervisor la revisará.', asistencia });
     }catch(err){
-        res.status(500).json({ message: 'Error al marcar tu salida.', err});
+        console.error('Error al marcar tu salida.', err);
+        res.status(500).json({ message: 'Error al marcar tu salida.' });
     }
 };
 
@@ -626,7 +631,8 @@ export const generarMiQr = async(req:Request, res:Response):Promise<void> => {
         const qr_token = generarTokenQrJornada(req.auth.id);
         res.json({ qr_token, vigencia_segundos: 90 });
     }catch(err){
-        res.status(500).json({ message: 'Error al generar el QR de jornada.', err});
+        console.error('Error al generar el QR de jornada.', err);
+        res.status(500).json({ message: 'Error al generar el QR de jornada.' });
     }
 };
 
@@ -652,7 +658,8 @@ export const obtenerMiEstado = async(req:Request, res:Response):Promise<void> =>
             asistencia_id: enJornada ? asistenciaHoy!.id : null,
         });
     }catch(err){
-        res.status(500).json({ message: 'Error al consultar tu estado.', err});
+        console.error('Error al consultar tu estado.', err);
+        res.status(500).json({ message: 'Error al consultar tu estado.' });
     }
 };
 
@@ -712,7 +719,8 @@ export const marcarConQrSesion = async(req:Request, res:Response):Promise<void> 
         const { status, body } = await procesarMarcacion(operador, { actividades_ids: actividadesIdsFinal, foto_ingreso }, contexto);
         res.status(status).json(body);
     }catch(err){
-        res.status(500).json({ message: 'Error procesando la marcacion por QR de sesion.', err});
+        console.error('Error procesando la marcacion por QR de sesion.', err);
+        res.status(500).json({ message: 'Error procesando la marcacion por QR de sesion.' });
     }
 };
 
@@ -804,7 +812,8 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
             diaCerrado,
         });
     } catch(error){
-        res.status(500).json({message:'Error al obtener asustencias', error});
+        console.error('Error al obtener asustencias', error);
+        res.status(500).json({ message: 'Error al obtener asustencias' });
     }
 };
 
@@ -889,7 +898,8 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
         });
 
     }catch(err){
-        res.status(500).json({ message: 'Error al ejecutar el cierre del dia', err});
+        console.error('Error al ejecutar el cierre del dia', err);
+        res.status(500).json({ message: 'Error al ejecutar el cierre del dia' });
     }
 };
 
@@ -1000,7 +1010,8 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
         });
 
     } catch(err){
-        res.status(500).json({ message: 'Error al consultar el historial del asistencia', err});
+        console.error('Error al consultar el historial del asistencia', err);
+        res.status(500).json({ message: 'Error al consultar el historial del asistencia' });
     }
 };
 
@@ -1028,7 +1039,8 @@ export const obtenerFotoAsistencia = async(req:Request, res:Response):Promise<vo
         res.json({ foto_ingreso: asistencia.foto_ingreso });
 
     } catch(err){
-        res.status(500).json({ message: 'Error al obtener la foto de evidencia.', err});
+        console.error('Error al obtener la foto de evidencia.', err);
+        res.status(500).json({ message: 'Error al obtener la foto de evidencia.' });
     }
 }
 
@@ -1087,7 +1099,8 @@ export const admitirTrabajadorExterno = async(req:Request, res:Response):Promise
         });
 
     }catch(err){
-        res.status(500).json({ message:'Error al admitir al trabajador externo.',err});
+        console.error('Error al admitir al trabajador externo.', err);
+        res.status(500).json({ message: 'Error al admitir al trabajador externo.' });
 
     }
 };
@@ -1132,7 +1145,8 @@ export const resetearClaveOperador = async(req:Request, res:Response):Promise<vo
         res.json({ message:'Clave del operador actualizada correctamente.'});
 
     }catch(error){
-        res.status(500).json({message:'Error al resetear la clave del operador.',error});
+        console.error('Error al resetear la clave del operador.', error);
+        res.status(500).json({ message: 'Error al resetear la clave del operador.' });
 
     }
 };
@@ -1175,7 +1189,8 @@ export const revisarAsistencia = async(req:Request, res:Response):Promise<void> 
         });
 
     }catch(err){
-        res.status(500).json({ message:"Error al revisar la asistencia.",err });
+        console.error("Error al revisar la asistencia.", err);
+        res.status(500).json({ message: "Error al revisar la asistencia." });
 
     }
 }
@@ -1223,6 +1238,7 @@ export const confirmarAsistencia = async(req:Request, res:Response):Promise<void
 
         res.json({ message: 'Confirmacion registrada.', asistencia });
     }catch(err){
-        res.status(500).json({ message: 'Error al confirmar la asistencia.', err});
+        console.error('Error al confirmar la asistencia.', err);
+        res.status(500).json({ message: 'Error al confirmar la asistencia.' });
     }
 };
