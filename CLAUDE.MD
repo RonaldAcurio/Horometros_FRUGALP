@@ -331,7 +331,7 @@ día está cerrado cuando NINGÚN registro de esa fecha sigue `EN_JORNADA`/`PEND
    propia hacienda) y crean haciendas nuevas (esto último solo ADMIN, un Supervisor no crea haciendas). ADMIN y
    ASISTENTE crean/listan Usuarios de oficina y resetean su clave.
 3. `finalizarDia` (Supervisor) cierra la jornada de **su hacienda**, no de las demás - cada Supervisor cierra solo la
-   suya. ⚠️ Pendiente: el endpoint todavía no filtra por hacienda en el código (ver Deuda técnica).
+   suya. ✅ Arreglado 2026-09-27 (ver "Cierre de jornada acotado por hacienda" más abajo).
 4. Reseteo de clave (Usuario u Operador): quien resetea fija una nueva, nunca puede "ver" la anterior (bcrypt no es
    reversible). No hay recuperación de clave por email/SMS en este alcance.
 5. Un mismo `usuario` no puede existir a la vez en `usuarios` y en `operadores`.
@@ -564,9 +564,8 @@ lo confirmado:
 
 ## Deuda técnica heredada
 
-- `finalizarDia` no filtra por `hacienda_id`: un Supervisor con permiso para cerrar jornada cierra TODAS las
-  haciendas del día a la vez, no solo la suya. Ya no está bloqueado por el Login (que ya existe) - queda pendiente
-  como su propio cambio, ver Pendiente.
+- ~~`finalizarDia` no filtra por `hacienda_id`~~ - arreglado 2026-09-27, ver "Cierre de jornada acotado por
+  hacienda" más abajo.
 - `SequelizeMeta` de este checkout tenía un hueco (migraciones aplicadas a mano sin registrar) - ya reconciliado
   localmente, pero verificar en cualquier entorno nuevo con `sequelize-cli db:migrate:status`.
 
@@ -1307,6 +1306,60 @@ producción real, y armar un Active Scan (manda payloads de ataque de verdad) co
 arriesgado. Ver flujo completo: Docker Postgres local + `db:migrate` + `CIFRADO_CLAVE`/admin insertado a mano,
 documentado en la conversación del 2026-09-26.
 
+### Cierre de jornada acotado por hacienda - bug real de alcance (2026-09-27)
+
+**Bug real, confirmado por el usuario:** `finalizarDia` (botón "Cerrar Jornada" del Panel de Supervisor) no
+filtraba por hacienda en ningún punto del código - un SUPERVISOR con permiso para la acción (eso sí lo exigía
+`requireRol`) terminaba cerrando la jornada de TODAS las haciendas del sistema con un solo clic, no solo la
+suya, aunque los demás supervisores no hubieran terminado de confirmar O/X a su propia gente.
+
+**Arreglo** (`asistencia.controller.ts`, `finalizarDia`):
+- Se calcula `supervisorIdAlcance`: para un SUPERVISOR real, siempre es su propio `req.auth.id` (no se puede
+  mandar por body, no hay forma de que "elija" otra hacienda); para ADMIN, es opcional vía `supervisor_id` en
+  el body (mismo patrón/criterio que el filtro `supervisor_id` que ya usa `obtenerAsistenciaHoy` para el panel
+  de ADMIN: filtra por `operador.supervisor_id`, no por `hacienda_prestamo_id`); sin ese parámetro, ADMIN sigue
+  cerrando todas las haciendas de una vez, a propósito - es el único rol que de verdad supervisa el sistema
+  completo.
+- La consulta `registroDelDia` (que decide qué falta confirmar y si el día ya está cerrado) ahora aplica ese
+  alcance como filtro sobre el include de `Operador`.
+- Los 2 `Asistencia.update()` que de verdad escriben en la BD (PENDIENTE_REVISION→FINALIZADO,
+  EN_JORNADA→SALIDA_OLVIDADA) **también** se acotaron, de `{fecha, estado}` a `{id: {[Op.in]: idsDelAlcance},
+  estado}` - filtrar solo la consulta de arriba y dejar estos 2 UPDATE tal cual habría sido un arreglo a
+  medias: seguirían tocando TODAS las haciendas sin importar que `registroDelDia` ya viniera acotado.
+- Frontend: `asistencia.service.ts` (`finalizarDia`) y `supervisor-panel.ts` (`ejecutarCierreDiario`) mandan
+  `supervisorIdFiltro` (el mismo que ya usa la vista de ADMIN) como `supervisor_id` en el POST - para un
+  Supervisor real este campo siempre es `null` (no tiene el selector, ver `*ngIf="esAdmin"`), así que en la
+  práctica el backend lo ignora y usa su propio `req.auth.id` de todas formas; el parámetro solo tiene efecto
+  real cuando quien cierra es ADMIN.
+- Verificado con `tsc --noEmit` limpio en ambos proyectos y los 27 tests unitarios del backend en verde. No se
+  agregó un test de integración nuevo para este endpoint puntual (no había ninguno antes tampoco - la cobertura
+  de `finalizarDia` sigue siendo manual/local).
+
+**Pregunta del usuario, resuelta acá (cruce de medianoche / cierre tardío):** ¿si la jornada arranca miércoles
+6am y se cierra jueves 5am, alguien que se loguea de nuevo el jueves ya está en "otro día"? ¿Y si el Supervisor
+cierra recién el jueves 10am pero el personal ya entró antes de eso ese mismo jueves, se les permite marcar o
+no?
+- `Asistencia.fecha` se fija **una sola vez**, en el momento exacto de la ENTRADA (`getFetchLocalEcuador()`,
+  fecha calendario real de Ecuador en ese instante) - queda fija para siempre, totalmente desacoplada de si el
+  día anterior ya se cerró formalmente o no. Un check-in nuevo NUNCA queda bloqueado por un día anterior sin
+  cerrar.
+- Por eso: si alguien entra el jueves a las 5:30am (antes de que el Supervisor cierre), su fila ya nace con
+  `fecha = jueves` sin importar que la jornada del miércoles siga técnicamente abierta - se le permite marcar
+  con normalidad, no hay choque.
+- `fechaSeleccionada` en el Panel de Supervisor es un date picker real que el Supervisor puede cambiar a mano
+  (por defecto queda vacío = hoy, y así se lo indica el diálogo de confirmación, `etiquetaFEcha`) - un cierre
+  "tardío" (jueves 10am) cierra la fecha que esté seleccionada en ese momento, no necesariamente "hoy". Si el
+  Supervisor entra sin tocar el selector, cierra el jueves (la fecha real de hoy), no el miércoles.
+- **Único caso borde real que sí vale la pena tener presente:** si un trabajador de turno nocturno seguía
+  `EN_JORNADA` (sin marcar salida) cuando el Supervisor cierra el día anterior, el Paso 2 de `finalizarDia` lo
+  fuerza a `SALIDA_OLVIDADA` automáticamente. Si ese mismo trabajador vuelve a escanear después, `procesarMarcacion`
+  (Paso 1) solo busca una fila en estado `EN_JORNADA` de HOY para tratar el escaneo como salida - como la suya
+  ya quedó en `SALIDA_OLVIDADA` (no `EN_JORNADA`), el sistema no la encuentra y trata el nuevo escaneo como una
+  ENTRADA nueva, no como su salida real. No es un bug nuevo introducido por este arreglo (ya existía así antes),
+  pero queda documentado acá porque es la única situación real donde "cerrar temprano" sí tiene una consecuencia
+  visible para un trabajador de turno cruzado - fuera de alcance de este fix, se deja para cuando el usuario
+  decida si hace falta un flujo de turnos nocturnos de verdad.
+
 ## Pendiente
 
 **Empaquetado con Capacitor (ver arriba) - pasos que faltan**
@@ -1350,14 +1403,10 @@ documentado en la conversación del 2026-09-26.
   de que el usuario lo aplique y confirme - no requiere ningún cambio de código ni patch, es 100% configuración.
 
 **Backend**
-- Filtrar `finalizarDia` por `hacienda_id` del Supervisor que ejecuta el cierre (ver Deuda técnica heredada) - es un
-  hueco de alcance/autorización distinto al de `verificarAutenticacion`/`requireRol` (ya cerrado, ver Endpoints):
-  ahí el Supervisor SÍ tiene permiso para la acción, solo que la acción no respeta el límite de "su" hacienda.
-- Paginar `GET /asistencia/operadores` (hallazgo de la prueba de carga, ver arriba) - hoy es el único endpoint de
-  listado sin paginar, y es medible más lento que el resto a volumen real (~950+ Operadores). Necesita decisión
-  de producto antes de tocarlo: el Menú Admin de hoy probablemente busca/filtra sobre la lista completa ya
-  cargada en el cliente, así que paginar en servidor sin perder esa búsqueda instantánea implica agregar
-  búsqueda por servidor (query `?buscar=`) o aceptar que la carga inicial siga siendo pesada.
+- ~~Filtrar `finalizarDia` por `hacienda_id` del Supervisor que ejecuta el cierre~~ - hecho 2026-09-27, ver
+  "Cierre de jornada acotado por hacienda" más abajo.
+- ~~Paginar `GET /asistencia/operadores`~~ - hecho 2026-09-25, ver "Hallazgo resuelto (2026-09-25)" arriba
+  (sección "Resultados de la corrida local").
 
 **Frontend** (sobre lo ya construido, ver sección de arriba)
 - ~~Offline/sync~~ - hecho 2026-09-26 (ver "Offline-first del Panel de Actividades" arriba).
@@ -1657,12 +1706,11 @@ ahí no hay filtro de ningún tipo, todo el mundo confirmó por captura de panta
 también ahí:
 - Backend (`obtenerAsistenciaHoy`): mismo filtro `supervisor_id` opcional, mismo include condicional sobre
   `Operador`. Deliberadamente NO toca `calcularDiaCerrado` (sigue calculado sobre el día completo sin filtrar) -
-  "Cerrar Jornada" tiene que seguir cerrando el día real sin importar qué filtro de vista tenga puesto quien lo
-  ejecuta.
+  ese indicador es solo para pintar el botón, no para decidir el alcance real del cierre.
 - Frontend (`supervisor-panel.ts`/`.html`): el selector solo se muestra con `*ngIf="esAdmin"` (mismo getter que
-  ya usa `admin-panel.ts`) - un Supervisor real no tiene sentido de negocio filtrando por "otro Supervisor" (y de
-  cualquier forma esta pantalla no lo aísla a su propia hacienda hoy, ver Deuda técnica heredada: "finalizarDia
-  no filtra por hacienda_id" - el mismo hueco aplica aquí, no se tocó, es un tema aparte).
+  ya usa `admin-panel.ts`) - un Supervisor real no tiene sentido de negocio filtrando por "otro Supervisor".
+  Este mismo `supervisorIdFiltro` ahora también viaja a `finalizarDia` (ver "Cierre de jornada acotado por
+  hacienda" más abajo) - arreglado 2026-09-27, ya no es un tema aparte.
 
 ## Flujo de trabajo de esta sesión
 

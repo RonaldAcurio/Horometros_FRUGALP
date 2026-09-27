@@ -58,9 +58,14 @@ export class AsistenciaService {
         });
     }
 
-    // POST -> /api/asistencia/finalizar-dia (Cierre diario por supervisor)
-    finalizarDia(fecha?: string): Observable<any> {
-        return this.http.post(`${this.baseUrl}/finalizar-dia`, { fecha });
+    /*
+    POST -> /api/asistencia/finalizar-dia (Cierre diario por supervisor). supervisorId: solo lo usa ADMIN,
+    para cerrar la hacienda puntual que tenga filtrada en el panel (mismo filtro que obtenerAsistenciasHoy) -
+    el backend lo ignora para un SUPERVISOR real, que siempre queda acotado a su propia hacienda sin importar
+    lo que se mande acá (ver asistencia.controller.ts).
+    */
+    finalizarDia(fecha?: string, supervisorId?: number): Observable<any> {
+        return this.http.post(`${this.baseUrl}/finalizar-dia`, { fecha, supervisor_id: supervisorId });
     }
 
     // PUT -> /api/asistencia/revisar/:id (Edición de observaciones/horas por supervisor)

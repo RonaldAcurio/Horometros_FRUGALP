@@ -158,8 +158,6 @@ directo por SQL contra la tabla `usuarios`, con la clave hasheada con bcrypt (`b
 - Build de **release** firmado (hoy sigue siendo debug) antes de distribuir el .apk de verdad.
 - Probar en iPhone real y 2-3 marcas de Android distintas.
 - Backups automáticos y monitoreo de caídas (Sentry/uptime) - no configurados todavía.
-- `finalizarDia` no filtra por la hacienda del Supervisor que ejecuta el cierre.
-- Paginar `GET /asistencia/operadores` con búsqueda por servidor (pendiente de decisión de producto).
 - Exportar a Excel e "Imprimir general" del Directorio (diseños de Figma ya confirmados, sin construir).
 
 Lista completa y actualizada, con el detalle de cada punto, en `CLAUDE.MD`, sección "Pendiente".

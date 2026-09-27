@@ -763,8 +763,10 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
         Filtro opcional por supervisor (lo usa el panel de ADMIN, que ve TODAS las haciendas mezcladas en esta
         pantalla - a diferencia de un Supervisor real, que solo tiene la suya - para poder acotar a lo que hizo
         un Supervisor puntual). Mismo patron que en obtenerHistorial: filtra operador.supervisor_id directo.
-        No afecta a calcularDiaCerrado (mas abajo) a proposito - "Cerrar Jornada" sigue cerrando el dia completo
-        sin importar el filtro de vista, ver Deuda tecnica heredada en CLAUDE.md sobre finalizarDia y hacienda_id.
+        No afecta a calcularDiaCerrado (mas abajo) a proposito - ese indicador sigue siendo sobre el dia
+        completo (todas las haciendas), independiente de este filtro de vista. El propio cierre (finalizarDia,
+        mas abajo) SI queda acotado a la hacienda del Supervisor que ejecuta el cierre (o a la que mande ADMIN
+        via este mismo supervisor_id) - ver ese endpoint para el detalle.
         */
         const supervisorIdQuery = req.query['supervisor_id'];
         const filtrarPorSupervisor = supervisorIdQuery !== undefined && supervisorIdQuery !== '';
@@ -820,8 +822,25 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
 // Cierre de jornada ejecutando por el Supervisor
 export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
     try{
-        const { fecha } = req.body;
+        const { fecha, supervisor_id } = req.body;
         const fechaProcesar = fecha || getFetchLocalEcuador();
+
+        /*
+        Alcance del cierre: antes este endpoint no filtraba por hacienda para nada - CUALQUIER Supervisor que
+        le diera a "Cerrar Jornada" cerraba el dia de TODAS las haciendas del sistema de un solo boton, aunque
+        los demas supervisores no hubieran terminado de confirmar O/X a su propia gente (bug real, ver
+        CLAUDE.md "Reglas de negocio confirmadas"). Un SUPERVISOR ahora SIEMPRE queda acotado a su propia
+        hacienda (via operador.supervisor_id = su propio id, el mismo campo/criterio que ya usa el filtro "por
+        Supervisor" del panel de ADMIN en obtenerAsistenciaHoy - no considera hacienda_prestamo_id, trabajador
+        prestado, mismo criterio ya establecido ahi). ADMIN puede mandar opcionalmente `supervisor_id` para
+        cerrar solo esa hacienda puntual (coincide con lo que tenga filtrado en el panel); sin ese parametro,
+        ADMIN sigue cerrando todas las haciendas de una vez, a proposito - es el unico rol que de verdad
+        supervisa el sistema completo.
+        */
+        const supervisorIdAlcance: number | null =
+            req.auth?.tipo === 'usuario' && req.auth.rol === 'SUPERVISOR'
+                ? req.auth.id
+                : (supervisor_id ? Number(supervisor_id) : null);
 
         /*
         Verificamos el estado actual de la jornada antes de tocar nada: si ya queda ningun registro pendiente
@@ -831,7 +850,11 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
             where: {fecha: fechaProcesar},
             // paranoid:false: el operador pudo haber sido eliminado (soft-delete) despues de marcar hoy - su
             // nombre igual tiene que poder aparecer en "Falta confirmar la asistencia de: ..." mas abajo.
-            include: [{ model: Operador, as: 'operador', attributes: ['nombre_completo'], paranoid: false }],
+            include: [{
+                model: Operador, as: 'operador', attributes: ['nombre_completo'], paranoid: false,
+                required: supervisorIdAlcance !== null,
+                ...(supervisorIdAlcance !== null ? { where: { supervisor_id: supervisorIdAlcance } } : {}),
+            }],
        });
         if(registroDelDia.length === 0 ){
             res.status(404).json({
@@ -867,12 +890,17 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
             return;
         }
 
+        // Los 2 UPDATE de abajo tienen que respetar el mismo alcance que ya filtramos arriba (registroDelDia) -
+        // filtrar aca de nuevo por fecha+estado sin acotar por id tocaria TODAS las haciendas otra vez, aunque
+        // la consulta de arriba ya se haya limitado a una sola.
+        const idsDelAlcance = registroDelDia.map((r) => r.id);
+
         // 1.Aprobar marcaciones en PENDIENTE_REVISION -> FINALIZADO
         const [aprobados] = await Asistencia.update(
             { estado: 'FINALIZADO'},
             {
                 where:{
-                    fecha: fechaProcesar,
+                    id: { [Op.in]: idsDelAlcance },
                     estado: 'PENDIENTE_REVISION'
                 }
             }
@@ -883,7 +911,7 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
             {estado:'SALIDA_OLVIDADA'},
             {
                 where:{
-                    fecha: fechaProcesar,
+                    id: { [Op.in]: idsDelAlcance },
                     estado: 'EN_JORNADA'
                 }
             }

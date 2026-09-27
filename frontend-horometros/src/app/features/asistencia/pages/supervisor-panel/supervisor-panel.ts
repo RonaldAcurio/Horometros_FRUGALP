@@ -181,7 +181,7 @@ export class SupervisorPanel implements OnInit {
       'Cerrar jornada'
     );
     if (confirmado) {
-      this.asistenciaService.finalizarDia(this.fechaSeleccionada || undefined).subscribe({
+      this.asistenciaService.finalizarDia(this.fechaSeleccionada || undefined, this.supervisorIdFiltro || undefined).subscribe({
         next: (res) => {
           this.notificacionService.exito(res.message || 'Cierre de jornada completado.');
           this.cargarAsistencias();
