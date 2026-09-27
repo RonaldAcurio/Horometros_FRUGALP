@@ -8,12 +8,26 @@ que equipo trabajaron) y la pestaña "Equipo" del Panel de Asistente (gestion: c
 Ambos comparten el mismo modelo `Equipo` que el modulo Horometros usa para sus lecturas OCR (`ultimo_km_inicial`/
 `ultimo_real`/`numero_hoja`/`tiene_tope_10k`) - esos campos horometros-especificos no se tocan ni se piden aqui.
 Paginado (mismo patron que `obtenerAsistenciaHoy`) porque el catalogo puede crecer. `q` opcional filtra por
-codigo_megued/nombre_equipo - lo usa el autocompletar del selector y el buscador de la pestaña de gestion.
+codigo_megued/nombre_equipo - lo usa el buscador de la pestaña de gestion.
+Sin 'pagina'/'limite' en la query devuelve el arreglo completo (mismo patron que `ObtenerActividades`) - lo usa
+el cacheo local offline-first del Panel de Actividades (ver OfflineSyncService en el frontend), que necesita
+bajar el catalogo entero una sola vez para poder buscar despues sin señal.
 */
 export const obtenerEquipos = async(req: Request, res: Response): Promise<void> => {
     try {
-        const pagina = Math.max(1, Number(req.query['pagina']) || 1);
-        const limite = Math.min(100, Math.max(1, Number(req.query['limite']) || 20));
+        const { pagina: paginaQuery, limite: limiteQuery } = req.query;
+
+        if (paginaQuery === undefined && limiteQuery === undefined) {
+            const equipos = await Equipo.findAll({
+                attributes: ['id', 'codigo_megued', 'nombre_equipo'],
+                order: [['nombre_equipo', 'ASC']],
+            });
+            res.json(equipos);
+            return;
+        }
+
+        const pagina = Math.max(1, Number(paginaQuery) || 1);
+        const limite = Math.min(100, Math.max(1, Number(limiteQuery) || 20));
         const offset = (pagina - 1) * limite;
         const q = typeof req.query['q'] === 'string' ? req.query['q'].trim() : '';
 

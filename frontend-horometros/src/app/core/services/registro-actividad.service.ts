@@ -21,6 +21,13 @@ export class RegistroActividadService {
         return this.http.get<RespuestaPaginada<Equipo>>(`${environment.apiUrl}/equipos`, { params });
     }
 
+    // GET -> /api/equipos (sin pagina/limite) - catalogo COMPLETO sin paginar, mismo patron que
+    // AsistenciaService.obtenerActividades(). Lo usa OfflineSyncService para cachear el catalogo entero en el
+    // celular y poder buscar equipo sin señal (ver "offline-first" en CLAUDE.md).
+    obtenerTodosLosEquipos(): Observable<Equipo[]> {
+        return this.http.get<Equipo[]>(`${environment.apiUrl}/equipos`);
+    }
+
     // POST/PUT/DELETE -> /api/equipos - gestión del catálogo (pestaña "Equipo" del Panel de Asistente).
     // DELETE es soft-delete (ver equipo.controller.ts): el equipo desaparece de los listados pero las labores
     // ya registradas que lo usaron lo siguen mostrando con normalidad.

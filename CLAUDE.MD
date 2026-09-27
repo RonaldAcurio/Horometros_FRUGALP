@@ -1399,6 +1399,42 @@ alrededor de fallos de red, no el offline-first en sí, que sigue funcionando bi
   formas. El banner "📴 Sin conexión..." que ya existe arriba de la pantalla es el único aviso necesario, no
   hacía falta agregar otro.
 
+### Catálogo de Equipo/Actividad cacheado en el celular - offline-first real (2026-09-27)
+
+El arreglo anterior (bloquear la búsqueda sin señal) tapaba el síntoma pero el usuario tenía razón al
+reclamarlo: el "offline-first" del Panel de Actividades debía dejar buscar equipo/actividad CON NORMALIDAD sin
+señal, no solo bloquear con elegancia. El hueco real era que el offline-first solo guardaba la LABOR que el
+trabajador arma (eso sí era 100% offline), pero nunca guardaba una copia local del CATÁLOGO para buscar sobre
+él sin conexión - por eso cualquier búsqueda en vivo fallaba.
+
+**Arreglo (reemplaza por completo el de arriba, "cargarPaginaEquipos"/"cargarPaginaActividadesPanel" ya no
+existen):**
+- Backend: `obtenerEquipos` (`equipo.controller.ts`) ahora soporta el mismo modo "sin pagina/limite = catálogo
+  completo" que ya tenía `ObtenerActividades` (`actividades.controller.ts`) - antes `obtenerEquipos` SIEMPRE
+  paginaba, sin ese modo no había forma de bajar el catálogo entero de una sola pedida.
+  `AsistenciaService.obtenerTodasLasActividades()` es un método NUEVO y separado de `obtenerActividades()` -
+  reutilizar ese último habría sido un error: tiene un `catchError` que absorbe cualquier fallo de red y
+  devuelve `[]` como si fuera una respuesta válida (pensado para no romper el checklist de salida), y usarlo acá
+  habría hecho que un corte de señal a mitad del refresco BORRARA el caché bueno con una lista vacía. El nuevo
+  método no absorbe nada, así un fallo de red dispara el `catch` de `refrescarCatalogos()` (ver abajo) en vez de
+  pisar el caché.
+- `OfflineSyncService` (frontend) gana dos signals nuevos, `catalogoEquipos`/`catalogoActividades`, persistidos
+  en `Preferences` igual que la cola offline (`frugalp_cache_equipos`/`frugalp_cache_actividades`). Se cargan
+  al arrancar (lo que haya quedado de la última vez que hubo señal) y se refrescan solos cada vez que
+  `iniciarDeteccionDeRed` detecta conexión - más una vez extra al entrar al Panel de Actividades
+  (`cargarDatosActividades`), por si el catálogo cambió mientras la app seguía abierta desde hace días. Si el
+  refresco falla (sin señal, o se cae a mitad de camino) se deja tal cual el caché anterior - nunca lo pisa con
+  algo vacío.
+- `mi-jornada.ts`: los selectores de Equipo/Actividad dejaron de pedir nada por red. `equiposFiltrados`/
+  `actividadesFiltradas` son getters que filtran en el momento sobre esos dos signals cacheados
+  (`codigo_megued`/`nombre_equipo`/`description`, sin distinguir mayúsculas), acotados a
+  `MAX_RESULTADOS_AUTOCOMPLETAR = 30` para no pintar de una vez un catálogo entero de cientos de filas - escribir
+  más texto acota sola la búsqueda, como cualquier autocompletar real. Ya no existe "Cargar más" (ni el CSS
+  `.btn-link-cargar-mas`, que quedó sin uso): la lista completa ya está toda cargada de entrada. `onBuscarEquipo`/
+  `onBuscarActividad` ya no tienen debounce (300ms) porque ya no hay petición de red que evitar disparar de más.
+- Son catálogos chicos (equipos del negocio, no una fila por trabajador) - cachearlos enteros es liviano, y la
+  búsqueda queda instantánea siempre, con o sin señal, sin depender de un viaje a red por cada letra escrita.
+
 ## Pendiente
 
 **Empaquetado con Capacitor (ver arriba) - pasos que faltan**

@@ -174,22 +174,6 @@ input solo tiene 1-2 dígitos, no hace falta más espacio, y mantiene el par HH:
   cursor: not-allowed;
 }
 
-.btn-link-cargar-mas {
-  background: none;
-  border: none;
-  color: #059669;
-  font-size: 0.78rem;
-  text-decoration: underline;
-  cursor: pointer;
-  padding: 0.2rem 0;
-  display: block;
-}
-
-.btn-link-cargar-mas:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
 .autocomplete-group {
   position: relative;
 }
@@ -226,6 +210,3 @@ input solo tiene 1-2 dígitos, no hace falta más espacio, y mantiene el par HH:
   color: #6b7768;
 }
 
-.autocomplete-opciones .btn-link-cargar-mas {
-  padding: 0.5rem 0.75rem;
-}

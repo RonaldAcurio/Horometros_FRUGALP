@@ -91,6 +91,14 @@ export class AsistenciaService {
         );
     }
 
+    // GET -> /api/actividad (mismo endpoint que obtenerActividades(), sin el catchError-a-vacío de arriba) -
+    // lo usa OfflineSyncService para cachear el catálogo completo (ver refrescarCatalogos): ahí SÍ importa
+    // distinguir un fallo real de red de "0 actividades", porque una respuesta vacía se guarda como caché y
+    // pisaría lo que ya había si viniera de un catchError silencioso en vez de un error de verdad.
+    obtenerTodasLasActividades(): Observable<Actividad[]> {
+        return this.http.get<Actividad[]>(`${environment.apiUrl}/actividad`);
+    }
+
     // GET -> /api/actividad?pagina=1&limite=20&q=... - paginado y filtrable por texto (mandar pagina/limite
     // activa esa respuesta en el backend, ver actividades.controller.ts), lo consume el autocompletar de
     // Actividad del Panel de Actividades.

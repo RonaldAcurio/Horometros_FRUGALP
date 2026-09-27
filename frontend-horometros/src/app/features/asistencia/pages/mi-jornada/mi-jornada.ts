@@ -58,32 +58,21 @@ export class MiJornada implements OnInit, OnDestroy {
 
   /*
   Los selectores de equipo/actividad del formulario son autocompletar: el trabajador escribe y van apareciendo
-  las coincidencias (el catalogo puede crecer con el tiempo, no tiene sentido mostrarlo entero en un <select>).
-  Cada busqueda pide la pagina 1 filtrada por el texto (con debounce); "Cargar más" dentro de la misma búsqueda
-  acumula la siguiente página. Elegir una opción llena el id real (nuevoRegistro.equipo_id/actividad_id); el
-  texto del input es solo lo que se está buscando o lo ya elegido - cambiar el texto sin volver a elegir borra
-  la selección anterior, para no mandar un id que ya no corresponde a lo que se ve escrito.
+  las coincidencias. Ya NO piden nada por red (antes pedían por página con debounce, ver historial en
+  CLAUDE.md "offline real en el .apk") - filtran en el momento sobre el catálogo COMPLETO que OfflineSyncService
+  ya tiene cacheado en el celular (equiposFiltrados/actividadesFiltradas abajo), así que la búsqueda funciona
+  igual con o sin señal. Elegir una opción llena el id real (nuevoRegistro.equipo_id/actividad_id); el texto del
+  input es solo lo que se está buscando o lo ya elegido - cambiar el texto sin volver a elegir borra la
+  selección anterior, para no mandar un id que ya no corresponde a lo que se ve escrito.
   */
-  equipos: Equipo[] = [];
+  private readonly MAX_RESULTADOS_AUTOCOMPLETAR = 30;
   equipoBusqueda = '';
   mostrarOpcionesEquipo = false;
-  equiposPagina = 0;
-  equiposTotalPaginas = 1;
-  cargandoMasEquipos = false;
-  private debounceEquipo?: ReturnType<typeof setTimeout>;
 
   // (actividadesCatalogo, declarado arriba en "Fase codigo": catalogo COMPLETO sin paginar, para el checklist
-  // de salida - ahi se necesita ver todo de una vez, no tiene el problema de escala de un autocompletar.)
-
-  // Catalogo paginado/buscable de actividades para el selector del Panel de Actividades (independiente del de
-  // arriba, mismo patron que equipos).
-  actividadesCatalogoPanel: Actividad[] = [];
+  // de salida - mismo catálogo que actividadesFiltradas usa por debajo, vía OfflineSyncService.)
   actividadBusqueda = '';
   mostrarOpcionesActividad = false;
-  actividadesPanelPagina = 0;
-  actividadesPanelTotalPaginas = 1;
-  cargandoMasActividadesPanel = false;
-  private debounceActividad?: ReturnType<typeof setTimeout>;
   nuevoRegistro = { equipo_id: null as number | null, actividad_id: null as number | null, area: '', horometro_inicio: null as number | null, observaciones: '' };
   guardandoRegistro = false;
 
@@ -171,8 +160,6 @@ export class MiJornada implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.detenerIntervalos();
-    if (this.debounceEquipo) clearTimeout(this.debounceEquipo);
-    if (this.debounceActividad) clearTimeout(this.debounceActividad);
     this.subCambiosOffline?.unsubscribe();
   }
 
@@ -336,16 +323,38 @@ export class MiJornada implements OnInit, OnDestroy {
   }
 
   private cargarDatosActividades(): void {
-    this.cargarPaginaEquipos(true);
-    this.cargarPaginaActividadesPanel(true);
+    // Refresca el catálogo cacheado por si cambió desde que arrancó la app (ver OfflineSyncService) - es un
+    // "mejor esfuerzo" en silencio, no bloquea nada: si falla (sin señal) se sigue usando lo ya cacheado.
+    this.offlineSyncService.refrescarCatalogos();
     this.cargarRegistros();
   }
 
-  // --- Autocompletar de Equipo ---
+  // --- Autocompletar de Equipo/Actividad ---
+  // Filtran en el momento sobre el catálogo COMPLETO cacheado en OfflineSyncService (ver comentario de
+  // equipoBusqueda arriba) - no piden nada por red, funcionan igual con o sin señal. Se limita a
+  // MAX_RESULTADOS_AUTOCOMPLETAR para no pintar una lista larguísima de una sola vez; escribir más texto acota
+  // sola la búsqueda, como cualquier autocompletar.
+
+  get equiposFiltrados(): Equipo[] {
+    const texto = this.equipoBusqueda.trim().toLowerCase();
+    const catalogo = this.offlineSyncService.catalogoEquipos();
+    const filtrados = texto
+      ? catalogo.filter((eq) => eq.codigo_megued.toLowerCase().includes(texto) || eq.nombre_equipo.toLowerCase().includes(texto))
+      : catalogo;
+    return filtrados.slice(0, this.MAX_RESULTADOS_AUTOCOMPLETAR);
+  }
+
+  get actividadesFiltradas(): Actividad[] {
+    const texto = this.actividadBusqueda.trim().toLowerCase();
+    const catalogo = this.offlineSyncService.catalogoActividades();
+    const filtradas = texto
+      ? catalogo.filter((act) => act.codigo_megued.toLowerCase().includes(texto) || act.description.toLowerCase().includes(texto))
+      : catalogo;
+    return filtradas.slice(0, this.MAX_RESULTADOS_AUTOCOMPLETAR);
+  }
 
   abrirOpcionesEquipo(): void {
     this.mostrarOpcionesEquipo = true;
-    if (this.equipos.length === 0) this.cargarPaginaEquipos(true);
     this.cdr.detectChanges();
   }
 
@@ -358,8 +367,6 @@ export class MiJornada implements OnInit, OnDestroy {
     this.equipoBusqueda = texto;
     this.nuevoRegistro.equipo_id = null;
     this.mostrarOpcionesEquipo = true;
-    if (this.debounceEquipo) clearTimeout(this.debounceEquipo);
-    this.debounceEquipo = setTimeout(() => this.cargarPaginaEquipos(true), 300);
     this.cdr.detectChanges();
   }
 
@@ -370,48 +377,8 @@ export class MiJornada implements OnInit, OnDestroy {
     this.cdr.detectChanges();
   }
 
-  // "Cargar más" dentro de la búsqueda actual: acumula la siguiente página en vez de reemplazar.
-  cargarMasEquipos(): void {
-    this.cargarPaginaEquipos(false);
-  }
-
-  // reemplazar=true: primera página de una búsqueda nueva (o carga inicial). false: "Cargar más" acumula.
-  private cargarPaginaEquipos(reemplazar: boolean): void {
-    if (this.cargandoMasEquipos) return;
-    if (!reemplazar && this.equiposPagina > 0 && this.equiposPagina >= this.equiposTotalPaginas) return;
-    /*
-    El catálogo de Equipo/Actividad NO es parte del offline-first (ver OfflineSyncService) - buscar o pedir
-    "Cargar más" sin señal simplemente no tiene con qué responder. Antes esto sí intentaba la petición: fallaba
-    en silencio (Equipo, sin catchError) o volvía "0 resultados" como si el equipo no existiera (Actividad, ver
-    obtenerActividadesPaginado) - probado por el usuario en el .apk real, confundía "no hay resultados" con "no
-    hay señal". El banner "Sin conexión" de arriba ya avisa, así que acá no hace falta otro aviso, solo evitar
-    la petición inútil y dejar la lista tal cual estaba.
-    */
-    if (!this.offlineSyncService.conectado()) return;
-    this.cargandoMasEquipos = true;
-    const siguiente = reemplazar ? 1 : this.equiposPagina + 1;
-    this.registroActividadService.obtenerEquipos(siguiente, 20, this.equipoBusqueda).subscribe({
-      next: (res) => {
-        this.equipos = reemplazar ? res.data : [...this.equipos, ...res.data];
-        this.equiposPagina = res.pagina;
-        this.equiposTotalPaginas = res.totalPaginas;
-        this.cargandoMasEquipos = false;
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        console.error('Error cargando equipos:', err);
-        this.cargandoMasEquipos = false;
-        this.cdr.detectChanges();
-      },
-    });
-  }
-
-  // --- Autocompletar de Actividad (Panel de Actividades - catalogo independiente del checklist de salida del
-  // camino codigo, que sigue usando actividadesCatalogo sin paginar/buscar) ---
-
   abrirOpcionesActividad(): void {
     this.mostrarOpcionesActividad = true;
-    if (this.actividadesCatalogoPanel.length === 0) this.cargarPaginaActividadesPanel(true);
     this.cdr.detectChanges();
   }
 
@@ -423,8 +390,6 @@ export class MiJornada implements OnInit, OnDestroy {
     this.actividadBusqueda = texto;
     this.nuevoRegistro.actividad_id = null;
     this.mostrarOpcionesActividad = true;
-    if (this.debounceActividad) clearTimeout(this.debounceActividad);
-    this.debounceActividad = setTimeout(() => this.cargarPaginaActividadesPanel(true), 300);
     this.cdr.detectChanges();
   }
 
@@ -433,32 +398,6 @@ export class MiJornada implements OnInit, OnDestroy {
     this.actividadBusqueda = `${act.codigo_megued} - ${act.description}`;
     this.mostrarOpcionesActividad = false;
     this.cdr.detectChanges();
-  }
-
-  cargarMasActividadesPanel(): void {
-    this.cargarPaginaActividadesPanel(false);
-  }
-
-  private cargarPaginaActividadesPanel(reemplazar: boolean): void {
-    if (this.cargandoMasActividadesPanel) return;
-    if (!reemplazar && this.actividadesPanelPagina > 0 && this.actividadesPanelPagina >= this.actividadesPanelTotalPaginas) return;
-    // Ver el mismo comentario en cargarPaginaEquipos - mismo motivo, mismo catálogo fuera del offline-first.
-    if (!this.offlineSyncService.conectado()) return;
-    this.cargandoMasActividadesPanel = true;
-    const siguiente = reemplazar ? 1 : this.actividadesPanelPagina + 1;
-    this.asistenciaService.obtenerActividadesPaginado(siguiente, 20, this.actividadBusqueda).subscribe({
-      next: (res) => {
-        this.actividadesCatalogoPanel = reemplazar ? res.data : [...this.actividadesCatalogoPanel, ...res.data];
-        this.actividadesPanelPagina = res.pagina;
-        this.actividadesPanelTotalPaginas = res.totalPaginas;
-        this.cargandoMasActividadesPanel = false;
-        this.cdr.detectChanges();
-      },
-      error: () => {
-        this.cargandoMasActividadesPanel = false;
-        this.cdr.detectChanges();
-      },
-    });
   }
 
   private cargarRegistros(): void {
@@ -538,8 +477,8 @@ export class MiJornada implements OnInit, OnDestroy {
         reintentando despues, se le avisa al trabajador como error normal.
         */
         if (err.status === 0) {
-          const equipoSel = this.equipos.find((e) => e.id === payload.equipo_id);
-          const actividadSel = this.actividadesCatalogoPanel.find((a) => a.id === payload.actividad_id);
+          const equipoSel = this.offlineSyncService.catalogoEquipos().find((e) => e.id === payload.equipo_id);
+          const actividadSel = this.offlineSyncService.catalogoActividades().find((a) => a.id === payload.actividad_id);
           this.offlineSyncService.encolarCrearLabor(payload, equipoSel, actividadSel).then(() => {
             this.notificacionService.exito('Sin señal: la labor quedó guardada en el celular y se sincroniza sola cuando vuelva la conexión.');
             this.limpiarFormularioNuevoRegistro();

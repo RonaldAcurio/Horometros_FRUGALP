@@ -5,10 +5,13 @@ import { Capacitor } from '@capacitor/core';
 import { Network } from '@capacitor/network';
 import { Preferences } from '@capacitor/preferences';
 import { RegistroActividadService } from './registro-actividad.service';
+import { AsistenciaService } from './asistencia.service';
 import { Equipo, Actividad } from '../models/asistencia.model';
 import { OperacionCrearLabor, OperacionFinalizarLabor, OperacionPendiente } from '../models/offline.model';
 
 const CLAVE_COLA = 'frugalp_cola_offline';
+const CLAVE_CACHE_EQUIPOS = 'frugalp_cache_equipos';
+const CLAVE_CACHE_ACTIVIDADES = 'frugalp_cache_actividades';
 
 /*
 Offline-first del Panel de Actividades (ver CLAUDE.md, diseño acordado: manual/periódico, no background sync
@@ -20,12 +23,24 @@ el trabajador toca "Sincronizar ahora". mi-jornada.ts es el único consumidor ho
 @Injectable({ providedIn: 'root' })
 export class OfflineSyncService {
   private registroActividadService = inject(RegistroActividadService);
+  private asistenciaService = inject(AsistenciaService);
 
   cola = signal<OperacionPendiente[]>([]);
   sincronizando = signal(false);
   // Arranca en true a propósito: mejor asumir "hay señal" y corregir al primer chequeo real que asumir
   // "sin señal" y mostrarle al trabajador un banner de offline que no corresponde.
   conectado = signal(true);
+
+  /*
+  Catalogo COMPLETO de Equipo/Actividad, cacheado en el celular (Preferences, igual que la cola) para que el
+  autocompletar del Panel de Actividades pueda buscar sin señal. Arranca con lo que haya quedado guardado de la
+  ultima vez que hubo conexion (ver cargar()); se refresca solo cada vez que se detecta señal (ver
+  iniciarDeteccionDeRed/refrescarCatalogos). Son catalogos chicos (equipos y actividades del negocio, no una
+  tabla por trabajador) - cachearlos enteros es liviano y evita que buscar dependa de un viaje a red por cada
+  letra que el trabajador escribe.
+  */
+  catalogoEquipos = signal<Equipo[]>([]);
+  catalogoActividades = signal<Actividad[]>([]);
 
   // Notifica cualquier cambio en la cola (agregada, sincronizada, con error) - mi-jornada.ts se suscribe para
   // refrescar su vista combinada (servidor + pendientes) sin acoplarse a cómo se implementa el guardado.
@@ -40,24 +55,54 @@ export class OfflineSyncService {
     if (Capacitor.isNativePlatform()) {
       const estado = await Network.getStatus();
       this.conectado.set(estado.connected);
+      if (estado.connected) this.refrescarCatalogos();
       Network.addListener('networkStatusChange', (estado) => {
         this.conectado.set(estado.connected);
-        if (estado.connected) this.sincronizar();
+        if (estado.connected) { this.sincronizar(); this.refrescarCatalogos(); }
       });
     } else {
       this.conectado.set(navigator.onLine);
-      window.addEventListener('online', () => { this.conectado.set(true); this.sincronizar(); });
+      if (navigator.onLine) this.refrescarCatalogos();
+      window.addEventListener('online', () => { this.conectado.set(true); this.sincronizar(); this.refrescarCatalogos(); });
       window.addEventListener('offline', () => this.conectado.set(false));
     }
   }
 
   private async cargar(): Promise<void> {
     const { value } = await Preferences.get({ key: CLAVE_COLA });
-    if (!value) return;
+    if (value) {
+      try {
+        this.cola.set(JSON.parse(value));
+      } catch {
+        this.cola.set([]);
+      }
+    }
+
+    const { value: valueEquipos } = await Preferences.get({ key: CLAVE_CACHE_EQUIPOS });
+    if (valueEquipos) {
+      try { this.catalogoEquipos.set(JSON.parse(valueEquipos)); } catch { /* cache corrupta, se ignora */ }
+    }
+    const { value: valueActividades } = await Preferences.get({ key: CLAVE_CACHE_ACTIVIDADES });
+    if (valueActividades) {
+      try { this.catalogoActividades.set(JSON.parse(valueActividades)); } catch { /* cache corrupta, se ignora */ }
+    }
+  }
+
+  // Baja el catalogo COMPLETO de Equipo y Actividad y lo cachea localmente. Se llama solo/en silencio cada vez
+  // que hay señal (ver iniciarDeteccionDeRed) - si falla (por ej. la señal se cae a mitad de la descarga) se
+  // deja tal cual lo que ya estaba cacheado de antes, no rompe nada visible para el trabajador.
+  async refrescarCatalogos(): Promise<void> {
     try {
-      this.cola.set(JSON.parse(value));
-    } catch {
-      this.cola.set([]);
+      const [equipos, actividades] = await Promise.all([
+        firstValueFrom(this.registroActividadService.obtenerTodosLosEquipos()),
+        firstValueFrom(this.asistenciaService.obtenerTodasLasActividades()),
+      ]);
+      this.catalogoEquipos.set(equipos);
+      this.catalogoActividades.set(actividades);
+      await Preferences.set({ key: CLAVE_CACHE_EQUIPOS, value: JSON.stringify(equipos) });
+      await Preferences.set({ key: CLAVE_CACHE_ACTIVIDADES, value: JSON.stringify(actividades) });
+    } catch (err) {
+      console.warn('No se pudo refrescar el catálogo de Equipo/Actividad:', err);
     }
   }
 

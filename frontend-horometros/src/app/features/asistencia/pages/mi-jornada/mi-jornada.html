@@ -116,17 +116,10 @@
             <div class="autocomplete-opciones" *ngIf="mostrarOpcionesEquipo">
               <div
                 class="autocomplete-opcion"
-                *ngFor="let eq of equipos"
+                *ngFor="let eq of equiposFiltrados"
                 (click)="seleccionarEquipo(eq)"
               >{{ eq.codigo_megued }} - {{ eq.nombre_equipo }}</div>
-              <div class="autocomplete-vacio" *ngIf="equipos.length === 0 && !cargandoMasEquipos">Sin resultados.</div>
-              <button
-                type="button"
-                class="btn-link-cargar-mas"
-                *ngIf="equiposPagina < equiposTotalPaginas"
-                [disabled]="cargandoMasEquipos"
-                (mousedown)="$event.preventDefault(); cargarMasEquipos()"
-              >{{ cargandoMasEquipos ? 'Cargando...' : 'Cargar más' }}</button>
+              <div class="autocomplete-vacio" *ngIf="equiposFiltrados.length === 0">Sin resultados.</div>
             </div>
           </div>
           <div class="form-group autocomplete-group">
@@ -146,17 +139,10 @@
             <div class="autocomplete-opciones" *ngIf="mostrarOpcionesActividad">
               <div
                 class="autocomplete-opcion"
-                *ngFor="let act of actividadesCatalogoPanel"
+                *ngFor="let act of actividadesFiltradas"
                 (click)="seleccionarActividad(act)"
               >{{ act.codigo_megued }} - {{ act.description }}</div>
-              <div class="autocomplete-vacio" *ngIf="actividadesCatalogoPanel.length === 0 && !cargandoMasActividadesPanel">Sin resultados.</div>
-              <button
-                type="button"
-                class="btn-link-cargar-mas"
-                *ngIf="actividadesPanelPagina < actividadesPanelTotalPaginas"
-                [disabled]="cargandoMasActividadesPanel"
-                (mousedown)="$event.preventDefault(); cargarMasActividadesPanel()"
-              >{{ cargandoMasActividadesPanel ? 'Cargando...' : 'Cargar más' }}</button>
+              <div class="autocomplete-vacio" *ngIf="actividadesFiltradas.length === 0">Sin resultados.</div>
             </div>
           </div>
           <div class="form-group" *ngIf="esMecanico">
