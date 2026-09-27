@@ -1360,6 +1360,45 @@ no?
   visible para un trabajador de turno cruzado - fuera de alcance de este fix, se deja para cuando el usuario
   decida si hace falta un flujo de turnos nocturnos de verdad.
 
+### Botón "Copiar" junto al Token de Hacienda (2026-09-27)
+
+Pedido directo del usuario: los Supervisores son gente de más edad y seleccionar/copiar a mano el texto del
+Token (una cadena hexadecimal larga, `.token-valor`) les complica. Se agregó un botón "📋 Copiar" al lado del
+badge del token (`supervisor-panel.html`), junto a los ya existentes "Generar"/"Invalidar". Usa
+`@capacitor/clipboard` (`Clipboard.write({ string: token })`) en vez de `navigator.clipboard` directo - mismo
+motivo que `@capacitor/share`/`filesystem` (ver "5 bugs de UI/UX..." arriba): las APIs web del navegador no
+siempre se comportan igual dentro del WebView empaquetado, y el plugin nativo trae su propio fallback web
+integrado, así que no hace falta ramificar por `Capacitor.isNativePlatform()` como en otros casos - funciona
+igual en ambos entornos sin condicional.
+
+### 3 hallazgos probando el offline real en el .apk (2026-09-27)
+
+El usuario hizo la prueba más exigente hasta ahora: cerró la app de multitareas, la reabrió con el internet
+apagado del todo, y fue anotando lo que salía mal. 3 hallazgos reales, todos en la misma familia (mensajes/UX
+alrededor de fallos de red, no el offline-first en sí, que sigue funcionando bien):
+
+- **"FAILED TO FETCH" crudo en la pantalla de "Marcar con código"** (`mi-jornada.ts`, `confirmarCodigo`).
+  Marcar con código es la ENTRADA - necesita conexión real por diseño (ver "offline first solo cubre Panel de
+  Actividades" arriba), así que fallar sin señal es lo esperado. El problema era el MENSAJE: `err.error?.message`
+  se mostraba tal cual, y dentro del WebView empaquetado ese campo viene con el texto crudo del error de red
+  (`"Failed to fetch"`), no algo pensado para un usuario final. **Arreglo:** si `err.status === 0` (fallo de
+  red real, mismo criterio que ya usa `OfflineSyncService`), se muestra un mensaje fijo en español ("Sin
+  conexión a internet. Conéctate e intenta de nuevo.") en vez de confiar en `err.error?.message`.
+- **Autocompletar de Equipo ("Cargar más") no hacía nada sin señal, sin avisar.** `RegistroActividadService.
+  obtenerEquipos` no tenía `catchError`, así que la petición fallaba y el único efecto visible era que el
+  spinner se apagaba - nada le decía al trabajador por qué.
+- **Autocompletar de Actividad devolvía "Sin resultados" sin señal, como si esa actividad no existiera.**
+  `obtenerActividadesPaginado` (`asistencia.service.ts`) tenía un `catchError` que absorbe CUALQUIER error
+  (pensado para errores reales del servidor, con señal) y responde como si hubiera sido una búsqueda exitosa
+  con 0 resultados (`{ data: [], total: 0, ... }`) - un fallo de red terminaba indistinguible de "no existe".
+  **Arreglo doble:** (1) `obtenerActividadesPaginado` ahora relanza el error cuando `status === 0` en vez de
+  absorberlo (sigue absorbiendo un error real del servidor, sin tocar ese caso); (2) tanto
+  `cargarPaginaEquipos` como `cargarPaginaActividadesPanel` (`mi-jornada.ts`) ahora ni intentan la petición si
+  `OfflineSyncService.conectado()` es `false` - el catálogo de Equipo/Actividad no es parte del offline-first
+  (a diferencia de crear/finalizar labor), así que buscar sin señal no tiene con qué responder de todas
+  formas. El banner "📴 Sin conexión..." que ya existe arriba de la pantalla es el único aviso necesario, no
+  hacía falta agregar otro.
+
 ## Pendiente
 
 **Empaquetado con Capacitor (ver arriba) - pasos que faltan**

@@ -2,6 +2,7 @@ import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { Clipboard } from '@capacitor/clipboard';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 import { HaciendaService } from '../../../../core/services/hacienda.service';
 import { UsuarioService } from '../../../../core/services/usuario.service';
@@ -115,6 +116,22 @@ export class SupervisorPanel implements OnInit {
         this.cdr.detectChanges();
       },
     });
+  }
+
+  // Copiar Token: @capacitor/clipboard en vez de navigator.clipboard directo - misma razon que
+  // @capacitor/share/filesystem (ver CLAUDE.md) - las APIs web del navegador no siempre se comportan
+  // igual dentro del WebView empaquetado, mejor usar el plugin nativo pensado para esto.
+  async copiarToken(): Promise<void> {
+    const token = this.miHacienda?.token_actual;
+    if (!token) return;
+
+    try {
+      await Clipboard.write({ string: token });
+      this.notificacionService.exito('Token copiado.');
+    } catch (err) {
+      console.error('Error al copiar el token:', err);
+      this.notificacionService.error('No se pudo copiar el token.');
+    }
   }
 
   async invalidarMiToken(): Promise<void> {

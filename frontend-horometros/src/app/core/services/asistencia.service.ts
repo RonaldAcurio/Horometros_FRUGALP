@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable, of, catchError } from 'rxjs';
+import { Observable, of, catchError, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { Operador, Asistencia, Actividad, RespuestaPaginada } from '../models/asistencia.model';
 
@@ -100,6 +100,15 @@ export class AsistenciaService {
         if (q) params = params.set('q', q);
         return this.http.get<RespuestaPaginada<Actividad>>(urlActividades, { params }).pipe(
             catchError(err => {
+                /*
+                status 0 = fallo de RED real (sin señal a mitad de la petición) - NO es "0 actividades
+                encontradas". Devolver una respuesta "exitosa" vacía acá hacía que el Panel de Actividades
+                mostrara "Sin resultados" como si el equipo/actividad no existiera, en vez de avisar que
+                simplemente no se pudo consultar (probado por el usuario en el .apk real, offline). Se relanza
+                para que el que llama (mi-jornada.ts) lo distinga de un 0 real; solo se sigue absorbiendo un
+                error real del servidor (500/etc, con señal) para no romper la UI por eso.
+                */
+                if (err.status === 0) return throwError(() => err);
                 console.warn('Error al obtener actividades paginadas de /api/actividad: ', err);
                 return of({ data: [], total: 0, pagina, totalPaginas: 1 });
             })

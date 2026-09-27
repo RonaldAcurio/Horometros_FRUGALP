@@ -222,7 +222,16 @@ export class MiJornada implements OnInit, OnDestroy {
           this.cdr.detectChanges();
           return;
         }
-        this.errorCodigo = err.error?.message || 'No se pudo procesar el código.';
+        /*
+        status 0 = fallo de RED real (sin señal), no el backend rechazando el código - la ENTRADA siempre
+        necesita conexión (ver CLAUDE.md, "offline-first solo cubre Panel de Actividades"), así que acá no se
+        encola nada, solo se avisa con un mensaje claro. Sin este chequeo, `err.error?.message` termina
+        mostrando el texto crudo del error de red del WebView (ej. "Failed to fetch") tal cual - probado por el
+        usuario en el .apk real con el internet apagado.
+        */
+        this.errorCodigo = err.status === 0
+          ? 'Sin conexión a internet. Conéctate e intenta de nuevo.'
+          : (err.error?.message || 'No se pudo procesar el código.');
         this.cdr.detectChanges();
       },
     });
@@ -370,6 +379,15 @@ export class MiJornada implements OnInit, OnDestroy {
   private cargarPaginaEquipos(reemplazar: boolean): void {
     if (this.cargandoMasEquipos) return;
     if (!reemplazar && this.equiposPagina > 0 && this.equiposPagina >= this.equiposTotalPaginas) return;
+    /*
+    El catálogo de Equipo/Actividad NO es parte del offline-first (ver OfflineSyncService) - buscar o pedir
+    "Cargar más" sin señal simplemente no tiene con qué responder. Antes esto sí intentaba la petición: fallaba
+    en silencio (Equipo, sin catchError) o volvía "0 resultados" como si el equipo no existiera (Actividad, ver
+    obtenerActividadesPaginado) - probado por el usuario en el .apk real, confundía "no hay resultados" con "no
+    hay señal". El banner "Sin conexión" de arriba ya avisa, así que acá no hace falta otro aviso, solo evitar
+    la petición inútil y dejar la lista tal cual estaba.
+    */
+    if (!this.offlineSyncService.conectado()) return;
     this.cargandoMasEquipos = true;
     const siguiente = reemplazar ? 1 : this.equiposPagina + 1;
     this.registroActividadService.obtenerEquipos(siguiente, 20, this.equipoBusqueda).subscribe({
@@ -424,6 +442,8 @@ export class MiJornada implements OnInit, OnDestroy {
   private cargarPaginaActividadesPanel(reemplazar: boolean): void {
     if (this.cargandoMasActividadesPanel) return;
     if (!reemplazar && this.actividadesPanelPagina > 0 && this.actividadesPanelPagina >= this.actividadesPanelTotalPaginas) return;
+    // Ver el mismo comentario en cargarPaginaEquipos - mismo motivo, mismo catálogo fuera del offline-first.
+    if (!this.offlineSyncService.conectado()) return;
     this.cargandoMasActividadesPanel = true;
     const siguiente = reemplazar ? 1 : this.actividadesPanelPagina + 1;
     this.asistenciaService.obtenerActividadesPaginado(siguiente, 20, this.actividadBusqueda).subscribe({
