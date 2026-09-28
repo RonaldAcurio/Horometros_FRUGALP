@@ -1518,6 +1518,30 @@ limitado de esta ronda) - vale la pena una pasada específica por `equipo.contro
 (gestión de catálogos) y `usuario.controller.ts` para confirmar que ningún otro endpoint por `id` tenga el
 mismo hueco, aunque esos son de alcance ADMIN/ASISTENTE, no SUPERVISOR, así que el riesgo ahí es menor.
 
+### 2 hallazgos más probando el flujo real end-to-end (2026-09-28)
+
+El usuario siguió probando el bug de arriba en carne propia (cerró la jornada de su propia hacienda, con un
+operador marcado X → OBSERVANDO) y encontró 2 consecuencias reales que aún faltaban:
+
+- **"Cerrar Jornada" seguía habilitado y las observaciones seguían editables** después de que su propia
+  hacienda ya estaba 100% resuelta. Causa: `calcularDiaCerrado` (la función que calcula el flag `diaCerrado`,
+  usada tanto para habilitar/deshabilitar el botón como para congelar `revisarAsistencia`) **siempre** calculaba
+  sobre TODAS las haciendas mezcladas, sin aceptar ningún alcance - a diferencia de `finalizarDia`, que sí
+  quedó acotado por hacienda en el arreglo de ayer. Resultado: aunque la hacienda del usuario ya estaba resuelta,
+  el flag seguía en `false` porque OTRA hacienda, de otro Supervisor, todavía tenía algo pendiente.
+  **Arreglo:** `calcularDiaCerrado` ahora acepta un `supervisorId` opcional (mismo patrón que el resto) -
+  `obtenerAsistenciaHoy` le pasa el mismo `supervisorIdAlcance` que ya usa para la visibilidad, y
+  `revisarAsistencia` calcula el suyo propio a partir de `req.auth`. `null` (ADMIN sin filtro) sigue
+  calculando sobre el día completo, sin cambios.
+- **El Panel de Asistente no mostraba el reporte del día ya cerrado.** Causa: `obtenerHistorial` filtraba
+  `estado IN ('FINALIZADO', 'SALIDA_OLVIDADA')` - dejaba afuera `OBSERVANDO` (el estado que deja la X del
+  Supervisor) por lo que parece un descuido simple, ya que el propio criterio del filtro ("el Supervisor ya lo
+  revisó") aplica igual a OBSERVANDO. Como el operador de la prueba terminó en OBSERVANDO (le marcaron X), su
+  jornada nunca aparecía en el Historial - y es justo el caso más importante de auditar, porque señala una
+  posible marcación fraudulenta. **Arreglo:** se agregó `'OBSERVANDO'` a la lista.
+
+Verificado con `tsc --noEmit` limpio y los 27 tests unitarios en verde.
+
 ## Pendiente
 
 **Empaquetado con Capacitor (ver arriba) - pasos que faltan**

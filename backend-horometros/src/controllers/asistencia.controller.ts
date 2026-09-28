@@ -766,14 +766,26 @@ export const marcarConQrSesion = async(req:Request, res:Response):Promise<void> 
 /*
 Calcula si un DIA (una fecha puntual) ya esta "cerrado" en el sentido operativo: nadie sigue EN_JORNADA/
 PENDIENTE_REVISION Y todos los registros de ese dia ya fueron confirmados (O/X) por el Supervisor. Lo comparten
-obtenerAsistenciaHoy (el flag `diaCerrado` que muestra) y revisarAsistencia (que lo usa para congelar
-observaciones) - antes revisarAsistencia miraba solo el `estado` de ESE registro puntual, lo que congelaba la
-observacion de un trabajador que se autocerro (SALIDA_OLVIDADA) mucho antes de que el Supervisor terminara de
-revisar a los demas. Las observaciones tienen que poder editarse hasta que el DIA COMPLETO quede cerrado, no
-fila por fila.
+obtenerAsistenciaHoy (el flag `diaCerrado` que muestra, y que habilita/deshabilita "Cerrar Jornada") y
+revisarAsistencia (que lo usa para congelar observaciones) - antes revisarAsistencia miraba solo el `estado` de
+ESE registro puntual, lo que congelaba la observacion de un trabajador que se autocerro (SALIDA_OLVIDADA)
+mucho antes de que el Supervisor terminara de revisar a los demas. Las observaciones tienen que poder
+editarse hasta que el DIA COMPLETO quede cerrado, no fila por fila.
+
+supervisorId opcional: bug real encontrado por el usuario (2026-09-27/28) - esto antes SIEMPRE calculaba sobre
+TODAS las haciendas mezcladas, sin importar quien preguntara. Resultado: un Supervisor cuya propia hacienda ya
+estaba 100% resuelta (todo FINALIZADO/SALIDA_OLVIDADA/OBSERVANDO) seguia viendo el boton "Cerrar Jornada"
+habilitado Y podia seguir editando observaciones - simplemente porque OTRA hacienda, de OTRO Supervisor,
+todavia tenia algo pendiente. Con `supervisorId`, el calculo queda acotado a los operadores de ESE supervisor
+(mismo patron/criterio ya usado en finalizarDia/obtenerAsistenciaHoy - no considera hacienda_prestamo_id,
+trabajador prestado, mismo criterio ya establecido ahi). `null` (o ADMIN sin filtro) sigue calculando sobre
+el dia completo, a proposito.
 */
-const calcularDiaCerrado = async (fecha: string): Promise<boolean> => {
-    const total = await Asistencia.count({ where: { fecha } });
+const calcularDiaCerrado = async (fecha: string, supervisorId: number | null = null): Promise<boolean> => {
+    const includeOperador = supervisorId !== null
+        ? [{ model: Operador, as: 'operador', required: true, attributes: [], where: { supervisor_id: supervisorId }, paranoid: false }]
+        : [];
+    const total = await Asistencia.count({ where: { fecha }, include: includeOperador });
     if(total === 0) return false;
     const totalAbiertos = await Asistencia.count({
         where: {
@@ -783,6 +795,7 @@ const calcularDiaCerrado = async (fecha: string): Promise<boolean> => {
                 { confirmado_por_supervisor: null },
             ],
         },
+        include: includeOperador,
     });
     return totalAbiertos === 0;
 };
@@ -851,9 +864,12 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
         El "dia cerrado" se calcula sobre TODOS los registros del dia, no solo la pagina visible- si no, el boton "CERRAR JORNADA" quedaria
         hanilitado/deshabilido segun que pagina este mirando el supervisor, en vez del estado real del dia completo
         (ver calcularDiaCerrado arriba - no basta con que nadie siga EN_JORNADA/PENDIENTE_REVISION, tambien exige
-        que el Supervisor haya confirmado O/X a todos).
+        que el Supervisor haya confirmado O/X a todos). Usa el MISMO `supervisorIdAlcance` que ya acota la
+        visibilidad arriba - antes este calculo ignoraba por completo ese alcance (bug real: el boton seguia
+        habilitado para un Supervisor cuya propia hacienda ya estaba resuelta, solo porque OTRA hacienda tenia
+        algo pendiente).
         */
-       const diaCerrado = await calcularDiaCerrado(hoy);
+       const diaCerrado = await calcularDiaCerrado(hoy, supervisorIdAlcance);
 
         res.json({
             data: asistencias,
@@ -1001,8 +1017,15 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
         }
 
         /*
-        El Historial de Asistencia es la auditoria OFICIAL: solo debe mostrar jornadas que el supervisor ya reviso y cerro(FINALIZADO/SALIDA_OLVIDADA),
-        nunca marcaciones todavia en curso (EN_JORNADA) o pendiente de revision (PENDIENTE_REVISION).
+        El Historial de Asistencia es la auditoria OFICIAL: solo debe mostrar jornadas que el supervisor ya
+        reviso y cerro (FINALIZADO/SALIDA_OLVIDADA/OBSERVANDO), nunca marcaciones todavia en curso (EN_JORNADA)
+        o pendiente de revision (PENDIENTE_REVISION).
+
+        OBSERVANDO agregado (bug real, 2026-09-28): es el estado que deja la X del Supervisor (confirmarAsistencia,
+        "no presente" - ver mas abajo) - o sea, exactamente "el Supervisor ya lo revisó y decidió algo", el mismo
+        criterio que ya justifica incluir FINALIZADO/SALIDA_OLVIDADA. Se había quedado afuera de este filtro por
+        descuido, así que un caso OBSERVANDO (el más importante de auditar, marca una posible marcación fraudulenta)
+        nunca llegaba al reporte del Panel de Asistente - el usuario lo encontró probando el flujo real completo.
 
         confirmado_por_supervisor no nulo: un trabajador puede autocerrar su PROPIA jornada como SALIDA_OLVIDADA
         sin que el Supervisor la haya revisado (autoservicio "no podre marcar salida", ver marcarSalidaOlvidada) -
@@ -1012,7 +1035,7 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
         su revision o cerrara el dia. Se exige la misma condicion que finalizarDia ya exige (confirmado_por_supervisor
         !== null) para que el Historial nunca muestre nada que el Supervisor no haya revisado todavia.
         */
-        whereCondition.estado = { [Op.in] : ['FINALIZADO','SALIDA_OLVIDADA']};
+        whereCondition.estado = { [Op.in] : ['FINALIZADO','SALIDA_OLVIDADA','OBSERVANDO']};
         whereCondition.confirmado_por_supervisor = { [Op.ne]: null };
 
         /*
@@ -1259,9 +1282,13 @@ export const revisarAsistencia = async(req:Request, res:Response):Promise<void> 
         /*
         Datos congelados: pero a nivel de DIA completo (ver calcularDiaCerrado), no de este registro puntual - un
         trabajador puede autocerrarse (SALIDA_OLVIDADA) mucho antes de que el Supervisor termine de confirmar O/X
-        a los demas, y eso no debe congelar SU observacion mientras el dia sigue abierto para el resto.
+        a los demas, y eso no debe congelar SU observacion mientras el dia sigue abierto para el resto. Acotado a
+        la propia hacienda del Supervisor que pide la edicion (mismo bug que obtenerAsistenciaHoy: antes esto
+        calculaba sobre TODAS las haciendas, asi que la observacion de un Supervisor quedaba (des)congelada
+        segun lo que pasara en una hacienda ajena, no la suya).
         */
-       if(await calcularDiaCerrado(asistencia.fecha)){
+       const supervisorIdParaCierre = req.auth?.tipo === 'usuario' && req.auth.rol === 'SUPERVISOR' ? req.auth.id : null;
+       if(await calcularDiaCerrado(asistencia.fecha, supervisorIdParaCierre)){
         res.status(400).json({
             message:'La jornada de este día ya fue cerrada y no se puede modificar.'
         });
