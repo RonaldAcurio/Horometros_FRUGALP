@@ -1618,6 +1618,53 @@ llega a pasar (el usuario prefirió esto a la alternativa de dejarlo editable co
 
 Verificado con `tsc --noEmit` limpio en ambos proyectos y los 27 tests unitarios en verde.
 
+### Jornada ambigua de ayer: cierre por fecha calendario, ya no por horas fijas (2026-09-28)
+
+El usuario planteó el caso: un trabajador entra el lunes 6am y sale a la 1:30am (turno nocturno legítimo de
+19.5h) pero el Supervisor no cierra jornada esa noche; más tarde ese mismo trabajador (ya "martes" en
+calendario) vuelve a marcar para su turno nuevo - ¿el sistema lo confunde con la salida del turno de ayer? Y el
+caso inverso: alguien marca entrada a mediodía, se le olvida marcar salida, e intenta volver a marcar recién a
+las 6am del día siguiente (18h después) - ¿eso se trata como su salida real o como una entrada nueva?
+
+**Se probó primero un límite fijo de horas (22h) y se descartó con los números del propio usuario:** el turno
+nocturno legítimo (19.5h) y el reintento de entrada olvidada (18h) se traslapan en el mismo rango - no existe
+un número de horas que acierte en los dos casos sin fallar en alguno. Ningún threshold fijo puede distinguir
+"turno largo real" de "se le olvidó marcar salida e intentó de nuevo al día siguiente" cuando ambos casos caen
+en rangos de horas parecidos.
+
+**Solución adoptada (comparación por fecha calendario, no por horas):** al encontrar una jornada `EN_JORNADA`
+sin cerrar, `procesarMarcacion` (`asistencia.controller.ts`) calcula la diferencia en DÍAS CALENDARIO
+(`diferenciaEnDiasCalendario`, nueva función) entre la fecha de esa jornada y hoy:
+- **0 días (hoy mismo):** sigue de largo como SALIDA normal, sin cambios - cubre el turno nocturno que cruza
+  la medianoche sin ningún problema, porque el trabajador nunca volvió a marcar por segunda vez.
+- **2+ días:** ningún turno real dura tanto - se cierra sola como `SALIDA_OLVIDADA` sin preguntar nada, y el
+  escaneo actual sigue de largo como si no hubiera nada abierto (entrada nueva).
+- **Exactamente 1 día (ayer):** el caso genuinamente ambiguo del planteamiento del usuario - puede ser el
+  turno nocturno que sigue en curso (el trabajador viene a marcar SU salida real) o una entrada olvidada de
+  ayer con reintento hoy. Acá el sistema YA NO ADIVINA: si el camino que llama tiene pantalla propia para
+  preguntar (solo código autenticado, `marcarConMiCodigo` vía `mi-jornada.ts`), responde 409 con
+  `jornada_ambigua:true` y el trabajador elige entre "Cerrar esa jornada (es real, vengo a marcar mi salida)" o
+  "Empezar un día nuevo (se me olvidó marcar salida)"; la elección se reenvía como
+  `accion_jornada_anterior: 'cerrar' | 'iniciar_nuevo'` en la misma petición. Los caminos SIN pantalla propia
+  para preguntar (kiosco físico, código público sin sesión, QR escaneado por Supervisor/Escáner) no pueden
+  mostrar esa pregunta a mitad del escaneo, así que se auto-resuelven como `'iniciar_nuevo'`
+  (`ContextoMarcacion.permiteAutoDecidirJornadaAnterior`) - en la práctica, alguien escaneando HOY casi siempre
+  está lidiando con la entrada de HOY, no viene a cerrar algo de ayer a mano.
+
+**Verificación explícita de que esto no rompe el caso original (turno nocturno normal):** se confirmó
+recorriendo el ruteo del frontend (`mi-jornada.ts`, `ngOnInit`/`obtenerMiEstado`) que un trabajador con
+CUALQUIER jornada `EN_JORNADA` abierta (sin importar su fecha) SIEMPRE es llevado directo al Panel de
+Actividades, nunca al formulario de código en blanco - o sea, la nueva pregunta de desambiguación solo puede
+aparecer después de que el trabajador YA tocó explícitamente "Marcar salida" desde dentro del Panel de
+Actividades. Nunca aparece de sorpresa ni le agrega fricción a nadie que no esté, de hecho, tratando de cerrar
+una jornada vieja.
+
+**Petición explícita del usuario verificada:** el modal viejo de checklist de actividades (removido en una
+ronda anterior) NO vuelve a aparecer en ningún punto de este flujo - confirmado por búsqueda directa en
+`mi-jornada.ts`/`.html`/`.css`, cero referencias restantes.
+
+Verificado con `tsc --noEmit` limpio en ambos proyectos y los 27 tests unitarios en verde.
+
 ## Pendiente
 
 **Empaquetado con Capacitor (ver arriba) - pasos que faltan**

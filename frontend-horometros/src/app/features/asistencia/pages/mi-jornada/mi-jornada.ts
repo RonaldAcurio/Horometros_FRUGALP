@@ -38,6 +38,11 @@ export class MiJornada implements OnInit, OnDestroy {
   codigoIngresado = '';
   procesandoCodigo = false;
   errorCodigo = '';
+  // Jornada ambigua (ver CLAUDE.md, "cruce de medianoche"): el backend encontró una jornada sin cerrar de
+  // ayer y no sabe si es un turno nocturno que sigue en curso o una salida olvidada - se le pregunta al
+  // trabajador antes de continuar. fechaJornadaAmbigua es solo para mostrarla en el mensaje.
+  preguntandoJornadaAmbigua = false;
+  fechaJornadaAmbigua = '';
 
   // --- Fase qr ---
   qrCodeUrl = '';
@@ -168,17 +173,24 @@ export class MiJornada implements OnInit, OnDestroy {
   }
 
   // --- FASE CODIGO ---
-  // Misma acción para ENTRADA y SALIDA - el backend decide cuál es según si el trabajador ya tenía una jornada
-  // abierta, y si es SALIDA deriva las actividades directamente de lo que ya cargó en el Panel de Actividades
-  // (ver marcarConMiCodigo/omitirActividadRequerida en el backend) - ya no hace falta pedirle elegir a mano.
-  confirmarCodigo(): void {
+  /*
+  Misma acción para ENTRADA y SALIDA - el backend decide cuál es según si el trabajador ya tenía una jornada
+  abierta, y si es SALIDA deriva las actividades directamente de lo que ya cargó en el Panel de Actividades
+  (ver marcarConMiCodigo/omitirActividadRequerida en el backend) - ya no hace falta pedirle elegir a mano.
+
+  accionJornadaAnterior: normalmente no se manda (undefined) - solo se reenvía cuando el backend respondió
+  409 con jornada_ambigua (ver resolverJornadaAmbigua) para completar la petición con lo que el trabajador
+  eligió.
+  */
+  confirmarCodigo(accionJornadaAnterior?: 'cerrar' | 'iniciar_nuevo'): void {
     if (!this.codigoIngresado.trim()) return;
 
     this.procesandoCodigo = true;
     this.errorCodigo = '';
-    this.asistenciaService.marcarConMiCodigo(this.codigoIngresado.trim()).subscribe({
+    this.asistenciaService.marcarConMiCodigo(this.codigoIngresado.trim(), undefined, undefined, accionJornadaAnterior).subscribe({
       next: (res) => {
         this.procesandoCodigo = false;
+        this.preguntandoJornadaAmbigua = false;
         /*
         La ENTRADA por código lleva al Panel de Actividades, igual que el camino QR - el código solo reemplaza
         la forma de marcar presencia, no le quita al trabajador la posibilidad de registrar sus labores del día.
@@ -198,6 +210,17 @@ export class MiJornada implements OnInit, OnDestroy {
       error: (err) => {
         this.procesandoCodigo = false;
         /*
+        Jornada ambigua (ver CLAUDE.md, "cruce de medianoche"): el backend encontró una jornada de AYER sin
+        cerrar y no puede decidir solo si es un turno nocturno en curso o una salida olvidada - se le pregunta
+        al trabajador en vez de adivinar. No es un error real, así que no toca errorCodigo.
+        */
+        if (err.status === 409 && err.error?.jornada_ambigua) {
+          this.fechaJornadaAmbigua = err.error.fecha_anterior || '';
+          this.preguntandoJornadaAmbigua = true;
+          this.cdr.detectChanges();
+          return;
+        }
+        /*
         status 0 = fallo de RED real (sin señal), no el backend rechazando el código - la ENTRADA siempre
         necesita conexión (ver CLAUDE.md, "offline-first solo cubre Panel de Actividades"), así que acá no se
         encola nada, solo se avisa con un mensaje claro. Sin este chequeo, `err.error?.message` termina
@@ -210,6 +233,12 @@ export class MiJornada implements OnInit, OnDestroy {
         this.cdr.detectChanges();
       },
     });
+  }
+
+  // El trabajador elige qué hacer con la jornada ambigua de ayer (ver confirmarCodigo) - reenvía la misma
+  // petición con la acción elegida.
+  resolverJornadaAmbigua(accion: 'cerrar' | 'iniciar_nuevo'): void {
+    this.confirmarCodigo(accion);
   }
 
   // --- FASE QR ---
@@ -549,6 +578,7 @@ export class MiJornada implements OnInit, OnDestroy {
       this.fase = 'codigo';
       this.codigoIngresado = '';
       this.errorCodigo = '';
+      this.preguntandoJornadaAmbigua = false;
     } else {
       this.mostrarQrDeSalida();
     }

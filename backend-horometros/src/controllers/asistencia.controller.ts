@@ -341,21 +341,40 @@ interface ContextoMarcacion {
     Cuando esto viene true, la salida no exige actividades_ids (puede llegar vacio sin rechazar el 400).
     */
     omitirActividadRequerida?: boolean;
+    /*
+    Caminos SIN pantalla propia para preguntarle nada al trabajador (kiosco/carnet fisico, codigo publico sin
+    sesion, QR escaneado por Supervisor/Escaner) - si se topan con una jornada ambigua de ayer (ver mas abajo),
+    no hay forma de mostrar la pregunta "¿cerrar esa o empezar una nueva?", asi que se decide sola por
+    'iniciar_nuevo' (lo mas probable en la practica: alguien escaneando HOY casi siempre esta lidiando con la
+    entrada de HOY, no viene a cerrar algo de ayer a mano). Solo el camino codigo autenticado (marcarConMiCodigo,
+    con pantalla propia en mi-jornada.ts) deja esto en false y de verdad pregunta.
+    */
+    permiteAutoDecidirJornadaAnterior?: boolean;
 }
 
+// Diferencia en DIAS CALENDARIO entre 2 fechas 'YYYY-UU-MM' (ambas ya vienen de getFetchLocalEcuador, mismo
+// formato) - Date() parsea 'YYYY-MM-DD' como medianoche UTC, asi que restar y dividir por 1 dia da un entero
+// exacto sin arrastrar horas/minutos de por medio.
+const diferenciaEnDiasCalendario = (fechaAnterior: string, fechaActual: string): number => {
+    const MS_POR_DIA = 24 * 60 * 60 * 1000;
+    return Math.round((new Date(fechaActual).getTime() - new Date(fechaAnterior).getTime()) / MS_POR_DIA);
+};
+
 /*
-Nucleo de la logica de Entrada/Salida, compartido por los 3 caminos que hoy puede tomar una marcacion:
-carnet fisico (registrarMacarcoQR), codigo+Token de Hacienda (marcarConCodigo) y QR de sesion (marcarConQrSesion).
-Antes esta logica vivia duplicada solo en registrarMacarcoQR; sacarla de ahi evita que un cambio de regla de negocio
-(p.ej. como se cierra un turno que cruza la medianoche) se tenga que repetir y probar 3 veces.
+Nucleo de la logica de Entrada/Salida, compartido por los 4 caminos que hoy puede tomar una marcacion:
+carnet fisico (registrarMacarcoQR), codigo publico (marcarConCodigo), codigo autenticado (marcarConMiCodigo) y
+QR de sesion (marcarConQrSesion). Antes esta logica vivia duplicada solo en registrarMacarcoQR; sacarla de ahi
+evita que un cambio de regla de negocio (p.ej. como se cierra un turno que cruza la medianoche) se tenga que
+repetir y probar 4 veces.
 Devuelve {status, body} en vez de escribir directo en 'res': quien la llama decide como responder.
 */
 const procesarMarcacion = async(
     operador: Operador,
-    datos: { actividades_ids?: unknown; foto_ingreso?: string | null },
+    datos: { actividades_ids?: unknown; foto_ingreso?: string | null; accion_jornada_anterior?: 'cerrar' | 'iniciar_nuevo' },
     contexto: ContextoMarcacion = {}
 ): Promise<{ status: number; body: any }> => {
     const ahora = new Date();
+    const hoy = getFetchLocalEcuador();
 
     /*
     Pasa 1= tienes una jornada ABIERTA(EN_JORNADA), sin importar la fecha en que empezo?
@@ -368,6 +387,55 @@ const procesarMarcacion = async(
             estado: 'EN_JORNADA'
         },
     });
+
+    if(asistencia){
+        /*
+        Bug real encontrado por el usuario (2026-09-28): si el trabajador se olvida de marcar salida, su
+        proximo escaneo (aunque sea al dia siguiente) caia SIEMPRE en este bloque como si fuera la salida real
+        de esa jornada vieja - nunca le daba una entrada nueva, y la hora de salida quedaba pegada al momento
+        del escaneo (un turno de "casi 24 horas" sin sentido). Se probo primero con un limite fijo de horas
+        (ej. 22h) y se descarto: un turno nocturno legitimo (6am a 1:30am, 19.5h) y una entrada olvidada de
+        mediodia con reintento a las 6am del dia siguiente (18h) se traslapan en el mismo rango de horas - no
+        hay un numero que sirva para los dos casos sin fallar en alguno. En su lugar, se compara por FECHA
+        CALENDARIO, no por horas:
+        - Jornada de HOY: sigue de largo como una SALIDA normal (el bloque de abajo, sin cambios).
+        - Jornada de 2+ dias calendario atras: ningun turno real dura tanto - se cierra sola como
+          SALIDA_OLVIDADA sin preguntar nada, y el escaneo actual sigue de largo como si no hubiera nada
+          abierto (cae en el Paso 2/3 de mas abajo, entrada nueva).
+        - Jornada de EXACTAMENTE 1 dia atras (ayer): ambiguo de verdad - puede ser un turno nocturno que sigue
+          en curso, o una salida olvidada. Si el camino que llama permite auto-decidir (ver
+          ContextoMarcacion.permiteAutoDecidirJornadaAnterior - los caminos sin pantalla propia), se resuelve
+          sola como 'iniciar_nuevo'. Si no (codigo autenticado, con pantalla), se le pregunta al trabajador
+          (`jornada_ambigua: true` en la respuesta) y se espera que reenvie la misma peticion con
+          `accion_jornada_anterior: 'cerrar' | 'iniciar_nuevo'` una vez que elija.
+        */
+        const diasAbierta = diferenciaEnDiasCalendario(asistencia.fecha, hoy);
+
+        if(diasAbierta >= 2){
+            await asistencia.update({ estado: 'SALIDA_OLVIDADA', hora_salida: ahora });
+            asistencia = null;
+        } else if(diasAbierta === 1){
+            const accion = datos.accion_jornada_anterior
+                ?? (contexto.permiteAutoDecidirJornadaAnterior ? 'iniciar_nuevo' : undefined);
+
+            if(!accion){
+                return {
+                    status: 409,
+                    body: {
+                        message: 'Tienes una jornada sin cerrar desde el día anterior. ¿Qué deseas hacer?',
+                        jornada_ambigua: true,
+                        fecha_anterior: asistencia.fecha,
+                    },
+                };
+            }
+
+            if(accion === 'iniciar_nuevo'){
+                await asistencia.update({ estado: 'SALIDA_OLVIDADA', hora_salida: ahora });
+                asistencia = null;
+            }
+            // accion === 'cerrar': no se toca nada aca, sigue de largo al bloque de abajo (SALIDA normal).
+        }
+    }
 
     if(asistencia){
         //Tiene una jornada abierta -> este escaneo es una SALIDA (exigimos actividad)
@@ -415,10 +483,10 @@ const procesarMarcacion = async(
     }
 
     /*
-    Paso 2: no tiene ninguna jornada abierta. Antes de crear una ENTRADA nueva, verificamos si HOY (fecha calendario)
-    ya completo un turno completo, para mantener la regla de "una jornada por dia" (evita reingresos multiples el mismo dia).
+    Paso 2: no tiene ninguna jornada abierta (o la de ayer se acaba de cerrar sola arriba). Antes de crear una
+    ENTRADA nueva, verificamos si HOY (fecha calendario) ya completo un turno completo, para mantener la regla
+    de "una jornada por dia" (evita reingresos multiples el mismo dia).
     */
-    const hoy = getFetchLocalEcuador();
     const asistenciaHoy = await Asistencia.findOne({
         where: {operador_id: operador.id, fecha: hoy},
     });
@@ -488,7 +556,8 @@ export const registrarMacarcoQR= async(req:Request, res:Response):Promise<void> 
             return;
         }
 
-        const { status, body } = await procesarMarcacion(operador, { actividades_ids, foto_ingreso });
+        // permiteAutoDecidirJornadaAnterior: el kiosco no tiene pantalla para preguntar nada (ver ContextoMarcacion).
+        const { status, body } = await procesarMarcacion(operador, { actividades_ids, foto_ingreso }, { permiteAutoDecidirJornadaAnterior: true });
         res.status(status).json(body);
     } catch(err){
         console.error('Error procesando marca QR', err);
@@ -532,10 +601,13 @@ export const marcarConCodigo = async(req:Request, res:Response):Promise<void> =>
         const haciendaPropia = await resolverHaciendaPropia(operador);
         const esPrestamo = haciendaPropia !== null && haciendaPropia !== hacienda.id;
 
-        let contexto: ContextoMarcacion = {};
+        // permiteAutoDecidirJornadaAnterior: publico y sin sesion (ver docstring arriba), no hay pantalla para
+        // preguntar nada (ver ContextoMarcacion).
+        let contexto: ContextoMarcacion = { permiteAutoDecidirJornadaAnterior: true };
         if(esPrestamo){
             const supervisorDeAlla = await Usuario.findOne({ where: { hacienda_id: hacienda.id, cargo: 'SUPERVISOR' }});
             contexto = {
+                ...contexto,
                 hacienda_prestamo_id: hacienda.id,
                 admitido_por_usuario_id: supervisorDeAlla?.id ?? null,
             };
@@ -561,7 +633,7 @@ export const marcarConMiCodigo = async(req:Request, res:Response):Promise<void> 
             res.status(403).json({ message: 'Solo un Operador/Mecanico puede marcar con su codigo.'});
             return;
         }
-        const { token_hacienda, actividades_ids, foto_ingreso } = req.body;
+        const { token_hacienda, actividades_ids, foto_ingreso, accion_jornada_anterior } = req.body;
         if(!token_hacienda){
             res.status(400).json({ message: 'token_hacienda es obligatorio.'});
             return;
@@ -601,9 +673,15 @@ export const marcarConMiCodigo = async(req:Request, res:Response):Promise<void> 
             actividadesIdsFinal = [...new Set(registros.map((r) => r.actividad_id))];
         }
 
+        /*
+        permiteAutoDecidirJornadaAnterior queda SIN poner (false) a propósito: este es el único camino con
+        pantalla propia (mi-jornada.ts) para de verdad preguntarle al trabajador "¿cerrar la de ayer o
+        empezar una nueva?" cuando la jornada abierta es ambigua (ver procesarMarcacion) - el frontend reenvía
+        `accion_jornada_anterior` una vez que el trabajador elige.
+        */
         const { status, body } = await procesarMarcacion(
             operador,
-            { actividades_ids: actividadesIdsFinal, foto_ingreso },
+            { actividades_ids: actividadesIdsFinal, foto_ingreso, accion_jornada_anterior },
             { omitirActividadRequerida: true }
         );
         res.status(status).json(body);
@@ -737,6 +815,9 @@ export const marcarConQrSesion = async(req:Request, res:Response):Promise<void> 
             // El Camino B ya tiene el detalle real de la jornada en el Panel de Actividades (RegistroActividad) -
             // no hace falta pedirle a quien escanea que elija actividades otra vez para poder cerrar la salida.
             omitirActividadRequerida: true,
+            // Quien escanea (Supervisor/Escaner) no tiene forma de preguntarle al trabajador "¿cerrar la de
+            // ayer o empezar una nueva?" a mitad del escaneo (ver ContextoMarcacion) - se decide sola.
+            permiteAutoDecidirJornadaAnterior: true,
         };
 
         /*

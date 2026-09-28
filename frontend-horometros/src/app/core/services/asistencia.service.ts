@@ -189,11 +189,20 @@ export class AsistenciaService {
     }
 
     // POST -> /api/asistencia/marcar-mi-codigo (Camino A para un Operador YA logueado, sin re-pedir su clave)
-    marcarConMiCodigo(tokenHacienda: string, actividadesIds?: number[], fotoIngreso?: string | null): Observable<any> {
+    // accionJornadaAnterior: solo hace falta cuando el backend responde 409 con jornada_ambigua:true (ver
+    // mi-jornada.ts) - el trabajador elige 'cerrar' (esa jornada de ayer era real, cerrarla) o 'iniciar_nuevo'
+    // (se le olvidó marcar salida, cerrarla sola y empezar hoy), y se reenvía la misma petición con esto.
+    marcarConMiCodigo(
+        tokenHacienda: string,
+        actividadesIds?: number[],
+        fotoIngreso?: string | null,
+        accionJornadaAnterior?: 'cerrar' | 'iniciar_nuevo'
+    ): Observable<any> {
         return this.http.post(`${this.baseUrl}/marcar-mi-codigo`, {
             token_hacienda: tokenHacienda,
             actividades_ids: actividadesIds,
             foto_ingreso: fotoIngreso,
+            accion_jornada_anterior: accionJornadaAnterior,
         });
     }
 
