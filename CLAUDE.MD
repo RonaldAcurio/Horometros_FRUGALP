@@ -1435,6 +1435,44 @@ existen):**
 - Son catálogos chicos (equipos del negocio, no una fila por trabajador) - cachearlos enteros es liviano, y la
   búsqueda queda instantánea siempre, con o sin señal, sin depender de un viaje a red por cada letra escrita.
 
+### 2 bugs reales en el camino Código, encontrados probando "Cerrar sesión" a mitad de jornada (2026-09-27/28)
+
+El usuario cerró sesión (menú de cuenta) mientras seguía EN_JORNADA (mitad del día, con labores ya cargadas en
+el Panel de Actividades), volvió a entrar, y en vez de caer directo al Panel de Actividades le volvió a pedir el
+código - y al ingresarlo, le salió el viejo checklist "selecciona en qué trabajaste hoy" que se suponía ya
+estaba eliminado. Dos bugs reales y compuestos, no uno:
+
+- **Bug 1 (por qué volvió a pedir el código):** `mi-jornada.ts`, `ngOnInit` - si la consulta inicial
+  `obtenerMiEstado()` fallaba (aunque sea una vez, por cualquier corte de red pasajero), el código ANTES caía
+  directo a mostrar la pantalla de 'codigo'/'qr' (asumiendo "no está en jornada") sin haber confirmado nada -
+  ignoraba por completo el estado real. El comentario decía "el polling ya corrige después", pero eso era falso
+  para el camino Código: `consultarEstado()` (el poll de 5s) solo se auto-corregía hacia Panel de Actividades
+  si `fase === 'qr'`, nunca si `fase === 'codigo'`. **Arreglo:** si la consulta inicial falla, ahora se queda en
+  `fase: 'cargando'` (vista neutral ya existente) en vez de adivinar, y el poll de 5s ahora también corrige
+  desde `'cargando'` (además de `'qr'`) apenas la consulta funcione - nunca desde `'codigo'` a propósito, para
+  no sacar al trabajador de la pantalla si llegó ahí a propósito (con "Marcar salida").
+- **Bug 2 (el que el usuario recordaba haber eliminado "para siempre"):** el checklist de salida por código
+  (`pidiendoActividadSalida`, `require_actividad`) nunca debió volver a aparecer - hace unas rondas se arregló
+  esto mismo para el Camino B (QR de sesión, ver "La salida por QR de sesión NO vuelve a pedir actividades"
+  arriba), derivando la lista de actividades directo de los `RegistroActividad` que el trabajador ya cargó en el
+  Panel de Actividades. Pero ese arreglo se acotó EXPLÍCITAMENTE solo al Camino B ("el kiosco físico y el Camino
+  A (código) siguen exigiendo elegir actividad... porque esos caminos no tienen Panel de Actividades detrás") -
+  una nota que quedó **obsoleta** apenas Código también se conectó al Panel de Actividades (ronda posterior) y
+  nunca se corrigió. Por eso el checklist seguía vivo y disparándose cada vez que una marcación por código
+  resultaba ser una salida. **Arreglo:** `marcarConMiCodigo` (backend) ahora recibe el mismo tratamiento que
+  `marcarConQrSesion` - `omitirActividadRequerida: true` + deriva `actividadesIdsFinal` de los
+  `RegistroActividad` de la jornada abierta. Se eliminó por completo el código muerto que quedaba en el
+  frontend (`pidiendoActividadSalida`, `actividadesCatalogo`, `actividadesSeleccionadasSalida`,
+  `toggleActividadSalida`, `confirmarSalidaConActividad`, `cargarCatalogoActividades`, el checklist en el HTML y
+  su CSS `.actividades-lista`/`.actividad-item`) - ya no hay forma de que el backend pida esto, así que
+  mantenerlo vivo en el frontend era solo ruido.
+
+**Por qué importaba arreglar los dos juntos:** con el Bug 2 arreglado solo, si el Bug 1 seguía vivo, un
+trabajador que cae por accidente en la pantalla de código (por el fallo de red) y vuelve a escribirlo - pensando
+que es "volver a entrar" - ahora terminaría su jornada EN SILENCIO (sin el checklist de por medio que al menos
+antes obligaba a confirmar algo) en vez de solo mostrar una pantalla confusa. Por eso el Bug 1 se trató como
+igual de urgente, no como algo aparte.
+
 ## Pendiente
 
 **Empaquetado con Capacitor (ver arriba) - pasos que faltan**

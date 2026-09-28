@@ -566,7 +566,29 @@ export const marcarConMiCodigo = async(req:Request, res:Response):Promise<void> 
             return;
         }
 
-        const { status, body } = await procesarMarcacion(operador, { actividades_ids, foto_ingreso });
+        /*
+        Igual que marcarConQrSesion (Camino B, más abajo): el trabajador YA registró el detalle de su jornada en
+        el Panel de Actividades mientras trabajaba - si esta marcación resulta ser una SALIDA (ya tenía una
+        jornada abierta), pedirle otra vez "qué actividades hiciste" mediante el checklist es redundante. Antes
+        este arreglo solo se aplicó al Camino B por alcance mal acotado (ver CLAUDE.md) - Camino A también lleva
+        al Panel de Actividades desde que se conectó ahí, así que le hacía falta el mismo arreglo: el checklist
+        de salida por código quedaba mostrándose siempre (bug real, reportado en pruebas del .apk).
+        */
+        let actividadesIdsFinal = actividades_ids;
+        const asistenciaAbierta = await Asistencia.findOne({ where: { operador_id: operador.id, estado: 'EN_JORNADA' } });
+        if(asistenciaAbierta && (!Array.isArray(actividades_ids) || actividades_ids.length === 0)){
+            const registros = await RegistroActividad.findAll({
+                where: { asistencia_id: asistenciaAbierta.id },
+                attributes: ['actividad_id'],
+            });
+            actividadesIdsFinal = [...new Set(registros.map((r) => r.actividad_id))];
+        }
+
+        const { status, body } = await procesarMarcacion(
+            operador,
+            { actividades_ids: actividadesIdsFinal, foto_ingreso },
+            { omitirActividadRequerida: true }
+        );
         res.status(status).json(body);
     }catch(err){
         console.error('Error procesando la marcacion con codigo.', err);

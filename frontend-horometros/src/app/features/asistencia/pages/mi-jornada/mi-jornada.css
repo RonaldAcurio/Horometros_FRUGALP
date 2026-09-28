@@ -51,23 +51,6 @@
   font-size: 0.8rem;
 }
 
-.actividades-lista {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  text-align: left;
-  max-height: 220px;
-  overflow-y: auto;
-  margin-bottom: 1rem;
-}
-
-.actividad-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.9rem;
-}
-
 .panel-actividades {
   width: 100%;
   max-width: 40rem;

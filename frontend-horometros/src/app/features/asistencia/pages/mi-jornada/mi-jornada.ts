@@ -38,9 +38,6 @@ export class MiJornada implements OnInit, OnDestroy {
   codigoIngresado = '';
   procesandoCodigo = false;
   errorCodigo = '';
-  pidiendoActividadSalida = false;
-  actividadesCatalogo: Actividad[] = [];
-  actividadesSeleccionadasSalida: number[] = [];
 
   // --- Fase qr ---
   qrCodeUrl = '';
@@ -69,8 +66,6 @@ export class MiJornada implements OnInit, OnDestroy {
   equipoBusqueda = '';
   mostrarOpcionesEquipo = false;
 
-  // (actividadesCatalogo, declarado arriba en "Fase codigo": catalogo COMPLETO sin paginar, para el checklist
-  // de salida - mismo catálogo que actividadesFiltradas usa por debajo, vía OfflineSyncService.)
   actividadBusqueda = '';
   mostrarOpcionesActividad = false;
   nuevoRegistro = { equipo_id: null as number | null, actividad_id: null as number | null, area: '', horometro_inicio: null as number | null, observaciones: '' };
@@ -141,7 +136,6 @@ export class MiJornada implements OnInit, OnDestroy {
           this.entrarAActividades();
         } else if (this.requiereCodigo) {
           this.fase = 'codigo';
-          this.cargarCatalogoActividades();
         } else {
           this.iniciarFlujoQr();
         }
@@ -149,9 +143,13 @@ export class MiJornada implements OnInit, OnDestroy {
         this.cdr.detectChanges();
       },
       error: () => {
-        // Si la consulta inicial falla, seguimos con el camino normal (el polling ya corrige despues).
-        if (this.requiereCodigo) { this.fase = 'codigo'; this.cargarCatalogoActividades(); }
-        else { this.iniciarFlujoQr(); }
+        /*
+        Si la consulta inicial falla, NO adivinamos si ya esta en jornada o no (antes esto caia directo a
+        'codigo'/'qr' como si asumiera que no - bug real: un trabajador que en verdad seguia EN_JORNADA volvia a
+        ver la pantalla de entrada, y si volvia a marcar su código, el backend lo interpretaba como una SALIDA,
+        cerrandole la jornada sin querer). Nos quedamos en 'cargando' (vista neutral, ver mi-jornada.html) y
+        dejamos que el poll de 5s (consultarEstado) resuelva el estado real apenas la consulta funcione.
+        */
         this.iniciarPollingEstado();
         this.cdr.detectChanges();
       },
@@ -169,27 +167,22 @@ export class MiJornada implements OnInit, OnDestroy {
     if (this.intervaloEstado) clearInterval(this.intervaloEstado);
   }
 
-  private cargarCatalogoActividades(): void {
-    this.asistenciaService.obtenerActividades().subscribe({
-      next: (data) => { this.actividadesCatalogo = Array.isArray(data) ? data : []; this.cdr.detectChanges(); },
-    });
-  }
-
   // --- FASE CODIGO ---
-  confirmarCodigo(actividadesIds?: number[]): void {
-    if (!this.codigoIngresado.trim() && !actividadesIds) return;
+  // Misma acción para ENTRADA y SALIDA - el backend decide cuál es según si el trabajador ya tenía una jornada
+  // abierta, y si es SALIDA deriva las actividades directamente de lo que ya cargó en el Panel de Actividades
+  // (ver marcarConMiCodigo/omitirActividadRequerida en el backend) - ya no hace falta pedirle elegir a mano.
+  confirmarCodigo(): void {
+    if (!this.codigoIngresado.trim()) return;
 
     this.procesandoCodigo = true;
     this.errorCodigo = '';
-    this.asistenciaService.marcarConMiCodigo(this.codigoIngresado.trim(), actividadesIds).subscribe({
+    this.asistenciaService.marcarConMiCodigo(this.codigoIngresado.trim()).subscribe({
       next: (res) => {
         this.procesandoCodigo = false;
-        this.pidiendoActividadSalida = false;
         /*
         La ENTRADA por código lleva al Panel de Actividades, igual que el camino QR - el código solo reemplaza
         la forma de marcar presencia, no le quita al trabajador la posibilidad de registrar sus labores del día.
-        La SALIDA (tipo === 'SALIDA', ya seleccionó actividades arriba) sigue terminando la jornada de una vez,
-        como el kiosco de siempre.
+        La SALIDA (tipo === 'SALIDA') termina la jornada de una vez, como el kiosco de siempre.
         */
         if (res.tipo === 'ENTRADA') {
           this.asistenciaId = res.asistencia?.id ?? null;
@@ -204,11 +197,6 @@ export class MiJornada implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.procesandoCodigo = false;
-        if (err.status === 400 && err.error?.require_actividad) {
-          this.pidiendoActividadSalida = true;
-          this.cdr.detectChanges();
-          return;
-        }
         /*
         status 0 = fallo de RED real (sin señal), no el backend rechazando el código - la ENTRADA siempre
         necesita conexión (ver CLAUDE.md, "offline-first solo cubre Panel de Actividades"), así que acá no se
@@ -222,20 +210,6 @@ export class MiJornada implements OnInit, OnDestroy {
         this.cdr.detectChanges();
       },
     });
-  }
-
-  toggleActividadSalida(id: number, marcada: boolean): void {
-    if (marcada) {
-      if (!this.actividadesSeleccionadasSalida.includes(id)) this.actividadesSeleccionadasSalida.push(id);
-    } else {
-      this.actividadesSeleccionadasSalida = this.actividadesSeleccionadasSalida.filter(a => a !== id);
-    }
-    this.cdr.detectChanges();
-  }
-
-  confirmarSalidaConActividad(): void {
-    if (this.actividadesSeleccionadasSalida.length === 0) return;
-    this.confirmarCodigo(this.actividadesSeleccionadasSalida);
   }
 
   // --- FASE QR ---
@@ -273,9 +247,16 @@ export class MiJornada implements OnInit, OnDestroy {
     this.asistenciaService.obtenerMiEstado().subscribe({
       next: (res) => {
         if (res.en_jornada && !this.asistenciaId) {
-          // Recien lo escanearon/marcaron para la ENTRADA.
+          /*
+          Recien lo escanearon/marcaron para la ENTRADA (QR), o recien pudimos confirmar el estado real tras un
+          fallo de red en la consulta inicial que nos habia dejado en 'cargando' sin saber si ya estaba en
+          jornada (ver ngOnInit) - en ambos casos toca pasar a Panel de Actividades. 'codigo' queda afuera a
+          propósito: esa fase también se llega a mano desde "Marcar salida" (ver marcarSalida) mientras el
+          trabajador todavía sigue EN_JORNADA hasta que confirme su código - el poll no debe sacarlo de ahí a
+          mitad de eso.
+          */
           this.asistenciaId = res.asistencia_id;
-          if (this.fase === 'qr') this.entrarAActividades();
+          if (this.fase === 'qr' || this.fase === 'cargando') this.entrarAActividades();
         } else if (!res.en_jornada && this.asistenciaId) {
           // Recien lo escanearon para la SALIDA (ya tenia una jornada abierta).
           this.mensajeFinal = 'Tu salida fue registrada. ¡Hasta luego!';
@@ -559,17 +540,15 @@ export class MiJornada implements OnInit, OnDestroy {
   /*
   Termina la jornada desde el Panel de Actividades - el camino depende de cómo entró el trabajador: código
   vuelve a PEDIR el código de nuevo (no reutiliza el de la entrada - el código prueba presencia física en el
-  momento, tanto a la entrada como a la salida) y luego elegir actividades si el backend lo exige; QR vuelve a
-  mostrar el QR flotante para que lo escaneen. Nunca se mezclan los dos caminos dentro de una misma jornada.
+  momento, tanto a la entrada como a la salida; las actividades se derivan solas de lo ya cargado en el Panel,
+  ver confirmarCodigo/backend); QR vuelve a mostrar el QR flotante para que lo escaneen. Nunca se mezclan los
+  dos caminos dentro de una misma jornada.
   */
   marcarSalida(): void {
     if (this.requiereCodigo) {
       this.fase = 'codigo';
-      this.pidiendoActividadSalida = false;
       this.codigoIngresado = '';
       this.errorCodigo = '';
-      this.actividadesSeleccionadasSalida = [];
-      this.cargarCatalogoActividades();
     } else {
       this.mostrarQrDeSalida();
     }
