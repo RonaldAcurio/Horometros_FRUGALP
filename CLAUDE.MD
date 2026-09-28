@@ -1473,6 +1473,51 @@ que es "volver a entrar" - ahora terminaría su jornada EN SILENCIO (sin el chec
 antes obligaba a confirmar algo) en vez de solo mostrar una pantalla confusa. Por eso el Bug 1 se trató como
 igual de urgente, no como algo aparte.
 
+### Bug de seguridad real: un SUPERVISOR veía y podía editar operadores de OTRO Supervisor (2026-09-28)
+
+El usuario probó con 2 cuentas reales de Supervisor (uno con Token, otro con QR) y lo encontró: logueado como
+"SUPERVISOR 3" en su propio panel (sin ningún filtro, esta es su propia pantalla, no la de ADMIN), veía
+también un operador que en realidad pertenece a "SUPERVISOR 1". Confirmado además que el filtro por Supervisor
+del panel de ADMIN sí clasifica bien (cada uno por separado) - el problema era específicamente la vista propia
+de un Supervisor real, sin filtro de por medio. Esto no era una confusión de la prueba: era el mismo hueco de
+alcance que ya se había encontrado y corregido HOY MISMO en `finalizarDia`, pero en un endpoint distinto que
+nunca se tocó.
+
+**Causa raíz:** `obtenerAsistenciaHoy` (el endpoint detrás de la tabla del Panel de Supervisor) solo filtraba
+por `supervisor_id` cuando ese parámetro venía en el query - y **solo el selector de ADMIN lo manda**. La
+pantalla de un Supervisor real nunca lo manda (no tiene ningún selector, ve "su" pantalla directo), así que
+`filtrarPorSupervisor` daba `false` y el endpoint devolvía TODOS los operadores de TODAS las haciendas
+mezclados, sin importar quién lo pidiera.
+
+**Arreglo (mismo patrón que `finalizarDia`, ver arriba):** se calcula `supervisorIdAlcance` a partir de
+`req.auth` - si quien pide es un SUPERVISOR real, SIEMPRE es su propio id (ignora cualquier `supervisor_id`
+que llegue, no hay forma de que lo controle); si es ADMIN, sigue siendo opcional vía query (mismo
+comportamiento de antes). `calcularDiaCerrado` queda **fuera** de este arreglo a propósito (sigue siendo
+sobre el día completo, decisión ya documentada arriba).
+
+**Se encontraron 3 hallazgos más al revisar el resto de endpoints por el mismo patrón** (una vez confirmado
+que el hueco existía, valía la pena revisar los que actúan sobre UN registro puntual por `id`, no solo listas)
+- estos eran más graves que el de visibilidad, porque permitían **escribir**, no solo leer:
+
+- `revisarAsistencia` (`PUT /revisar/:id`): cualquier Supervisor podía editar la observación/hora_salida/estado
+  de CUALQUIER operador del sistema con solo conocer el id - sin ningún chequeo de pertenencia.
+- `confirmarAsistencia` (`PUT /:id/confirmar`): mismo hueco para el O/X.
+- `obtenerFotoAsistencia` (`GET /:id/foto`): mismo hueco para la foto de evidencia (dato sensible - PII).
+
+**Arreglo:** nueva función compartida `tienePermisoSupervisorSobreAsistencia(asistencia, auth)` - un SUPERVISOR
+real tiene permiso si es su propio operador (`operador.supervisor_id`) **o** si es un trabajador prestado que
+él mismo admitió hoy bajo su hacienda (`hacienda_prestamo_id`, ver "Trabajador prestado entre haciendas" -
+un Supervisor receptor SÍ tiene autoridad real sobre esa jornada puntual aunque el operador sea
+permanentemente de otro Supervisor; sin este segundo caso, admitir un trabajador prestado se habría quedado a
+medias - lo admite pero no lo puede confirmar/revisar después). ADMIN/ASISTENTE nunca quedan restringidos.
+Los 3 endpoints ahora hacen `include` del operador (para tener `supervisor_id` disponible) antes de decidir, y
+devuelven 403 si no corresponde. Verificado con `tsc --noEmit` limpio y los 27 tests unitarios en verde.
+
+**Nota para la próxima ronda:** no se revisaron TODOS los endpoints del sistema por este mismo patrón (tiempo
+limitado de esta ronda) - vale la pena una pasada específica por `equipo.controller.ts`/`actividades.controller.ts`
+(gestión de catálogos) y `usuario.controller.ts` para confirmar que ningún otro endpoint por `id` tenga el
+mismo hueco, aunque esos son de alcance ADMIN/ASISTENTE, no SUPERVISOR, así que el riesgo ahí es menor.
+
 ## Pendiente
 
 **Empaquetado con Capacitor (ver arriba) - pasos que faltan**

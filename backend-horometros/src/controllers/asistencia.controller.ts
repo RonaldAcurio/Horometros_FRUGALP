@@ -7,7 +7,7 @@ import { AsistenciaActividad, RegistroActividad } from '../models';
 import { Usuario } from '../models/usuario';
 import { Hacienda } from '../models/hacienda';
 import bcrypt from 'bcryptjs';
-import { generarTokenQrJornada, verificarTokenQrJornada } from '../services/jwt.service';
+import { generarTokenQrJornada, verificarTokenQrJornada, PayloadToken } from '../services/jwt.service';
 import { tokenHaciendaVigente } from '../utils/token-hacienda';
 import { registrarAuditoria } from '../utils/registrar-auditoria';
 import { cifrarDeterministico } from '../utils/cifrado';
@@ -460,6 +460,23 @@ const resolverHaciendaPropia = async(operador: Operador): Promise<number | null>
     return supervisor?.hacienda_id ?? null;
 };
 
+/*
+Alcance de un SUPERVISOR real sobre UNA Asistencia puntual (revisarAsistencia/confirmarAsistencia/
+obtenerFotoAsistencia) - antes ninguno de los 3 chequeaba esto, cualquier Supervisor podia leer/editar/
+confirmar la de CUALQUIER operador del sistema con solo conocer el id (bug real de autorizacion, confirmado
+por el usuario probando con 2 cuentas de Supervisor distintas). Tiene permiso si es su propio operador
+(operador.supervisor_id) O si es un trabajador prestado que el ADMITIO hoy bajo su hacienda
+(hacienda_prestamo_id, ver admitirTrabajadorExterno) - un Supervisor receptor SI tiene autoridad real sobre
+esa jornada puntual aunque el operador sea permanentemente de otro Supervisor. ADMIN/ASISTENTE nunca quedan
+restringidos aqui.
+*/
+const tienePermisoSupervisorSobreAsistencia = (asistencia: Asistencia, auth: PayloadToken | undefined): boolean => {
+    if(!auth || auth.tipo !== 'usuario' || auth.rol !== 'SUPERVISOR') return true;
+    const esDueño = asistencia.operador?.supervisor_id === auth.id;
+    const esReceptorDePrestamo = asistencia.hacienda_prestamo_id !== null && asistencia.hacienda_prestamo_id === auth.hacienda_id;
+    return esDueño || esReceptorDePrestamo;
+};
+
 //Logica de Marcacion con Escaner QR (Entrada/Salida) - carnet fisico del kiosco, sin cambios de comportamiento.
 export const registrarMacarcoQR= async(req:Request, res:Response):Promise<void> => {
     try{
@@ -782,16 +799,26 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
         const offset = (paginaActual - 1) * limitePagina;
 
         /*
-        Filtro opcional por supervisor (lo usa el panel de ADMIN, que ve TODAS las haciendas mezcladas en esta
-        pantalla - a diferencia de un Supervisor real, que solo tiene la suya - para poder acotar a lo que hizo
-        un Supervisor puntual). Mismo patron que en obtenerHistorial: filtra operador.supervisor_id directo.
+        Alcance: un SUPERVISOR real SIEMPRE queda acotado a su propia hacienda (via operador.supervisor_id =
+        su propio id) - ANTES esto dependia 100% de que el frontend mandara `supervisor_id` por query, algo
+        que solo hace el selector de ADMIN. Un Supervisor real nunca lo manda, asi que este endpoint le
+        devolvia TODOS los operadores de TODAS las haciendas mezclados, no solo los suyos - bug real de
+        alcance/autorizacion (confirmado por el usuario: un Supervisor logueado con su propia cuenta veia
+        marcaciones de operadores de otro Supervisor). Mismo criterio ya usado en finalizarDia (ver ahi el
+        detalle): ADMIN puede acotar opcionalmente con `supervisor_id`; sin ese parametro, ADMIN sigue viendo
+        todas las haciendas de una vez, a proposito - es el unico rol que de verdad supervisa el sistema
+        completo.
         No afecta a calcularDiaCerrado (mas abajo) a proposito - ese indicador sigue siendo sobre el dia
-        completo (todas las haciendas), independiente de este filtro de vista. El propio cierre (finalizarDia,
+        completo (todas las haciendas), independiente de este alcance. El propio cierre (finalizarDia,
         mas abajo) SI queda acotado a la hacienda del Supervisor que ejecuta el cierre (o a la que mande ADMIN
         via este mismo supervisor_id) - ver ese endpoint para el detalle.
         */
         const supervisorIdQuery = req.query['supervisor_id'];
-        const filtrarPorSupervisor = supervisorIdQuery !== undefined && supervisorIdQuery !== '';
+        const supervisorIdAlcance: number | null =
+            req.auth?.tipo === 'usuario' && req.auth.rol === 'SUPERVISOR'
+                ? req.auth.id
+                : (supervisorIdQuery ? Number(supervisorIdQuery) : null);
+        const filtrarPorSupervisor = supervisorIdAlcance !== null;
 
         const { rows:asistencias, count:total } = await Asistencia.findAndCountAll({
             where: { fecha:hoy },
@@ -806,7 +833,7 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
                     model: Operador, as:'operador',
                     required: filtrarPorSupervisor,
                     paranoid: false,
-                    ...(filtrarPorSupervisor ? { where: { supervisor_id: Number(supervisorIdQuery) } } : {}),
+                    ...(filtrarPorSupervisor ? { where: { supervisor_id: supervisorIdAlcance } } : {}),
                 },
                 { model: Actividad, as:'actividad', paranoid: false},
                 { model: Actividad, as:'actividades', paranoid: false},
@@ -1074,10 +1101,16 @@ export const obtenerFotoAsistencia = async(req:Request, res:Response):Promise<vo
         const { id } = req.params;
 
         const asistencia = await Asistencia.findByPk(Number(id), {
-            attributes: ['id', 'foto_ingreso'],
+            attributes: ['id', 'foto_ingreso', 'hacienda_prestamo_id'],
+            include: [{ model: Operador, as: 'operador', attributes: ['supervisor_id'], paranoid: false }],
         });
         if(!asistencia){
             res.status(404).json({ message: 'Registro de asistencia no encontrado.'});
+            return;
+        }
+
+        if(!tienePermisoSupervisorSobreAsistencia(asistencia, req.auth)){
+            res.status(403).json({ message: 'No tienes permiso para ver esta evidencia.' });
             return;
         }
 
@@ -1208,9 +1241,18 @@ export const revisarAsistencia = async(req:Request, res:Response):Promise<void> 
         const { id } = req.params;
         const { hora_salida, observaciones, estado, actividad_id } = req.body;
 
-        const asistencia = await Asistencia.findByPk(Number(id));
+        const asistencia = await Asistencia.findByPk(Number(id), {
+            include: [{ model: Operador, as: 'operador', attributes: ['supervisor_id'], paranoid: false }],
+        });
         if(!asistencia){
             res.status(404).json({ message: "Registro de asistencia no encontrado."});
+            return;
+        }
+
+        // Ver tienePermisoSupervisorSobreAsistencia arriba para el detalle - antes cualquier Supervisor podia
+        // editar la observacion/hora_salida/estado de CUALQUIER operador del sistema con solo conocer el id.
+        if(!tienePermisoSupervisorSobreAsistencia(asistencia, req.auth)){
+            res.status(403).json({ message: 'No tienes permiso para modificar este registro.' });
             return;
         }
 
@@ -1269,9 +1311,18 @@ export const confirmarAsistencia = async(req:Request, res:Response):Promise<void
             return;
         }
 
-        const asistencia = await Asistencia.findByPk(Number(id));
+        const asistencia = await Asistencia.findByPk(Number(id), {
+            include: [{ model: Operador, as: 'operador', attributes: ['supervisor_id'], paranoid: false }],
+        });
         if(!asistencia){
             res.status(404).json({ message: 'Registro de asistencia no encontrado.'});
+            return;
+        }
+
+        // Ver tienePermisoSupervisorSobreAsistencia arriba para el detalle - un SUPERVISOR real solo confirma
+        // O/X de sus propios operadores (o de un trabajador prestado que el mismo admitió hoy).
+        if(!tienePermisoSupervisorSobreAsistencia(asistencia, req.auth)){
+            res.status(403).json({ message: 'No tienes permiso para confirmar este registro.' });
             return;
         }
 
