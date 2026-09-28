@@ -246,16 +246,23 @@ export class SupervisorPanel implements OnInit {
   }
 
   /*
-  O/X: el Supervisor confirma si el trabajador que aparece logueado hoy realmente vino. A diferencia del botón de
-  Observación (que sí se bloquea una vez cerrado el registro), esto funciona aunque la jornada ya esté
-  FINALIZADO/SALIDA_OLVIDADA - el Supervisor está confirmando su observación directa de la realidad (vio o no vio
-  a ese trabajador hoy), independiente de si el sistema ya cerró esa jornada. El Token de Hacienda puede circular
-  entre trabajadores sin que el Supervisor lo note al momento de marcar, así que necesita poder decir "esto no fue
-  real" incluso después de cerrado (ver backend). O (presente) es reversible y de bajo riesgo, se aplica directo.
-  X (ausente) mueve el registro a OBSERVANDO y deja una nota automática (ver backend) - por eso pide confirmación
-  antes.
+  O/X: el Supervisor confirma si el trabajador que aparece logueado hoy realmente vino. No se bloquea por el
+  `estado` de ESE registro puntual (FINALIZADO/SALIDA_OLVIDADA) - el trabajador pudo marcar su propia salida
+  mucho antes de que el Supervisor termine de revisar a todos, y eso no debe impedirle decir "esto no fue
+  real" mientras el DIA sigue abierto (mismo criterio que la Observación). SÍ se bloquea una vez que "Cerrar
+  Jornada" cerró el día completo (`diaCerrado`, ver el guard debajo y el backend) - decisión del usuario:
+  "Cerrar Jornada" congela TODO sin excepción, ese reporte ya pasa al Panel de Asistente apenas se cierra.
+  O (presente) es reversible y de bajo riesgo, se aplica directo. X (ausente) mueve el registro a OBSERVANDO y
+  deja una nota automática (ver backend) - por eso pide confirmación antes.
   */
   async confirmarPresencia(asis: Asistencia, presente: boolean): Promise<void> {
+    // Guarda defensiva: el botón ya se deshabilita en el HTML cuando el día está cerrado, pero validamos acá
+    // también por si se llega a disparar el click de otra forma (mismo patrón que ejecutarCierreDiario).
+    if (this.diaCerrado) {
+      this.notificacionService.advertencia('Esta jornada ya fue cerrada y no se puede modificar.');
+      return;
+    }
+
     if (!presente) {
       const confirmado = await this.confirmacionService.preguntar(
         `¿Confirmas que ${asis.operador?.nombre_completo || 'este trabajador'} NO vino hoy? Esto lo marca como OBSERVANDO.`,

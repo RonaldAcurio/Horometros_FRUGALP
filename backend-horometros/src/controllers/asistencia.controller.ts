@@ -1320,13 +1320,18 @@ de verdad vino. presente=true (O) solo deja la marca de confirmado. presente=fal
 OBSERVANDO y genera una observacion automatica, para que quede visible en Auditoria (Panel de Asistente) por que
 esa jornada no cuenta como valida. Requiere JWT con rol SUPERVISOR o ADMIN (ver ruta).
 
-A diferencia de revisarAsistencia (que SI queda bloqueado una vez FINALIZADO/SALIDA_OLVIDADA, ver arriba), esto
-NO se congela cuando el registro ya se cerro: la confirmacion del Supervisor es su observacion directa de la
-realidad (¿este trabajador vino hoy, si o no?), independiente de si el trabajador ya marco su propia salida en
-el sistema (con codigo/QR, o incluso SALIDA_OLVIDADA autoservicio). Decision de negocio: el Token de Hacienda
-puede circular entre trabajadores sin que el Supervisor lo note al momento, asi que necesita poder marcar X
-aunque la jornada de ese trabajador ya haya quedado formalmente cerrada - eso es justo lo que la reabre a
-OBSERVANDO para que quede visible en Auditoria.
+NO se bloquea por el `estado` de ESE registro puntual (FINALIZADO/SALIDA_OLVIDADA) - el trabajador puede haber
+marcado su propia salida, o autocerrado, mucho antes de que el Supervisor termine de revisar a todos, y eso no
+debe impedirle decir "esto no fue real" mientras el DIA sigue abierto (mismo criterio que revisarAsistencia).
+
+SI se bloquea una vez que el DIA COMPLETO de esa hacienda ya se cerro con "Cerrar Jornada" (ver
+calcularDiaCerrado) - antes esto quedaba deliberadamente sin congelar ni siquiera ahi (para poder corregir un
+fraude de Token de Hacienda detectado tarde), pero el usuario decidio que "Cerrar Jornada" tiene que congelar
+TODO sin excepcion, ya que ese reporte pasa al Panel de Asistente apenas se cierra - un cambio de O/X despues
+de eso deja al Asistente con datos que ya cambiaron sin ningun aviso (confirmado en pruebas reales: las
+observaciones automaticas de cada X se iban acumulando sin limite en el mismo campo). Si se detecta un fraude
+despues de cerrado, hoy no hay forma de corregirlo desde este endpoint - queda fuera de alcance por decision
+explicita del usuario, se maneja aparte si llega a pasar.
 */
 export const confirmarAsistencia = async(req:Request, res:Response):Promise<void> => {
     try{
@@ -1350,6 +1355,14 @@ export const confirmarAsistencia = async(req:Request, res:Response):Promise<void
         // O/X de sus propios operadores (o de un trabajador prestado que el mismo admitió hoy).
         if(!tienePermisoSupervisorSobreAsistencia(asistencia, req.auth)){
             res.status(403).json({ message: 'No tienes permiso para confirmar este registro.' });
+            return;
+        }
+
+        // Congelado una vez que "Cerrar Jornada" cerro el DIA completo de esa hacienda (ver comentario de la
+        // funcion arriba) - mismo alcance por hacienda que revisarAsistencia.
+        const supervisorIdParaCierre = req.auth?.tipo === 'usuario' && req.auth.rol === 'SUPERVISOR' ? req.auth.id : null;
+        if(await calcularDiaCerrado(asistencia.fecha, supervisorIdParaCierre)){
+            res.status(400).json({ message: 'La jornada de este día ya fue cerrada y no se puede modificar.' });
             return;
         }
 

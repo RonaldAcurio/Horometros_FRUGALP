@@ -1597,6 +1597,27 @@ pidió auditar esta vez.
 
 Verificado con `tsc --noEmit` limpio y los 27 tests unitarios en verde.
 
+### "Cerrar Jornada" ahora congela también el O/X (2026-09-28)
+
+Decisión del usuario, revirtiendo una decisión explícita de una ronda anterior. Antes, `confirmarAsistencia`
+(el O/X) se dejó DELIBERADAMENTE sin congelar ni siquiera con el día ya cerrado - la razón original: el Token
+de Hacienda puede circular entre trabajadores sin que el Supervisor lo note al momento, así que necesitaba
+poder marcar X (fraude detectado tarde) incluso después de cerrado. Probando el flujo real, el usuario
+encontró que eso generaba un problema peor: como el reporte ya pasa al Panel de Asistente apenas se cierra el
+día, cambiar el O/X después dejaba al Asistente con datos que ya cambiaron sin ningún aviso - confirmado en
+pruebas reales, donde las notas automáticas de cada X se iban acumulando sin límite en el mismo campo de
+observaciones cada vez que se volvía a tocar.
+
+**Arreglo:** `confirmarAsistencia` ahora aplica el mismo chequeo `calcularDiaCerrado` (acotado por hacienda)
+que ya usaba `revisarAsistencia` - una vez que "Cerrar Jornada" cerró el día completo de esa hacienda, el O/X
+queda 100% de solo lectura, sin excepción. El botón ya se deshabilita en el frontend
+(`[disabled]="diaCerrado"`, faltaba en `supervisor-panel.html`) y `confirmarPresencia` tiene la misma guarda
+defensiva que ya usaba `ejecutarCierreDiario`. **Decisión explícita:** si se detecta un fraude después de
+cerrado, hoy no hay forma de corregirlo desde este endpoint - queda fuera de alcance, se maneja aparte si
+llega a pasar (el usuario prefirió esto a la alternativa de dejarlo editable con un aviso visible del cambio).
+
+Verificado con `tsc --noEmit` limpio en ambos proyectos y los 27 tests unitarios en verde.
+
 ## Pendiente
 
 **Empaquetado con Capacitor (ver arriba) - pasos que faltan**

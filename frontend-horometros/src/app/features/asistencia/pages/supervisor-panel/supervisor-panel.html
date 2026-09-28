@@ -104,12 +104,14 @@
                   class="btn btn-sm"
                   [ngClass]="asis.confirmado_por_supervisor === true ? 'btn-primary' : 'btn-secondary'"
                   (click)="confirmarPresencia(asis, true)"
+                  [disabled]="diaCerrado"
                   title="Confirmar que sí vino"
                 >O</button>
                 <button
                   class="btn btn-sm"
                   [ngClass]="asis.confirmado_por_supervisor === false ? 'btn-warning' : 'btn-secondary'"
                   (click)="confirmarPresencia(asis, false)"
+                  [disabled]="diaCerrado"
                   title="Marcar que NO vino"
                 >X</button>
               </div>
