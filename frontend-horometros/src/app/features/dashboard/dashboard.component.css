@@ -18,6 +18,17 @@
   @apply grid grid-cols-1 md:grid-cols-2 gap-6 pt-4;
 }
 
+/* Cuando el rol solo tiene UN módulo habilitado (ver dashboard.component.html), el grid de 2 columnas deja esa
+   tarjeta pegada a la izquierda en desktop - se cambia a flex centrado, con un ancho tope para que no se
+   estire a todo lo ancho del contenedor. */
+.cards-grid-unico {
+  @apply flex justify-center;
+}
+
+.cards-grid-unico .card {
+  @apply max-w-sm w-full;
+}
+
 /* Card Base */
 .card {
   @apply rounded-2xl p-6 transition-all duration-300 relative overflow-hidden;

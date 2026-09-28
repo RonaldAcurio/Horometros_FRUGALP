@@ -532,7 +532,7 @@
         <h2 class="hoja-actividades-titulo">{{ grupo.operador.rol === 'OPERADOR' ? 'REPORTE DE LABORES MAQUINARIAS' : 'REPORTE DE LABORES DIARIOS' }}</h2>
         <div class="hoja-actividades-encabezado">
           <span class="hoja-actividades-mecanico">
-            {{ grupo.operador.rol === 'OPERADOR' ? 'Operador' : 'Mecánico' }}: {{ grupo.operador.nombre_completo }}<ng-container *ngIf="grupo.operador.codigo_megued"> · {{ grupo.operador.codigo_megued }}</ng-container>
+            {{ grupo.operador.rol === 'OPERADOR' ? 'Operador' : 'Mecánico' }}: {{ grupo.operador.nombre_completo }}<ng-container *ngIf="grupo.haciendaNombre"> · {{ grupo.haciendaNombre }}</ng-container>
           </span>
           <span *ngIf="hojaFechaUnica" class="hoja-actividades-fecha">Fecha: {{ hojaFechaUnica }}</span>
         </div>

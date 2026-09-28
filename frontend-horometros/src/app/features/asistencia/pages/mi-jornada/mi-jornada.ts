@@ -43,6 +43,15 @@ export class MiJornada implements OnInit, OnDestroy {
   // trabajador antes de continuar. fechaJornadaAmbigua es solo para mostrarla en el mensaje.
   preguntandoJornadaAmbigua = false;
   fechaJornadaAmbigua = '';
+  /*
+  El token de hacienda que SÍ funcionó al marcar la entrada (ver confirmarCodigo) - es el mismo token
+  compartido de toda la hacienda, no una clave personal, así que obligar al trabajador a volverlo a escribir a
+  mano al marcar salida es puro trámite (pedido explícito del usuario, 2026-09-28). Con esto guardado,
+  marcarSalida() lo reenvía solo sin mostrarle el formulario; si el backend lo rechaza (cambió/venció mientras
+  tanto) recién ahí se le pide escribirlo de nuevo (ver intentandoSalidaAutomatica).
+  */
+  private tokenHaciendaUsado = '';
+  intentandoSalidaAutomatica = false;
 
   // --- Fase qr ---
   qrCodeUrl = '';
@@ -191,6 +200,10 @@ export class MiJornada implements OnInit, OnDestroy {
       next: (res) => {
         this.procesandoCodigo = false;
         this.preguntandoJornadaAmbigua = false;
+        this.intentandoSalidaAutomatica = false;
+        // Se guarda el token que acaba de funcionar (entrada o salida) para no volver a pedirlo la próxima vez
+        // que este trabajador marque salida (ver tokenHaciendaUsado/marcarSalida).
+        this.tokenHaciendaUsado = this.codigoIngresado.trim();
         /*
         La ENTRADA por código lleva al Panel de Actividades, igual que el camino QR - el código solo reemplaza
         la forma de marcar presencia, no le quita al trabajador la posibilidad de registrar sus labores del día.
@@ -215,10 +228,21 @@ export class MiJornada implements OnInit, OnDestroy {
         al trabajador en vez de adivinar. No es un error real, así que no toca errorCodigo.
         */
         if (err.status === 409 && err.error?.jornada_ambigua) {
+          this.intentandoSalidaAutomatica = false;
           this.fechaJornadaAmbigua = err.error.fecha_anterior || '';
           this.preguntandoJornadaAmbigua = true;
           this.cdr.detectChanges();
           return;
+        }
+        /*
+        Reintento automático de salida con el token ya conocido (ver tokenHaciendaUsado/marcarSalida): si
+        FALLA por lo que sea (el Supervisor generó un token nuevo, se venció, sin conexión), no tiene caso
+        seguir mostrando "Cerrando tu jornada..." sin que nada pase - se revela el formulario normal con el
+        error puesto, para que el trabajador vea qué pasó y pueda escribir el token vigente a mano.
+        */
+        if (this.intentandoSalidaAutomatica) {
+          this.intentandoSalidaAutomatica = false;
+          this.codigoIngresado = '';
         }
         /*
         status 0 = fallo de RED real (sin señal), no el backend rechazando el código - la ENTRADA siempre
@@ -567,18 +591,28 @@ export class MiJornada implements OnInit, OnDestroy {
   }
 
   /*
-  Termina la jornada desde el Panel de Actividades - el camino depende de cómo entró el trabajador: código
-  vuelve a PEDIR el código de nuevo (no reutiliza el de la entrada - el código prueba presencia física en el
-  momento, tanto a la entrada como a la salida; las actividades se derivan solas de lo ya cargado en el Panel,
-  ver confirmarCodigo/backend); QR vuelve a mostrar el QR flotante para que lo escaneen. Nunca se mezclan los
-  dos caminos dentro de una misma jornada.
+  Termina la jornada desde el Panel de Actividades - el camino depende de cómo entró el trabajador: QR vuelve a
+  mostrar el QR flotante para que lo escaneen (prueba presencia física de nuevo, no hay forma de saltárselo).
+  Código YA NO vuelve a pedir el token a mano (pedido explícito del usuario, 2026-09-28): es el mismo token
+  compartido de la hacienda que ya se usó en la entrada, así que se reenvía solo (ver tokenHaciendaUsado) sin
+  mostrarle el formulario - si el backend lo rechaza, confirmarCodigo() revela el formulario con el error (ver
+  ahí). Las actividades se derivan solas de lo ya cargado en el Panel, sin checklist (ver
+  confirmarCodigo/backend). Nunca se mezclan los dos caminos dentro de una misma jornada.
   */
   marcarSalida(): void {
     if (this.requiereCodigo) {
       this.fase = 'codigo';
-      this.codigoIngresado = '';
       this.errorCodigo = '';
       this.preguntandoJornadaAmbigua = false;
+      if (this.tokenHaciendaUsado) {
+        this.codigoIngresado = this.tokenHaciendaUsado;
+        this.intentandoSalidaAutomatica = true;
+        this.confirmarCodigo();
+      } else {
+        // No hay token guardado en memoria (ej. refrescó la página después de entrar, o volvió más tarde) -
+        // se le pide escribirlo una vez, como antes.
+        this.codigoIngresado = '';
+      }
     } else {
       this.mostrarQrDeSalida();
     }

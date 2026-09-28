@@ -727,6 +727,24 @@ export const marcarSalidaOlvidada = async(req:Request, res:Response):Promise<voi
 
         await asistencia.update({ estado: 'SALIDA_OLVIDADA', hora_salida: horaSalidaFinal });
 
+        /*
+        Bug real (2026-09-28): a diferencia de la SALIDA normal (ver procesarMarcacion), este autoservicio
+        nunca poblaba AsistenciaActividad - el trabajador podia haber cargado varias labores en el Panel de
+        Actividades (RegistroActividad) durante el dia, pero al autocerrarse como SALIDA_OLVIDADA el Supervisor
+        las veia como "Sin registrar" en su panel, como si no hubiera hecho nada. Mismo criterio que
+        marcarConQrSesion/marcarConMiCodigo: se deriva la lista de RegistroActividad de esta jornada.
+        */
+        const registros = await RegistroActividad.findAll({
+            where: { asistencia_id: asistencia.id },
+            attributes: ['actividad_id'],
+        });
+        const actividadesIds = [...new Set(registros.map((r) => r.actividad_id))];
+        if(actividadesIds.length > 0){
+            await AsistenciaActividad.bulkCreate(
+                actividadesIds.map((actividad_id) => ({ asistencia_id: asistencia.id, actividad_id }))
+            );
+        }
+
         res.json({ message: 'Tu salida quedó marcada. Tu supervisor la revisará.', asistencia });
     }catch(err){
         console.error('Error al marcar tu salida.', err);
@@ -1152,14 +1170,27 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
                     required: filtrarPorHacienda || filtrarPorSupervisor,
                     paranoid: false,
                     ...(filtrarPorSupervisor ? { where: { supervisor_id: Number(supervisor_id) } } : {}),
+                    /*
+                    attributes:['hacienda_id'] (antes []): la hoja imprimible (Ver/Imprimir, asistencia-panel.ts)
+                    necesita mostrar en QUE hacienda se hizo la jornada en vez del codigo_megued (que ya se
+                    repite en el carnet/QR) - hacienda_id es la hacienda PERMANENTE del trabajador via su
+                    Supervisor. Se anida Hacienda para traer el nombre en la misma consulta.
+                    */
                     include: [{
                         model: Usuario, as: 'supervisor',
-                        attributes: [],
+                        attributes: ['hacienda_id'],
                         ...(filtrarPorHacienda ? { where: { hacienda_id: Number(hacienda_id) } } : {}),
+                        include: [{ model: Hacienda, as: 'hacienda', attributes: ['nombre'] }],
                     }],
                 },
                 { model: Actividad, as: 'actividad', paranoid: false },
                 { model: Actividad, as: 'actividades', paranoid: false },
+                /*
+                haciendaPrestamo: cuando la jornada fue de un trabajador PRESTADO (ver hacienda_prestamo_id),
+                la hoja imprimible debe mostrar la hacienda donde REALMENTE trabajó ese día, no su hacienda
+                permanente - el frontend prioriza esta sobre operador.supervisor.hacienda (ver asistencia-panel.ts).
+                */
+                { model: Hacienda, as: 'haciendaPrestamo', attributes: ['nombre'], paranoid: false },
             ],
             order: [['fecha','DESC'],['hora_ingreso','DESC']],
             limit: limitePagina,

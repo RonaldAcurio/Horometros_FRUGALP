@@ -29,34 +29,42 @@
     </ng-container>
 
     <ng-template #formularioCodigo>
-      <p class="jornada-subtitle">
-        Tu hacienda usa código de acceso. Pide el código del día a tu supervisor y escríbelo aquí.
-      </p>
+      <!-- Marcar salida con el token ya conocido de la entrada (ver marcarSalida/tokenHaciendaUsado): se
+           reenvía solo, sin mostrar el formulario - si falla, confirmarCodigo() lo revela con el error puesto. -->
+      <ng-container *ngIf="intentandoSalidaAutomatica; else formularioManual">
+        <p class="jornada-subtitle">Cerrando tu jornada...</p>
+      </ng-container>
 
-      <form (ngSubmit)="confirmarCodigo()" class="space-y-3">
-        <input
-          type="text"
-          class="input-control w-full codigo-input"
-          [(ngModel)]="codigoIngresado"
-          name="codigo"
-          placeholder="Código de la hacienda"
-          autocomplete="off"
-          required
-        >
-        <div class="alert alert-danger" *ngIf="errorCodigo">{{ errorCodigo }}</div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="procesandoCodigo || !codigoIngresado.trim()">
-          {{ procesandoCodigo ? 'Procesando...' : 'Confirmar' }}
-        </button>
-      </form>
+      <ng-template #formularioManual>
+        <p class="jornada-subtitle">
+          Tu hacienda usa código de acceso. Pide el código del día a tu supervisor y escríbelo aquí.
+        </p>
 
-      <!-- Si ya tenía jornada abierta (es una salida) y no puede conseguir el código, autoservicio de emergencia -->
-      <button
-        *ngIf="asistenciaId"
-        type="button"
-        class="btn-link-salida"
-        [disabled]="marcandoSalidaOlvidada"
-        (click)="marcarMiSalidaOlvidada()"
-      >¿No tienes el código o no puedes volver? Marcar salida</button>
+        <form (ngSubmit)="confirmarCodigo()" class="space-y-3">
+          <input
+            type="text"
+            class="input-control w-full codigo-input"
+            [(ngModel)]="codigoIngresado"
+            name="codigo"
+            placeholder="Código de la hacienda"
+            autocomplete="off"
+            required
+          >
+          <div class="alert alert-danger" *ngIf="errorCodigo">{{ errorCodigo }}</div>
+          <button type="submit" class="btn btn-primary w-full" [disabled]="procesandoCodigo || !codigoIngresado.trim()">
+            {{ procesandoCodigo ? 'Procesando...' : 'Confirmar' }}
+          </button>
+        </form>
+
+        <!-- Si ya tenía jornada abierta (es una salida) y no puede conseguir el código, autoservicio de emergencia -->
+        <button
+          *ngIf="asistenciaId"
+          type="button"
+          class="btn-link-salida"
+          [disabled]="marcandoSalidaOlvidada"
+          (click)="marcarMiSalidaOlvidada()"
+        >¿No tienes el código o no puedes volver? Marcar salida</button>
+      </ng-template>
     </ng-template>
   </div>
 

@@ -4,7 +4,9 @@
     <p class="subtitle">Selecciona una opción para gestionar la operación de maquinaria y personal</p>
   </div>
 
-  <div class="cards-grid">
+  <!-- Un SUPERVISOR/ESCANER solo ve "Asistencia" (Administración es *ngIf ADMIN/ASISTENTE) - con el grid de 2
+       columnas esa única tarjeta quedaba pegada a la izquierda; cards-grid-unico la centra. -->
+  <div class="cards-grid" [class.cards-grid-unico]="!authService.tieneRol('ADMIN', 'ASISTENTE')">
     <!-- Opción 1: Asistencia (HABILITADA) -->
     <a routerLink="/asistencia" class="card card-active group">
       <div class="card-header-active">

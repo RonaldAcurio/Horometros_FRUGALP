@@ -100,7 +100,7 @@ export class AsistenciaPanel implements OnInit{
   // Un grupo por operador - normalmente 1 (fila del Historial), pero la impresión por rango de fechas manda
   // uno por cada operador distinto que aparece en la tabla filtrada, todos en la misma ventana con salto de
   // página entre uno y otro (ver imprimirHojasRangoHistorial).
-  hojaGrupos: { operador: Operador; registros: RegistroActividad[] }[] = [];
+  hojaGrupos: { operador: Operador; registros: RegistroActividad[]; haciendaNombre: string | null }[] = [];
   // Cuando la hoja es de UN solo día (fila del Historial) la fecha va junto al nombre del operador y se
   // ocultan la columna Fecha de la tabla y trae la observación del Supervisor de esa jornada. Cuando es un
   // rango de varios días (impresión por rango) queda null y la tabla vuelve a mostrar Fecha por fila.
@@ -443,7 +443,11 @@ export class AsistenciaPanel implements OnInit{
     this.registroActividadService.obtenerPorOperador(reg.operador_id, reg.fecha, reg.fecha).subscribe({
       next: (registros) => {
         this.cargandoReporteImpresion = false;
-        this.abrirHojaActividades([{ operador: reg.operador!, registros }], {
+        this.abrirHojaActividades([{
+          operador: reg.operador!,
+          registros,
+          haciendaNombre: this.resolverHaciendaJornada(reg.operador!, reg),
+        }], {
           fechaUnica: reg.fecha,
           observacionesSupervisor: reg.observaciones ?? null,
           autoImprimir,
@@ -477,7 +481,9 @@ export class AsistenciaPanel implements OnInit{
     this.cargandoReporteImpresion = true;
     const peticiones = Array.from(operadoresUnicos.values()).map((op) =>
       this.registroActividadService.obtenerPorOperador(op.id, this.fechaInicioFiltro, this.fechaFinFiltro).pipe(
-        map((registros) => ({ operador: op, registros }))
+        // Rango de varios días: se muestra la hacienda PERMANENTE del operador (no tiene sentido mostrar una
+        // sola hacienda "de préstamo" cuando el rango puede cruzar varios días distintos).
+        map((registros) => ({ operador: op, registros, haciendaNombre: this.resolverHaciendaJornada(op) }))
       )
     );
 
@@ -503,8 +509,17 @@ export class AsistenciaPanel implements OnInit{
     return horas > 0 ? `${horas}h ${resto}min` : `${resto}min`;
   }
 
+  // Hacienda a mostrar junto al nombre en la hoja imprimible (reemplaza el codigo_megued, que ya se repite en
+  // el carnet/QR - ver CLAUDE.md). Prioriza la hacienda de PRÉSTAMO de esa jornada puntual (si la asistencia la
+  // tiene, ver hacienda_prestamo_id) sobre la hacienda PERMANENTE del operador (vía su Supervisor).
+  private resolverHaciendaJornada(operador: Operador, asistencia?: Asistencia): string | null {
+    return asistencia?.haciendaPrestamo?.nombre
+      || operador.supervisor?.hacienda?.nombre
+      || null;
+  }
+
   private abrirHojaActividades(
-    grupos: { operador: Operador; registros: RegistroActividad[] }[],
+    grupos: { operador: Operador; registros: RegistroActividad[]; haciendaNombre: string | null }[],
     opciones: { fechaUnica?: string; observacionesSupervisor?: string | null; autoImprimir: boolean }
   ): void {
     this.hojaGrupos = grupos;
@@ -554,7 +569,7 @@ export class AsistenciaPanel implements OnInit{
       lineas.push(esOperador ? 'REPORTE DE LABORES MAQUINARIAS' : 'REPORTE DE LABORES DIARIOS');
       lineas.push(
         `${esOperador ? 'Operador' : 'Mecánico'}: ${grupo.operador.nombre_completo}` +
-          (grupo.operador.codigo_megued ? ` · ${grupo.operador.codigo_megued}` : '')
+          (grupo.haciendaNombre ? ` · ${grupo.haciendaNombre}` : '')
       );
       if (this.hojaFechaUnica) lineas.push(`Fecha: ${this.hojaFechaUnica}`);
       lineas.push('');

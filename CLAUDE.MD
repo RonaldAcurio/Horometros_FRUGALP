@@ -2017,6 +2017,58 @@ también ahí:
   Este mismo `supervisorIdFiltro` ahora también viaja a `finalizarDia` (ver "Cierre de jornada acotado por
   hacienda" más abajo) - arreglado 2026-09-27, ya no es un tema aparte.
 
+### 4 hallazgos más probando el flujo real (2026-09-28)
+
+**1. Hoja imprimible: hacienda en vez de código del operador** (`asistencia-panel.ts`/`.html`): el encabezado de
+"Ver/Imprimir" mostraba `codigo_megued` junto al nombre (ej. "prueba1.1OF · OF12345") - dato redundante, ya vive
+en el carnet/QR del trabajador. El usuario pidió mostrar en su lugar la hacienda donde se hizo esa jornada.
+Se agregó `resolverHaciendaJornada(operador, asistencia?)`: prioriza `asistencia.haciendaPrestamo.nombre` (si
+esa jornada puntual fue de un trabajador PRESTADO, ver `hacienda_prestamo_id`) sobre
+`operador.supervisor.hacienda.nombre` (su hacienda PERMANENTE). El backend (`obtenerHistorial`) ahora anida
+`Hacienda` tanto en `operador.supervisor` (antes `attributes:[]`, sin datos reales) como en la propia
+`Asistencia` (`as: 'haciendaPrestamo'`, ya existía la asociación, nunca se usaba aquí). Corregido en los 2
+lugares que arman el texto de la hoja: el modal HTML y `generarTextoHoja()` (el resumen que se comparte nativo
+en el .apk, ver "window.print() no hace nada en WebView" más abajo) - se encontró la segunda copia al revisar,
+no la reportó el usuario todavía.
+
+**2. Dashboard: la única tarjeta de un SUPERVISOR quedaba pegada a la izquierda** (`dashboard.component.ts`/
+`.html`/`.css`): el grid de `Módulos del Sistema` es `md:grid-cols-2`, pensado para ADMIN/ASISTENTE (2
+tarjetas: Asistencia + Administración). Un SUPERVISOR/ESCANER solo ve "Asistencia" (la otra es
+`*ngIf="tieneRol('ADMIN','ASISTENTE')"`), y esa única tarjeta ocupaba solo la primera columna del grid, sin
+centrar. Se agregó la clase `cards-grid-unico` (activa con `!tieneRol('ADMIN','ASISTENTE')`) que cambia el
+layout a `flex justify-center` con la tarjeta a `max-w-sm`, solo para ese caso - el grid de 2 columnas sigue
+intacto para quien sí ve las 2 opciones.
+
+**3. Marcar salida por código ya NO vuelve a pedir el token** (`mi-jornada.ts`/`.html`, decisión explícita del
+usuario revirtiendo el diseño anterior): antes, terminar la jornada por el camino Código obligaba a volver a
+escribir el Token de Hacienda desde cero (mismo criterio documentado como "prueba presencia física" - ver
+sección "Camino A" más arriba). En la práctica el token es el mismo string compartido de toda la hacienda (ya
+tiene hasta botón de Copiar para el Supervisor, ver "Botón Copiar" más abajo), así que reescribirlo dos veces
+por jornada es puro trámite - el usuario lo reportó como pérdida de tiempo, agravado porque además tenía que
+tocar "Cerrar Jornada"/"Marcar salida" dos veces (una para llegar al formulario, otra para enviarlo). Ahora
+`tokenHaciendaUsado` guarda el token que funcionó en la entrada, y `marcarSalida()` lo reenvía SOLO
+(`intentandoSalidaAutomatica = true`, sin mostrarle el formulario, solo un "Cerrando tu jornada...") en vez de
+pedírselo de nuevo. Si el backend lo rechaza (el Supervisor generó uno nuevo, venció, o no hay conexión),
+`confirmarCodigo()` revela el formulario normal con el error puesto - ahí sí se le pide escribirlo, una sola
+vez, nunca a ciegas. El backend no cambió: sigue validando `token_hacienda` igual que siempre
+(`marcarConMiCodigo`), solo cambió QUIÉN lo escribe la segunda vez (el código, reusando el valor ya guardado,
+en vez del trabajador a mano).
+
+**4. Bug real: `marcarSalidaOlvidada` perdía las actividades ya cargadas** (`asistencia.controller.ts`): el
+usuario probó el autoservicio "Marcar salida" (cuando el cierre normal por código falló, aparentemente por
+señal, mientras hacía una demo) con actividades YA registradas en el Panel de Actividades - y en el Panel de
+Supervisor esa jornada apareció con "Sin registrar" en Actividades, como si no hubiera hecho nada. Causa real:
+a diferencia de la SALIDA normal (`procesarMarcacion`, que hace `AsistenciaActividad.bulkCreate` con las
+actividades) y de `marcarConQrSesion`/`marcarConMiCodigo` (que las derivan solas de `RegistroActividad` para no
+volver a preguntar), `marcarSalidaOlvidada` SOLO actualizaba `estado`/`hora_salida` - nunca tocaba
+`AsistenciaActividad`, sin importar cuántas labores tuviera cargadas. Se agregó el mismo patrón de derivar
+`actividadesIds` desde `RegistroActividad` de esa jornada y poblar el pivote, igual que los otros 2 caminos.
+Verificado con un script contra Postgres local (no hay test unitario para este endpoint todavía): antes del fix
+la tabla `asistencia_actividades` quedaba en 0 filas pese a tener una labor cargada, después queda en 1.
+
+Verificado con `tsc --noEmit` limpio en ambos proyectos, 27/27 tests unitarios en verde, y los puntos 1 y 4
+confirmados contra Postgres local con datos reales (no solo en el aire).
+
 ## Flujo de trabajo de esta sesión
 
 Backend: todo cambio se prueba primero contra Postgres local (`service postgresql start`, rol `postgre`/`1234`,

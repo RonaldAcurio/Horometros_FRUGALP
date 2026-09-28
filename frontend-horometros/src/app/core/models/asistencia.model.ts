@@ -10,6 +10,9 @@ export interface Operador {
     // mostrarlo), la clave nunca viaja de vuelta del backend - solo se manda al crear/resetear.
     supervisor_id?: number | null;
     usuario?: string | null;
+    // Solo viene en obtenerHistorial (hoja imprimible, asistencia-panel.ts) - la hacienda PERMANENTE del
+    // trabajador, via su Supervisor.
+    supervisor?: { hacienda_id?: number | null; hacienda?: { nombre: string } | null } | null;
 }
 
 export interface Actividad{
@@ -79,4 +82,8 @@ export interface Asistencia {
     operador?: Operador;
     actividad?: Actividad;
     actividades?: Actividad[];
+    // Trabajador prestado (ver CLAUDE.md): la hacienda donde REALMENTE trabajó ese día, si es distinta de su
+    // hacienda permanente. Solo viene en obtenerHistorial.
+    hacienda_prestamo_id?: number | null;
+    haciendaPrestamo?: { nombre: string } | null;
 }
