@@ -8,12 +8,33 @@ const TOKEN_VIGENCIA_MS = 24*60*60*1000;
 
 /*
 Lista de haciendas: la usa el Frontend para los selectores (asignar hacienda a un Usuario ESCANER/SUPERVISOR
-nuevo, elegir para cual generar el Token). Requiere JWT con rol ADMIN o SUPERVISOR (ver la ruta).
+nuevo, elegir para cual generar el Token) y para que el Supervisor vea el estado de SU PROPIO token (ver
+"miHacienda" en supervisor-panel.ts - busca su hacienda dentro de esta misma lista). Requiere JWT con rol
+ADMIN, SUPERVISOR o ASISTENTE (ver la ruta).
 */
-export const obtenerHaciendas = async(_req:Request, res:Response):Promise<void> => {
+export const obtenerHaciendas = async(req:Request, res:Response):Promise<void> => {
     try{
         const haciendas = await Hacienda.findAll({ order: [['nombre', 'ASC']] });
-        res.json(haciendas);
+
+        /*
+        token_actual/token_expira_en son un dato sensible - el Token de Hacienda es una credencial real que
+        permite marcar presencia sin QR (Camino A). Antes este endpoint devolvia esos 2 campos para TODAS las
+        haciendas sin importar quien preguntara, aunque el frontend solo mostrara la propia (bug real, mismo
+        patron que el resto de esta auditoria - restriccion solo de frontend, nada del lado del backend). Un
+        SUPERVISOR ve el token completo SOLO de su propia hacienda (lo necesita para su panel); ASISTENTE no
+        necesita ver ningun token (solo usa esta lista como selector de nombre/id al crear Usuarios). ADMIN
+        sigue viendo todo, administra cualquier hacienda.
+        */
+        const esAdmin = req.auth?.tipo === 'usuario' && req.auth.rol === 'ADMIN';
+        const propiaHaciendaId = req.auth?.tipo === 'usuario' && req.auth.rol === 'SUPERVISOR' ? req.auth.hacienda_id : null;
+
+        const resultado = haciendas.map((h) => {
+            if(esAdmin || h.id === propiaHaciendaId) return h;
+            const { token_actual, token_expira_en, ...resto } = h.toJSON();
+            return resto;
+        });
+
+        res.json(resultado);
     }catch(err){
         console.error('Error al obtener las haciendas.', err);
         res.status(500).json({ message: 'Error al obtener las haciendas.' });

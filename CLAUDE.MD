@@ -1513,10 +1513,10 @@ medias - lo admite pero no lo puede confirmar/revisar después). ADMIN/ASISTENTE
 Los 3 endpoints ahora hacen `include` del operador (para tener `supervisor_id` disponible) antes de decidir, y
 devuelven 403 si no corresponde. Verificado con `tsc --noEmit` limpio y los 27 tests unitarios en verde.
 
-**Nota para la próxima ronda:** no se revisaron TODOS los endpoints del sistema por este mismo patrón (tiempo
-limitado de esta ronda) - vale la pena una pasada específica por `equipo.controller.ts`/`actividades.controller.ts`
-(gestión de catálogos) y `usuario.controller.ts` para confirmar que ningún otro endpoint por `id` tenga el
-mismo hueco, aunque esos son de alcance ADMIN/ASISTENTE, no SUPERVISOR, así que el riesgo ahí es menor.
+~~Nota para la próxima ronda: no se revisaron TODOS los endpoints...~~ - hecho más abajo, ver "Auditoría
+completa de alcance por Supervisor (2026-09-28)": `equipo.controller.ts`/`actividades.controller.ts` son
+catálogos globales sin dimensión de hacienda (no aplica este patrón); `usuario.controller.ts` es
+ADMIN/ASISTENTE exclusivamente, sin acceso de SUPERVISOR en absoluto, así que tampoco aplicaba.
 
 ### 2 hallazgos más probando el flujo real end-to-end (2026-09-28)
 
@@ -1539,6 +1539,61 @@ operador marcado X → OBSERVANDO) y encontró 2 consecuencias reales que aún f
   revisó") aplica igual a OBSERVANDO. Como el operador de la prueba terminó en OBSERVANDO (le marcaron X), su
   jornada nunca aparecía en el Historial - y es justo el caso más importante de auditar, porque señala una
   posible marcación fraudulenta. **Arreglo:** se agregó `'OBSERVANDO'` a la lista.
+
+Verificado con `tsc --noEmit` limpio y los 27 tests unitarios en verde.
+
+### Auditoría completa de alcance por Supervisor (2026-09-28)
+
+Tras encontrar 6 hallazgos reales del mismo patrón en la misma sesión, el usuario pidió cerrar el tema de una
+vez con una pasada sistemática por TODO el backend (no otro endpoint a la vez, encontrado por casualidad al
+probar), en vez de una solución de base de datos tipo Row-Level Security de Postgres - se descartó esa opción
+por el riesgo de fugas de contexto entre requests en un pool de conexiones reutilizadas (Sequelize + pg-pool)
+y porque un futuro desarrollador/comprador de este sistema tendría que aprender RLS para tocar cualquier
+cosa relacionada con permisos, un costo que no se justifica para el tamaño de este proyecto. Se hizo la pasada
+completa por cada ruta accesible a SUPERVISOR (`grep -rn "SUPERVISOR" src/routes/*.ts`) y sus controllers.
+
+**Reglas de negocio confirmadas con el usuario antes de auditar (referencia para cualquier cambio futuro):**
+el flujo completo es Supervisor genera/no-genera Token → trabajador entra con Token o QR → agrega actividades →
+termina jornada → el Supervisor ve solo lo de su propia hacienda, confirma O/X, pone observaciones y cierra
+jornada (todo acotado a su hacienda) → al cerrar, ese reporte se congela y pasa al Panel de Asistente. Los
+Supervisores NO cierran todos a la vez - cada uno en su momento, y le va llegando al Asistente uno por uno. Hoy
+1 Supervisor = 1 hacienda (ya no hay plan de soportar más de una por ahora, decisión explícita de una ronda
+anterior).
+
+**Ya estaba bien resuelto, sin necesidad de tocar nada** (el usuario preguntó específicamente por esto):
+- La restricción "1 Supervisor por hacienda" ya existe a nivel de base de datos: índice único parcial
+  `usuarios_hacienda_id_supervisor_unico` (`WHERE cargo = 'SUPERVISOR'`, migración
+  `20260921060000-cargo-escaner-y-unique-parcial-hacienda.js`) - crear un segundo Supervisor con la misma
+  hacienda choca contra ese índice y `crearUsuario` ya responde 409 con un mensaje claro.
+- `generarTokenHacienda`/`invalidarToken` (`hacienda.controller.ts`) ya comparaban `req.auth.hacienda_id` contra
+  la hacienda del parámetro - de los pocos endpoints que sí quedaron bien acotados desde el principio.
+- `marcarConQrSesion`/`admitirTrabajadorExterno` (Camino B, trabajador prestado) - correctos por diseño: el
+  escaneo físico o la admisión manual SON la prueba de presencia, no necesitan chequear "pertenencia" de la
+  misma forma que un dato que se edita después.
+
+**2 hallazgos nuevos, arreglados en esta ronda:**
+- **`registro_actividad.controller.ts`** (crear/finalizar/ver labores del Panel de Actividades): tenía su
+  propio chequeo centralizado (`puedeOperarSobre`, buen patrón) pero trataba a SUPERVISOR igual que
+  ADMIN/ASISTENTE - sin ningún filtro de hacienda. Un Supervisor podía ver, crear y finalizar labores de
+  operadores de OTRO Supervisor con solo conocer un `asistencia_id`. **Arreglo:** se separó en 2 funciones -
+  `puedeOperarSobreAsistencia` (para los 3 endpoints que operan sobre UNA jornada puntual: valida
+  `operador.supervisor_id` O `hacienda_prestamo_id` de esa asistencia, mismo criterio que
+  `tienePermisoSupervisorSobreAsistencia` en `asistencia.controller.ts`) y `puedeVerHistorialDeOperador` (para
+  `obtenerRegistrosPorOperador`, el historial completo del reporte imprimible - a propósito NO cuenta
+  `hacienda_prestamo_id`: prestar a alguien un día no debería dar acceso a su historial laboral completo en
+  otras haciendas).
+- **`obtenerHaciendas`** (`hacienda.controller.ts`, lista usada por los 3 selectores del frontend): devolvía
+  `token_actual`/`token_expira_en` de TODAS las haciendas a cualquiera con acceso a la ruta (ADMIN, SUPERVISOR,
+  ASISTENTE), aunque el frontend solo mostrara la propia - el Token de Hacienda es una credencial real
+  (permite marcar presencia sin QR), así que esto era una fuga real de un dato sensible entre haciendas.
+  **Arreglo:** ADMIN sigue viendo todo; un SUPERVISOR ve el token completo solo de su propia hacienda (lo
+  necesita para su panel) y el resto de la lista le llega sin esos 2 campos; ASISTENTE nunca los ve (no los
+  necesita, solo usa la lista como selector de nombre/id).
+
+**Fuera de alcance de esta ronda, anotado para la próxima si hace falta:** `usuario.controller.ts` permite a
+ASISTENTE resetear la clave de CUALQUIER usuario, incluido ADMIN - es una preocupación real pero de una
+categoría distinta (jerarquía de roles, no alcance por hacienda), no se tocó porque no era lo que el usuario
+pidió auditar esta vez.
 
 Verificado con `tsc --noEmit` limpio y los 27 tests unitarios en verde.
 

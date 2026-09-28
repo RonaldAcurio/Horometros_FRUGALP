@@ -5,18 +5,46 @@ import { Asistencia } from "../models/asistencias";
 import { Equipo } from "../models/equipo";
 import { Actividad } from "../models/actividad";
 import { Seccion } from "../models/seccion";
+import { Operador } from "../models/operador";
 import { horaEsAnteriorARegistrosPrevios } from "../utils/validar-orden-horas";
 
-const ROLES_OFICINA = ['ADMIN','ASISTENTE','SUPERVISOR'];
 /*
-Un Mecanico/Operador solo puede tocar su PROPIA jornada. UN rol de oficina (Admin/ Asistente/Supervisor) puede tocar cualquiera
-(correciones, revision). Centralizado aqui porque los 3 endpoint de abajo repiten la misma regla
+Un Mecanico/Operador solo puede tocar su PROPIA jornada. ADMIN/ASISTENTE pueden tocar cualquiera (correcciones,
+revision). Un SUPERVISOR real SOLO sobre sus propios operadores (o un trabajador prestado que el mismo admitio
+hoy, ver hacienda_prestamo_id) - antes se trataba igual que ADMIN/ASISTENTE, sin ningun chequeo de hacienda
+(bug real de la misma auditoria de alcance que ya encontro y confirmo el usuario en asistencia.controller.ts:
+un Supervisor podia ver/crear/finalizar labores de operadores de OTRO Supervisor con solo conocer el
+asistencia_id). Recibe el objeto Asistencia completo (no solo el operador_id) porque necesita
+hacienda_prestamo_id para el caso del trabajador prestado - mismo criterio que
+tienePermisoSupervisorSobreAsistencia en asistencia.controller.ts.
 */
-
-const puedeOperarSobre = (req:Request, operadorIdDeLaAsistencia:number):boolean =>{
+const puedeOperarSobreAsistencia = async (req:Request, asistencia: Asistencia): Promise<boolean> => {
     if(!req.auth) return false;
-    if(ROLES_OFICINA.includes(req.auth.rol)) return true;
-    return req.auth.tipo === 'operador' && req.auth.id === operadorIdDeLaAsistencia;
+    if(req.auth.tipo === 'operador') return req.auth.id === asistencia.operador_id;
+    if(req.auth.rol === 'ADMIN' || req.auth.rol === 'ASISTENTE') return true;
+    if(req.auth.rol === 'SUPERVISOR'){
+        if(asistencia.hacienda_prestamo_id !== null && asistencia.hacienda_prestamo_id === req.auth.hacienda_id) return true;
+        const operador = await Operador.findByPk(asistencia.operador_id, { attributes: ['supervisor_id'] });
+        return operador?.supervisor_id === req.auth.id;
+    }
+    return false;
+}
+
+/*
+Chequeo de alcance PERMANENTE sobre un operador (no una jornada puntual) - lo usa obtenerRegistrosPorOperador
+(historial completo a traves de varias jornadas, "Ver/Imprimir" del Panel de Asistente). Un trabajador
+prestado NO cuenta aqui a proposito: prestarlo por un dia no deberia darle a ese Supervisor acceso al
+historial de TODA la vida laboral del operador en otras haciendas.
+*/
+const puedeVerHistorialDeOperador = async (req:Request, operadorId: number): Promise<boolean> => {
+    if(!req.auth) return false;
+    if(req.auth.tipo === 'operador') return req.auth.id === operadorId;
+    if(req.auth.rol === 'ADMIN' || req.auth.rol === 'ASISTENTE') return true;
+    if(req.auth.rol === 'SUPERVISOR'){
+        const operador = await Operador.findByPk(operadorId, { attributes: ['supervisor_id'] });
+        return operador?.supervisor_id === req.auth.id;
+    }
+    return false;
 }
 
 //Crear una nueva labor dentro de la jornada abierta del trabajador (Panel de Actividades)
@@ -49,7 +77,7 @@ export const crearRegistroActividad = async(req:Request, res:Response):Promise<v
             return;
         }
 
-        if(!puedeOperarSobre(req, asistencia.operador_id)){
+        if(!(await puedeOperarSobreAsistencia(req, asistencia))){
             res.status(403).json({ message:'No puedes registrar actividades en la jornada de otro trabajador.'});
             return;
         }
@@ -128,7 +156,7 @@ export const finalizarRegistroActividad = async(req:Request, res:Response):Promi
         }
 
         const asistencia = await Asistencia.findByPk(registro.asistencia_id);
-        if(!asistencia || !puedeOperarSobre(req, asistencia.operador_id)){
+        if(!asistencia || !(await puedeOperarSobreAsistencia(req, asistencia))){
             res.status(403).json({ message:'No puedes modificar la actividad de otro trabajador.'});
             return;
         }
@@ -182,7 +210,7 @@ export const obtenerRegistrosPorAsistencia = async (req:Request, res:Response):P
             res.status(404).json({ message:'La jornada indicada no existe.'});
             return;
         }
-        if(!puedeOperarSobre(req, asistencia.operador_id)){
+        if(!(await puedeOperarSobreAsistencia(req, asistencia))){
             res.status(403).json({ message:'No puedes ver las actividades de otro trabajador.'});
             return;
         }
@@ -221,7 +249,7 @@ export const obtenerRegistrosPorOperador = async (req:Request, res:Response):Pro
             res.status(400).json({ message:'El parametro operador_id es obligatorio.'});
             return;
         }
-        if(!puedeOperarSobre(req, Number(operadorId))){
+        if(!(await puedeVerHistorialDeOperador(req, Number(operadorId)))){
             res.status(403).json({ message:'No puedes ver las actividades de otro trabajador.'});
             return;
         }
