@@ -218,8 +218,8 @@ export class AsistenciaService {
     }
 
     // GET -> /api/asistencia/mi-estado (el propio Operador consulta si ya tiene jornada EN_JORNADA hoy)
-    obtenerMiEstado(): Observable<{ en_jornada: boolean; asistencia_id: number | null }> {
-        return this.http.get<{ en_jornada: boolean; asistencia_id: number | null }>(`${this.baseUrl}/mi-estado`);
+    obtenerMiEstado(): Observable<{ en_jornada: boolean; asistencia_id: number | null; es_prestamo: boolean }> {
+        return this.http.get<{ en_jornada: boolean; asistencia_id: number | null; es_prestamo: boolean }>(`${this.baseUrl}/mi-estado`);
     }
 
     // POST -> /api/asistencia/marcar-qr-sesion (Camino B paso 2: SUPERVISOR/ESCANER escanean el QR de jornada)

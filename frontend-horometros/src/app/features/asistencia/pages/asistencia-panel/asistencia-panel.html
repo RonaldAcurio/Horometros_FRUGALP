@@ -545,7 +545,7 @@
               <th>OT</th>
               <th>Observaciones</th>
               <th>Tiempo estimado</th>
-              <th>Taller/Campo</th>
+              <th>Hora</th>
             </tr>
           </thead>
           <tbody>
@@ -555,7 +555,7 @@
               <td>{{ reg.area || '—' }}</td>
               <td>{{ reg.observaciones || '—' }}</td>
               <td>{{ duracionLabor(reg) }}</td>
-              <td>{{ reg.actividad?.categoria || '—' }}</td>
+              <td>{{ rangoHorasLabor(reg) }}</td>
             </tr>
             <tr *ngIf="grupo.registros.length === 0">
               <td [attr.colspan]="hojaFechaUnica ? 5 : 6" class="hoja-actividades-vacio">Sin labores registradas.</td>

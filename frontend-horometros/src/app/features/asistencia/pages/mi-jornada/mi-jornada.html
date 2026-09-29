@@ -64,14 +64,27 @@
           [disabled]="marcandoSalidaOlvidada"
           (click)="marcarMiSalidaOlvidada()"
         >¿No tienes el código o no puedes volver? Marcar salida</button>
+
+        <!-- Solo para ENTRADA (!asistenciaId): el trabajador está físicamente en OTRA hacienda hoy, no en la
+             suya - el código de su hacienda propia no le sirve ahí (ver CLAUDE.md, "otra hacienda"). -->
+        <button
+          *ngIf="!asistenciaId"
+          type="button"
+          class="btn-link-salida"
+          (click)="marcarOtraHacienda()"
+        >¿Hoy trabajas en otra hacienda? Muestra tu QR</button>
       </ng-template>
     </ng-template>
   </div>
 
-  <!-- FASE: QR FLOTANTE (hacienda sin código activo) -->
+  <!-- FASE: QR FLOTANTE (hacienda sin código activo, o "otra hacienda" desde el código) -->
   <div class="card jornada-card" *ngIf="fase === 'qr'">
     <h2 class="jornada-title">📱 Muestra este código</h2>
-    <p class="jornada-subtitle">Pide a tu supervisor o al punto de control que escanee este QR para registrar tu marca.</p>
+    <p class="jornada-subtitle">
+      {{ enOtraHacienda
+        ? 'Pide a quien te recibe hoy (Supervisor o Escáner de esa hacienda) que escanee este QR.'
+        : 'Pide a tu supervisor o al punto de control que escanee este QR para registrar tu marca.' }}
+    </p>
     <div class="qr-flotante-box" *ngIf="qrCodeUrl">
       <img [src]="qrCodeUrl" class="qr-flotante-img" alt="Tu código QR">
     </div>
@@ -85,6 +98,15 @@
       [disabled]="marcandoSalidaOlvidada"
       (click)="marcarMiSalidaOlvidada()"
     >¿No puedes llegar a un punto de control? Marcar salida</button>
+
+    <!-- Volver al formulario de código normal (solo tiene sentido si llegó aquí por "otra hacienda" - un
+         trabajador de QR normal no tiene código al que volver). -->
+    <button
+      *ngIf="enOtraHacienda && !asistenciaId"
+      type="button"
+      class="btn-link-salida"
+      (click)="volverAFormularioCodigo()"
+    >Volver a marcar con código</button>
   </div>
 
   <!-- FASE: PANEL DE ACTIVIDADES (ya escaneado, jornada abierta) -->

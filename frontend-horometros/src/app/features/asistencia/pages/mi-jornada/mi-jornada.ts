@@ -58,6 +58,23 @@ export class MiJornada implements OnInit, OnDestroy {
   segundosRestantes = 90;
   private intervaloQr?: ReturnType<typeof setInterval>;
   private cuentaRegresiva?: ReturnType<typeof setInterval>;
+  /*
+  "¿Hoy trabajas en otra hacienda?" (pedido del usuario, 2026-09-29): un trabajador cuya hacienda PROPIA usa
+  Token normalmente nunca ve esta pantalla de QR (su camino queda fijo en 'codigo' desde el login) - esto le
+  da una salida deliberada para el día en que de verdad está prestado en otra hacienda: en vez de escribir un
+  código, muestra SU MISMO QR de siempre para que el Supervisor/Escáner de ESA hacienda lo escanee (mismo
+  mecanismo ya usado y probado en el Camino B normal, ver marcarConQrSesion/hacienda_prestamo_id - no se
+  inventa nada nuevo del lado de seguridad, la prueba de presencia la sigue dando quien escanea, no el
+  trabajador solo).
+  */
+  enOtraHacienda = false;
+  /*
+  Si la jornada de HOY ya quedó abierta por préstamo (vino por el flujo de arriba), la SALIDA también tiene que
+  volver a pedir el QR de la hacienda prestada, nunca el código de su hacienda propia - se sincroniza desde el
+  backend (obtenerMiEstado) en vez de depender solo de `enOtraHacienda` en memoria, porque ese flag se perdería
+  si recarga la página a mitad de la jornada.
+  */
+  private esPrestamoHoy = false;
 
   // --- Fase actividades ---
   asistenciaId: number | null = null;
@@ -142,6 +159,7 @@ export class MiJornada implements OnInit, OnDestroy {
       next: (res) => {
         if (res.en_jornada) {
           this.asistenciaId = res.asistencia_id;
+          this.esPrestamoHoy = res.es_prestamo;
           /*
           Jornada YA abierta (entrada nueva o refresco de pagina, código o QR): siempre al Panel de Actividades.
           La salida es una accion explicita del trabajador (boton "Marcar salida"), no algo que se infiera solo
@@ -309,11 +327,14 @@ export class MiJornada implements OnInit, OnDestroy {
           mitad de eso.
           */
           this.asistenciaId = res.asistencia_id;
+          this.esPrestamoHoy = res.es_prestamo;
           if (this.fase === 'qr' || this.fase === 'cargando') this.entrarAActividades();
         } else if (!res.en_jornada && this.asistenciaId) {
           // Recien lo escanearon para la SALIDA (ya tenia una jornada abierta).
           this.mensajeFinal = 'Tu salida fue registrada. ¡Hasta luego!';
           this.fase = 'terminado';
+          this.enOtraHacienda = false;
+          this.esPrestamoHoy = false;
           this.detenerIntervalos();
           this.cdr.detectChanges();
         }
@@ -591,16 +612,19 @@ export class MiJornada implements OnInit, OnDestroy {
   }
 
   /*
-  Termina la jornada desde el Panel de Actividades - el camino depende de cómo entró el trabajador: QR vuelve a
-  mostrar el QR flotante para que lo escaneen (prueba presencia física de nuevo, no hay forma de saltárselo).
-  Código YA NO vuelve a pedir el token a mano (pedido explícito del usuario, 2026-09-28): es el mismo token
-  compartido de la hacienda que ya se usó en la entrada, así que se reenvía solo (ver tokenHaciendaUsado) sin
-  mostrarle el formulario - si el backend lo rechaza, confirmarCodigo() revela el formulario con el error (ver
-  ahí). Las actividades se derivan solas de lo ya cargado en el Panel, sin checklist (ver
-  confirmarCodigo/backend). Nunca se mezclan los dos caminos dentro de una misma jornada.
+  Termina la jornada desde el Panel de Actividades - el camino depende de cómo entró el trabajador:
+  - Si la jornada de hoy es de PRÉSTAMO (esPrestamoHoy, entró vía "¿Hoy trabajas en otra hacienda?" más abajo),
+    SIEMPRE vuelve a mostrar el QR, aunque su hacienda propia use código - tiene que salir por donde entró (que
+    lo escaneen de nuevo en la hacienda prestada), nunca por el código de su hacienda propia, que ni siquiera
+    aplica ese día.
+  - Si no es préstamo y requiere código: YA NO vuelve a pedir el token a mano (pedido explícito del usuario,
+    2026-09-28) - se reenvía solo con el que ya funcionó en la entrada (ver tokenHaciendaUsado); si el backend
+    lo rechaza, confirmarCodigo() revela el formulario con el error.
+  - Si no requiere código (QR normal, sin préstamo): vuelve a mostrar el QR flotante de siempre.
+  Las actividades se derivan solas de lo ya cargado en el Panel, sin checklist, en los 3 casos.
   */
   marcarSalida(): void {
-    if (this.requiereCodigo) {
+    if (this.requiereCodigo && !this.esPrestamoHoy) {
       this.fase = 'codigo';
       this.errorCodigo = '';
       this.preguntandoJornadaAmbigua = false;
@@ -614,6 +638,8 @@ export class MiJornada implements OnInit, OnDestroy {
         this.codigoIngresado = '';
       }
     } else {
+      // Si está saliendo de un préstamo (esPrestamoHoy), el subtítulo del QR también lo aclara.
+      this.enOtraHacienda = this.esPrestamoHoy;
       this.mostrarQrDeSalida();
     }
   }
@@ -623,6 +649,29 @@ export class MiJornada implements OnInit, OnDestroy {
   private mostrarQrDeSalida(): void {
     this.fase = 'qr';
     this.iniciarFlujoQr();
+  }
+
+  /*
+  "¿Hoy trabajas en otra hacienda?" (pantalla de código, solo para ENTRADA): en vez de pedirle un token que no
+  tiene (el de su hacienda propia no sirve en otra hacienda, y la hacienda destino puede no tener token
+  siquiera), le muestra su propio QR de siempre - lo escanea el Supervisor/Escáner de la hacienda donde de
+  verdad está hoy, con el mismo mecanismo ya probado del Camino B (marcarConQrSesion detecta el préstamo solo,
+  ver CLAUDE.md).
+  */
+  marcarOtraHacienda(): void {
+    this.enOtraHacienda = true;
+    this.iniciarFlujoQr();
+  }
+
+  // Por si tocó "otra hacienda" sin querer: vuelve al formulario de código normal, sin tocar el polling de
+  // mi-estado (ese sigue corriendo igual en las 2 fases).
+  volverAFormularioCodigo(): void {
+    this.enOtraHacienda = false;
+    if (this.intervaloQr) clearInterval(this.intervaloQr);
+    if (this.cuentaRegresiva) clearInterval(this.cuentaRegresiva);
+    this.fase = 'codigo';
+    this.codigoIngresado = '';
+    this.errorCodigo = '';
   }
 
   marcandoSalidaOlvidada = false;

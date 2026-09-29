@@ -509,6 +509,19 @@ export class AsistenciaPanel implements OnInit{
     return horas > 0 ? `${horas}h ${resto}min` : `${resto}min`;
   }
 
+  /*
+  Reemplaza la columna "Taller/Campo" de la hoja imprimible (pedido del usuario, 2026-09-29): esa columna
+  mostraba `actividad.categoria`, un dato FIJO del catálogo (lo define el Asistente al crear la Actividad, no
+  algo que el Mecánico escriba por labor) - "Tiempo estimado" ya muestra la duración, pero nunca a qué hora
+  empezó/terminó cada labor. hora_inicio/hora_fin ya viven en cada RegistroActividad (ver Panel de Actividades).
+  */
+  rangoHorasLabor(reg: RegistroActividad): string {
+    const formato = (iso: string) => new Date(iso).toLocaleTimeString('es-EC', {
+      timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit', hour12: false,
+    });
+    return `${formato(reg.hora_inicio)} - ${reg.hora_fin ? formato(reg.hora_fin) : '—'}`;
+  }
+
   // Hacienda a mostrar junto al nombre en la hoja imprimible (reemplaza el codigo_megued, que ya se repite en
   // el carnet/QR - ver CLAUDE.md). Prioriza la hacienda de PRÉSTAMO de esa jornada puntual (si la asistencia la
   // tiene, ver hacienda_prestamo_id) sobre la hacienda PERMANENTE del operador (vía su Supervisor).
@@ -584,7 +597,8 @@ export class AsistenciaPanel implements OnInit{
             ? `Horómetro ${reg.horometro_inicio ?? '—'} → ${reg.horometro_final ?? '—'}`
             : `OT ${reg.area || '—'}`;
           const observaciones = reg.observaciones ? ` | ${reg.observaciones}` : '';
-          lineas.push(`${fecha}${equipo} | ${detalle} | ${this.duracionLabor(reg)}${observaciones}`);
+          const horas = esOperador ? '' : ` | ${this.rangoHorasLabor(reg)}`;
+          lineas.push(`${fecha}${equipo} | ${detalle} | ${this.duracionLabor(reg)}${horas}${observaciones}`);
         }
       }
 

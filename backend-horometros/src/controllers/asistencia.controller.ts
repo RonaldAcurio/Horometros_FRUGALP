@@ -785,12 +785,20 @@ export const obtenerMiEstado = async(req:Request, res:Response):Promise<void> =>
         const hoy = getFetchLocalEcuador();
         const asistenciaHoy = await Asistencia.findOne({
             where: { operador_id: req.auth.id, fecha: hoy },
-            attributes: ['id', 'estado'],
+            attributes: ['id', 'estado', 'hacienda_prestamo_id'],
         });
         const enJornada = asistenciaHoy?.estado === 'EN_JORNADA';
         res.json({
             en_jornada: enJornada,
             asistencia_id: enJornada ? asistenciaHoy!.id : null,
+            /*
+            "Hoy trabajas en otra hacienda" (mi-jornada.ts): si la jornada abierta ya quedo marcada como
+            prestamo (por haber entrado via el QR de otra hacienda, ver marcarConQrSesion), la SALIDA tiene que
+            volver a pedir el QR de esa misma hacienda prestada, nunca el codigo de SU hacienda propia - aunque
+            su hacienda propia use Token. Sin esto, el frontend no tendria forma de saberlo al recargar la
+            pagina (el flag en memoria de "vino por prestamo" se pierde en un refresh).
+            */
+            es_prestamo: enJornada ? !!asistenciaHoy!.hacienda_prestamo_id : false,
         });
     }catch(err){
         console.error('Error al consultar tu estado.', err);

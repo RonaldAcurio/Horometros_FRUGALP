@@ -2069,6 +2069,70 @@ la tabla `asistencia_actividades` quedaba en 0 filas pese a tener una labor carg
 Verificado con `tsc --noEmit` limpio en ambos proyectos, 27/27 tests unitarios en verde, y los puntos 1 y 4
 confirmados contra Postgres local con datos reales (no solo en el aire).
 
+### Hoja imprimible del MECÁNICO: columna "Hora" en vez de "Taller/Campo" (2026-09-29)
+
+El usuario pensaba que "Taller"/"Campo" era algo que el propio Mecánico escribía como parte de sus
+Observaciones - en realidad `actividad.categoria` es un dato FIJO del catálogo (lo define el Asistente/Admin al
+crear esa Actividad en "Gestión de Equipo/Actividad", con `TALLER` como valor por defecto del formulario), no
+algo que varíe labor por labor. Como nadie había estado cambiando ese valor al crear actividades, la columna
+mostraba siempre "TALLER" y parecía un bug. Además, el usuario notó que "Tiempo estimado" ya muestra CUÁNTO
+duró la labor, pero nunca A QUÉ HORA empezó/terminó. Se reemplazó la columna "Taller/Campo" por "Hora"
+(`rangoHorasLabor(reg)`, nuevo método - formatea `hora_inicio`/`hora_fin` como `HH:MM - HH:MM` en zona horaria
+de Ecuador, mismo criterio que el resto de horas mostradas al usuario) - "Tiempo estimado" se queda igual, así
+que ahora se ve tanto la duración como el rango real. Solo afecta la tabla del MECÁNICO (la del OPERADOR ya
+tiene sus propias columnas de Horómetro, sin Taller/Campo). Se corrigió también en el resumen que se comparte
+nativo en el .apk (`generarTextoHoja`), agregando el mismo rango de horas ahí.
+
+### Hueco real en el préstamo de trabajador por Código, y su arreglo: "¿Hoy trabajas en otra hacienda?" (2026-09-29)
+
+**El hallazgo, investigado a pedido del usuario antes de una reunión con el gerente de finanzas:** el préstamo
+de trabajador (`hacienda_prestamo_id`) hoy solo funciona de verdad por UN camino - el QR escaneado por un
+Supervisor/Escáner (`marcarConQrSesion`), que calcula el préstamo comparando la hacienda de quien escanea
+contra la hacienda propia del trabajador, sin depender de nada que el trabajador haya elegido él mismo.
+
+El camino Código autenticado (`marcarConMiCodigo`, la pantalla real "mi jornada" que usan los trabajadores) NO
+tiene ninguna detección de préstamo - valida el token escrito contra `hacienda.token_actual` de
+`req.auth.hacienda_id`, que es la hacienda PROPIA del trabajador, fija desde el login, sin importar en qué
+hacienda esté físicamente ese día. Si su hacienda propia usa Token, su pantalla SIEMPRE muestra el formulario
+de código (nunca QR) - así que si ese día está prestado en otra hacienda (use o no Token esa otra hacienda), no
+hay forma de que se registre ahí correctamente: si escribe el token de su propia hacienda, se registra bajo
+ESA hacienda (nunca bajo donde de verdad está); si escribe el token de la hacienda destino, el backend lo
+rechaza como inválido (compara contra la hacienda equivocada). Existe un endpoint público
+`marcarConCodigo` que SÍ detecta préstamo (busca la hacienda dueña del token en vez de asumir una fija), pero
+no tiene ninguna pantalla en el frontend que lo use - queda muerto del lado de la app.
+
+**Opciones descartadas explícitamente (decisión del usuario):**
+- Que `marcarConMiCodigo` acepte el token de CUALQUIER hacienda (como el endpoint público) - el usuario lo
+  rechazó de entrada por ser una vulnerabilidad: cualquiera que supiera el token de otra hacienda podría
+  autoadmitirse ahí sin ninguna verificación real.
+- Un botón "MIGRAR" que el propio trabajador use para reasignarse a otra hacienda desde un selector - también
+  rechazado: sería el propio trabajador reclamando "hoy trabajo aquí" sin que nadie de esa hacienda lo
+  confirme (mismo problema de fondo), y la idea de que fuera "temporal" no aplica en la práctica -
+  `operador.supervisor_id` es un campo PERMANENTE, cambiarlo ahí dejaría al trabajador mal-asignado hasta que
+  alguien lo revirtiera a mano, corrompiendo justo el campo que toda la auditoría de alcance por Supervisor de
+  esta sesión protege.
+
+**Solución implementada:** en la pantalla de código (solo para ENTRADA, `!asistenciaId`), nuevo botón
+"¿Hoy trabajas en otra hacienda? Muestra tu QR" (`marcarOtraHacienda()`) - en vez de pedirle un token, le
+muestra SU MISMO QR de siempre (mismo `generarMiQr`/fase `qr` que ya usa el Camino B normal). Quien lo recibe
+ese día (Supervisor o Escáner de la hacienda destino, con su propia cuenta) lo escanea con el mecanismo YA
+existente y YA probado (`marcarConQrSesion`) - la prueba de presencia la sigue dando quien escanea, nunca el
+trabajador solo, así que no se repite ninguno de los 2 huecos de seguridad de las ideas descartadas. No hace
+falta pantalla nueva ni endpoint nuevo para el escaneo en sí - solo se le da al trabajador con hacienda-código
+una forma de LLEGAR a esa pantalla de QR que antes no tenía.
+
+**Bug real que había que cerrar para que esto funcione en la SALIDA, no solo en la entrada:** una vez que la
+jornada de hoy quedó abierta por préstamo, `marcarSalida()` tiene que volver a mostrar el QR (para que lo
+vuelvan a escanear en la hacienda prestada), NUNCA el código de su hacienda propia - aunque su hacienda propia
+siga usando Token. El frontend no puede confiar solo en un flag en memoria (`enOtraHacienda` se perdería si
+recarga la página a mitad de la jornada), así que `obtenerMiEstado` (`GET /api/asistencia/mi-estado`) ahora
+también devuelve `es_prestamo: boolean` (derivado de `asistencia.hacienda_prestamo_id` de la jornada abierta de
+hoy) - el frontend lo guarda (`esPrestamoHoy`) tanto en la consulta inicial como en cada poll de 5s, y
+`marcarSalida()` decide el camino con `if (requiereCodigo && !esPrestamoHoy)` en vez de solo `if (requiereCodigo)`.
+
+Verificado con `tsc --noEmit` limpio en ambos proyectos, 27/27 tests unitarios en verde, y `es_prestamo` (los 2
+casos, con y sin `hacienda_prestamo_id`) confirmado con un script contra Postgres local con datos reales.
+
 ## Flujo de trabajo de esta sesión
 
 Backend: todo cambio se prueba primero contra Postgres local (`service postgresql start`, rol `postgre`/`1234`,
