@@ -43,6 +43,12 @@ export class RegistroActividadService {
         return this.http.delete<{ message: string }>(`${environment.apiUrl}/equipos/${id}`);
     }
 
+    // POST -> /api/equipos/importar - importación masiva desde Excel (botón "Importar", pestaña "Equipo").
+    // 'rechazados' trae fila por fila (numeradas como en el Excel, encabezado = fila 1) qué se descartó y por qué.
+    importarEquipos(items: { codigo_megued: string; nombre_equipo: string }[]): Observable<{ creados: number; rechazados: { fila: number; motivo: string }[] }> {
+        return this.http.post<{ creados: number; rechazados: { fila: number; motivo: string }[] }>(`${environment.apiUrl}/equipos/importar`, { items });
+    }
+
     obtenerPorAsistencia(asistenciaId: number): Observable<RegistroActividad[]> {
         return this.http.get<RegistroActividad[]>(`${this.baseUrl}?asistencia_id=${asistenciaId}`);
     }

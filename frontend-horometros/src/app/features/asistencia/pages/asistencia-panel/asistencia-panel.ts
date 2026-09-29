@@ -16,6 +16,13 @@ import { CommonModule } from '@angular/common';
 import { VisorFoto } from '../../components/visor-foto/visor-foto';
 import { NotificacionService } from '../../../../core/services/notificacion.service';
 import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
+import { leerFilasExcel, descargarPlantillaExcel } from '../../../../core/utils/excel-importar.util';
+
+// Respuesta de los endpoints /equipos/importar y /actividad/importar (ver equipo.controller.ts/actividades.controller.ts).
+interface ResultadoImportacion {
+  creados: number;
+  rechazados: { fila: number; motivo: string }[];
+}
 
 @Component({
   standalone:true,
@@ -144,6 +151,24 @@ export class AsistenciaPanel implements OnInit{
   private debounceActividadesTab?: ReturnType<typeof setTimeout>;
   actividadEditando: Actividad | null = null;
   formActividad: { codigo_megued: string; description: string; categoria: 'TALLER' | 'CAMPO' } = { codigo_megued: '', description: '', categoria: 'TALLER' };
+
+  /*
+  "Importar desde Excel" (Equipo/Actividad, pedido del usuario 2026-09-29: tienen 300+ equipos y cargarlos uno
+  por uno "se van a comer la camisa"). Mismo modal/flujo para ambos catálogos, cada uno con su propio estado
+  para no mezclar un import a medias de uno con el del otro si el usuario cambia de pestaña. El parseo del
+  .xlsx vive en el navegador (ver excel-importar.util.ts) - lo que se manda al backend ya es JSON.
+  */
+  mostrarModalImportarEquipo = false;
+  importandoEquipos = false;
+  errorImportarEquipo = '';
+  filasParaImportarEquipo: { codigo_megued: string; nombre_equipo: string }[] = [];
+  resultadoImportarEquipo: ResultadoImportacion | null = null;
+
+  mostrarModalImportarActividad = false;
+  importandoActividades = false;
+  errorImportarActividad = '';
+  filasParaImportarActividad: { codigo_megued: string; description: string; categoria: string }[] = [];
+  resultadoImportarActividad: ResultadoImportacion | null = null;
 
   constructor(
     private asistenciaService: AsistenciaService,
@@ -896,6 +921,137 @@ export class AsistenciaPanel implements OnInit{
       },
       error: (err) => {
         this.notificacionService.error(err.error?.message || 'Error al eliminar la actividad.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  // ==================== IMPORTAR DESDE EXCEL (Equipo/Actividad) ====================
+
+  abrirModalImportarEquipo(): void {
+    this.mostrarModalImportarEquipo = true;
+    this.filasParaImportarEquipo = [];
+    this.resultadoImportarEquipo = null;
+    this.errorImportarEquipo = '';
+  }
+
+  cerrarModalImportarEquipo(): void {
+    this.mostrarModalImportarEquipo = false;
+  }
+
+  descargarPlantillaEquipos(): void {
+    descargarPlantillaExcel('plantilla-equipos.xlsx', 'Equipos', ['Código Megued', 'Nombre del Equipo']);
+  }
+
+  // Lee el .xlsx elegido y lo deja en 'filasParaImportarEquipo' como vista previa - todavía no manda nada al
+  // backend (eso lo hace confirmarImportarEquipos, un paso aparte a propósito para que el usuario vea CUÁNTAS
+  // filas se leyeron antes de confirmar).
+  async onArchivoEquiposSeleccionado(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const archivo = input.files?.[0];
+    if (!archivo) return;
+
+    this.errorImportarEquipo = '';
+    this.resultadoImportarEquipo = null;
+    try {
+      const filas = await leerFilasExcel<{ codigo_megued: string; nombre_equipo: string }>(archivo, [
+        { clave: 'codigo_megued', encabezados: ['codigo megued', 'codigo', 'codigo_megued'] },
+        { clave: 'nombre_equipo', encabezados: ['nombre del equipo', 'nombre equipo', 'nombre', 'nombre_equipo'] },
+      ]);
+      this.filasParaImportarEquipo = filas;
+      if (filas.length === 0) {
+        this.errorImportarEquipo = 'No se encontraron filas con datos - revisa que uses la plantilla y que las columnas tengan esos mismos encabezados.';
+      }
+    } catch {
+      this.errorImportarEquipo = 'No se pudo leer el archivo. Asegúrate de que sea un .xlsx o .xls válido.';
+    } finally {
+      // Permite volver a elegir el MISMO archivo (ej. después de corregirlo) sin que el navegador ignore el cambio.
+      input.value = '';
+      this.cdr.detectChanges();
+    }
+  }
+
+  confirmarImportarEquipos(): void {
+    if (this.filasParaImportarEquipo.length === 0) return;
+
+    this.importandoEquipos = true;
+    this.registroActividadService.importarEquipos(this.filasParaImportarEquipo).subscribe({
+      next: (res) => {
+        this.importandoEquipos = false;
+        this.resultadoImportarEquipo = res;
+        this.filasParaImportarEquipo = [];
+        if (res.creados > 0) {
+          this.notificacionService.exito(`${res.creados} equipo(s) importado(s) con éxito.`);
+          this.cargarPaginaEquiposTab();
+        }
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.importandoEquipos = false;
+        this.notificacionService.error(err.error?.message || 'Error al importar los equipos.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  abrirModalImportarActividad(): void {
+    this.mostrarModalImportarActividad = true;
+    this.filasParaImportarActividad = [];
+    this.resultadoImportarActividad = null;
+    this.errorImportarActividad = '';
+  }
+
+  cerrarModalImportarActividad(): void {
+    this.mostrarModalImportarActividad = false;
+  }
+
+  descargarPlantillaActividades(): void {
+    descargarPlantillaExcel('plantilla-actividades.xlsx', 'Actividades', ['Código Megued', 'Descripción', 'Categoría (TALLER o CAMPO)']);
+  }
+
+  async onArchivoActividadesSeleccionado(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const archivo = input.files?.[0];
+    if (!archivo) return;
+
+    this.errorImportarActividad = '';
+    this.resultadoImportarActividad = null;
+    try {
+      const filas = await leerFilasExcel<{ codigo_megued: string; description: string; categoria: string }>(archivo, [
+        { clave: 'codigo_megued', encabezados: ['codigo megued', 'codigo', 'codigo_megued'] },
+        { clave: 'description', encabezados: ['descripcion', 'description'] },
+        { clave: 'categoria', encabezados: ['categoria (taller o campo)', 'categoria', 'categoria_taller_o_campo'] },
+      ]);
+      this.filasParaImportarActividad = filas;
+      if (filas.length === 0) {
+        this.errorImportarActividad = 'No se encontraron filas con datos - revisa que uses la plantilla y que las columnas tengan esos mismos encabezados.';
+      }
+    } catch {
+      this.errorImportarActividad = 'No se pudo leer el archivo. Asegúrate de que sea un .xlsx o .xls válido.';
+    } finally {
+      input.value = '';
+      this.cdr.detectChanges();
+    }
+  }
+
+  confirmarImportarActividades(): void {
+    if (this.filasParaImportarActividad.length === 0) return;
+
+    this.importandoActividades = true;
+    this.asistenciaService.importarActividades(this.filasParaImportarActividad).subscribe({
+      next: (res) => {
+        this.importandoActividades = false;
+        this.resultadoImportarActividad = res;
+        this.filasParaImportarActividad = [];
+        if (res.creados > 0) {
+          this.notificacionService.exito(`${res.creados} actividad(es) importada(s) con éxito.`);
+          this.cargarPaginaActividadesTab();
+        }
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.importandoActividades = false;
+        this.notificacionService.error(err.error?.message || 'Error al importar las actividades.');
         this.cdr.detectChanges();
       },
     });

@@ -271,6 +271,7 @@
           class="input-control"
         />
       </div>
+      <button class="btn btn-secondary btn-sm" (click)="abrirModalImportarEquipo()">📥 Importar</button>
       <button class="btn btn-primary btn-sm" (click)="abrirModalNuevoEquipo()">➕ Nuevo Equipo</button>
     </div>
 
@@ -323,6 +324,7 @@
           class="input-control"
         />
       </div>
+      <button class="btn btn-secondary btn-sm" (click)="abrirModalImportarActividad()">📥 Importar</button>
       <button class="btn btn-primary btn-sm" (click)="abrirModalNuevaActividad()">➕ Nueva Actividad</button>
     </div>
 
@@ -499,6 +501,143 @@
           <button type="submit" [disabled]="!formAct.form.valid" class="btn btn-primary">Guardar</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- MODAL: IMPORTAR EQUIPOS DESDE EXCEL (pestaña "Equipo") - 3 pasos en la misma ventana: elegir archivo,
+       ver la vista previa (cuántas filas se leyeron) y confirmar, y por último el resultado (creados/rechazados
+       fila por fila) - nunca manda nada al backend hasta que el usuario confirma explícitamente. -->
+  <div class="modal-backdrop" *ngIf="mostrarModalImportarEquipo">
+    <div class="modal-card">
+      <h3 class="modal-title">📥 Importar Equipos desde Excel</h3>
+
+      <ng-container *ngIf="!resultadoImportarEquipo; else resultadoEquipo">
+        <p class="text-muted-sm mb-3">
+          Usa la plantilla para que las columnas coincidan exactamente - dos columnas: Código Megued y Nombre
+          del Equipo, una fila por equipo.
+        </p>
+        <button type="button" class="btn btn-secondary btn-sm mb-3" (click)="descargarPlantillaEquipos()">⬇️ Descargar plantilla</button>
+
+        <div class="form-group">
+          <label class="form-label">Archivo (.xlsx)</label>
+          <input type="file" accept=".xlsx,.xls" class="input-control w-full" (change)="onArchivoEquiposSeleccionado($event)">
+        </div>
+
+        <div class="alert alert-danger" *ngIf="errorImportarEquipo">{{ errorImportarEquipo }}</div>
+
+        <p class="text-muted-sm" *ngIf="filasParaImportarEquipo.length > 0">
+          Se leyeron <strong>{{ filasParaImportarEquipo.length }}</strong> fila(s). Al confirmar, se van a
+          revisar contra lo que ya existe - las que tengan un código o nombre repetido no se van a crear, y se
+          va a mostrar por qué.
+        </p>
+
+        <div class="flex justify-end gap-2 pt-3">
+          <button type="button" (click)="cerrarModalImportarEquipo()" class="btn btn-secondary">Cancelar</button>
+          <button
+            type="button"
+            [disabled]="filasParaImportarEquipo.length === 0 || importandoEquipos"
+            (click)="confirmarImportarEquipos()"
+            class="btn btn-primary"
+          >{{ importandoEquipos ? 'Importando...' : 'Importar ' + filasParaImportarEquipo.length + ' equipo(s)' }}</button>
+        </div>
+      </ng-container>
+
+      <ng-template #resultadoEquipo>
+        <p class="mb-3">
+          ✅ <strong>{{ resultadoImportarEquipo!.creados }}</strong> equipo(s) importado(s) con éxito.
+        </p>
+        <ng-container *ngIf="resultadoImportarEquipo!.rechazados.length > 0">
+          <p class="text-muted-sm mb-2">
+            {{ resultadoImportarEquipo!.rechazados.length }} fila(s) no se importaron - corrígelas en el Excel y
+            vuelve a intentar solo con esas:
+          </p>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr><th>Fila</th><th>Motivo</th></tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let r of resultadoImportarEquipo!.rechazados">
+                  <td>{{ r.fila }}</td>
+                  <td>{{ r.motivo }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </ng-container>
+        <div class="flex justify-end gap-2 pt-3">
+          <button type="button" (click)="abrirModalImportarEquipo()" class="btn btn-secondary">Importar otro archivo</button>
+          <button type="button" (click)="cerrarModalImportarEquipo()" class="btn btn-primary">Cerrar</button>
+        </div>
+      </ng-template>
+    </div>
+  </div>
+
+  <!-- MODAL: IMPORTAR ACTIVIDADES DESDE EXCEL (pestaña "Actividad") - mismo patrón que el de Equipos arriba. -->
+  <div class="modal-backdrop" *ngIf="mostrarModalImportarActividad">
+    <div class="modal-card">
+      <h3 class="modal-title">📥 Importar Actividades desde Excel</h3>
+
+      <ng-container *ngIf="!resultadoImportarActividad; else resultadoActividad">
+        <p class="text-muted-sm mb-3">
+          Usa la plantilla para que las columnas coincidan exactamente - tres columnas: Código Megued,
+          Descripción y Categoría (escribe TALLER o CAMPO; si la dejas vacía queda como Taller), una fila por
+          actividad.
+        </p>
+        <button type="button" class="btn btn-secondary btn-sm mb-3" (click)="descargarPlantillaActividades()">⬇️ Descargar plantilla</button>
+
+        <div class="form-group">
+          <label class="form-label">Archivo (.xlsx)</label>
+          <input type="file" accept=".xlsx,.xls" class="input-control w-full" (change)="onArchivoActividadesSeleccionado($event)">
+        </div>
+
+        <div class="alert alert-danger" *ngIf="errorImportarActividad">{{ errorImportarActividad }}</div>
+
+        <p class="text-muted-sm" *ngIf="filasParaImportarActividad.length > 0">
+          Se leyeron <strong>{{ filasParaImportarActividad.length }}</strong> fila(s). Al confirmar, se van a
+          revisar contra lo que ya existe - las que tengan un código repetido no se van a crear, y se va a
+          mostrar por qué.
+        </p>
+
+        <div class="flex justify-end gap-2 pt-3">
+          <button type="button" (click)="cerrarModalImportarActividad()" class="btn btn-secondary">Cancelar</button>
+          <button
+            type="button"
+            [disabled]="filasParaImportarActividad.length === 0 || importandoActividades"
+            (click)="confirmarImportarActividades()"
+            class="btn btn-primary"
+          >{{ importandoActividades ? 'Importando...' : 'Importar ' + filasParaImportarActividad.length + ' actividad(es)' }}</button>
+        </div>
+      </ng-container>
+
+      <ng-template #resultadoActividad>
+        <p class="mb-3">
+          ✅ <strong>{{ resultadoImportarActividad!.creados }}</strong> actividad(es) importada(s) con éxito.
+        </p>
+        <ng-container *ngIf="resultadoImportarActividad!.rechazados.length > 0">
+          <p class="text-muted-sm mb-2">
+            {{ resultadoImportarActividad!.rechazados.length }} fila(s) no se importaron - corrígelas en el
+            Excel y vuelve a intentar solo con esas:
+          </p>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr><th>Fila</th><th>Motivo</th></tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let r of resultadoImportarActividad!.rechazados">
+                  <td>{{ r.fila }}</td>
+                  <td>{{ r.motivo }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </ng-container>
+        <div class="flex justify-end gap-2 pt-3">
+          <button type="button" (click)="abrirModalImportarActividad()" class="btn btn-secondary">Importar otro archivo</button>
+          <button type="button" (click)="cerrarModalImportarActividad()" class="btn btn-primary">Cerrar</button>
+        </div>
+      </ng-template>
     </div>
   </div>
 

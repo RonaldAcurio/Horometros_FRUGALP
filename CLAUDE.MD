@@ -2133,6 +2133,41 @@ hoy) - el frontend lo guarda (`esPrestamoHoy`) tanto en la consulta inicial como
 Verificado con `tsc --noEmit` limpio en ambos proyectos, 27/27 tests unitarios en verde, y `es_prestamo` (los 2
 casos, con y sin `hacienda_prestamo_id`) confirmado con un script contra Postgres local con datos reales.
 
+### Importar Equipo/Actividad desde Excel (2026-09-29)
+
+Pedido del usuario: tienen 300+ equipos por cargar y agregarlos uno por uno "se van a comer la camisa". Nuevo
+botón "📥 Importar" en las pestañas Equipo y Actividad del Panel de Asistente (mismo patrón para las dos).
+
+**Dónde vive el parseo del .xlsx:** en el navegador, nunca en el backend - `excel-importar.util.ts`
+(`leerFilasExcel`/`descargarPlantillaExcel`) usa `@e965/xlsx` (SheetJS). El paquete `xlsx` de npm quedó
+congelado en una versión con 2 CVEs sin parche disponible ahí (Prototype Pollution + ReDoS, ambos solo
+explotables parseando un archivo malicioso - SheetJS movió las versiones parchadas a su propio CDN, que este
+entorno no puede alcanzar); `@e965/xlsx` es el mismo código, republicado sin cambios en el registro de npm con
+esas correcciones, por eso se usó en su lugar. El backend solo recibe el JSON ya mapeado (`{items: [...]}`),
+nunca el archivo crudo - no hay upload de archivos en ningún lado.
+
+**`leerFilasExcel`** matchea encabezados sin importar mayúsculas/tildes (compara contra una lista de variantes
+aceptadas por columna) y descarta filas completamente vacías (Excel suele dejar filas en blanco al final) -
+la validación real de campos faltantes queda del lado del backend. Cada modal ofrece "⬇️ Descargar plantilla"
+(headers únicamente, sin filas de ejemplo a propósito - una fila de ejemplo sin borrar se importaría como un
+registro real).
+
+**Backend (`importarEquipos`/`importarActividades`, mismo patrón en los 2 controllers):** recibe el arreglo ya
+parseado y reporta fila por fila qué se creó y qué se rechazó (y por qué) en vez de fallar todo-o-nada - con
+cientos de filas pegadas a mano, algún dato sucio es casi seguro, y el usuario necesita saber EXACTAMENTE
+cuáles para corregirlas en el Excel y reintentar solo esas. Rechaza (sin tocar la BD) filas con: campo
+requerido faltante, código/nombre que ya existe en la BD, código/nombre repetido DENTRO del mismo archivo (sin
+esto, 2 filas con el mismo código se mandarían juntas al `bulkCreate` y chocarían contra el `UNIQUE` de
+Postgres, tumbando la importación COMPLETA en vez de solo esas 2 filas), o texto que excede el largo de columna
+de la BD. Límite de 2000 filas por importación. Mismos roles que ya gestionan el catálogo (ADMIN/ASISTENTE).
+
+Verificado con `tsc --noEmit` limpio en ambos proyectos, 27/27 tests unitarios en verde, un smoke test manual
+de `@e965/xlsx` (escritura + lectura de vuelta, con acentos/mayúsculas/espacios/fila vacía) y la lógica de
+`importarEquipos` (válidos + los 5 tipos de rechazo) confirmada contra Postgres local con datos reales. No se
+pudo correr `ng build` en este entorno (Node instalado un patch por debajo del mínimo que exige esta versión de
+Angular CLI, preexistente a este cambio) - falta probar el bundle real, dejarlo para cuando el usuario lo pruebe
+localmente.
+
 ## Flujo de trabajo de esta sesión
 
 Backend: todo cambio se prueba primero contra Postgres local (`service postgresql start`, rol `postgre`/`1234`,

@@ -73,6 +73,89 @@ export const crearEquipo = async (req: Request, res: Response): Promise<void> =>
     }
 };
 
+/*
+Importación masiva desde Excel (pestaña "Equipo" del Panel de Asistente, pedido del usuario 2026-09-29: tienen
+300+ equipos y cargarlos uno por uno "se van a comer la camisa"). El parseo del .xlsx vive en el frontend (ver
+excel-importar.util.ts) - acá solo llega el JSON ya mapeado ({codigo_megued, nombre_equipo}[]).
+Reporta fila por fila qué se creó y qué se rechazó (y por qué) en vez de fallar todo-o-nada: con cientos de
+filas pegadas/copiadas a mano, algún dato sucio (código repetido, celda vacía, texto larguísimo) es casi
+seguro, y el usuario necesita saber EXACTAMENTE cuáles para poder corregirlas en el Excel y reintentar solo esas.
+*/
+export const importarEquipos = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const items = req.body.items;
+        if (!Array.isArray(items) || items.length === 0) {
+            res.status(400).json({ message: 'No se recibió ningún equipo para importar.' });
+            return;
+        }
+        if (items.length > 2000) {
+            res.status(400).json({ message: 'Máximo 2000 filas por importación - divide el archivo en partes más pequeñas.' });
+            return;
+        }
+
+        const existentes = await Equipo.findAll({ attributes: ['codigo_megued', 'nombre_equipo'] });
+        const codigosExistentes = new Set(existentes.map((e) => e.codigo_megued.trim().toLowerCase()));
+        const nombresExistentes = new Set(existentes.map((e) => e.nombre_equipo.trim().toLowerCase()));
+
+        const validos: { codigo_megued: string; nombre_equipo: string }[] = [];
+        const rechazados: { fila: number; motivo: string }[] = [];
+        // Duplicados DENTRO del mismo archivo (ademas de contra lo que ya existe en la BD) - sin esto, 2 filas
+        // con el mismo codigo se insertarian ambas de un tiron via bulkCreate y chocarian recien contra el
+        // UNIQUE de Postgres, tumbando la importacion COMPLETA en vez de solo esas 2 filas.
+        const codigosEnArchivo = new Set<string>();
+        const nombresEnArchivo = new Set<string>();
+
+        (items as unknown[]).forEach((item, index) => {
+            // fila 2 en el Excel = primer registro (la fila 1 es el encabezado).
+            const fila = index + 2;
+            const datos = item as { codigo_megued?: unknown; nombre_equipo?: unknown };
+            const codigo = String(datos?.codigo_megued ?? '').trim();
+            const nombre = String(datos?.nombre_equipo ?? '').trim();
+
+            if (!codigo || !nombre) {
+                rechazados.push({ fila, motivo: 'Falta el código o el nombre del equipo.' });
+                return;
+            }
+            if (codigo.length > 20) {
+                rechazados.push({ fila, motivo: `El código "${codigo}" supera los 20 caracteres permitidos.` });
+                return;
+            }
+            if (nombre.length > 150) {
+                rechazados.push({ fila, motivo: 'El nombre del equipo supera los 150 caracteres permitidos.' });
+                return;
+            }
+            const codigoLower = codigo.toLowerCase();
+            const nombreLower = nombre.toLowerCase();
+            if (codigosExistentes.has(codigoLower)) {
+                rechazados.push({ fila, motivo: `Ya existe un equipo con el código "${codigo}".` });
+                return;
+            }
+            if (nombresExistentes.has(nombreLower)) {
+                rechazados.push({ fila, motivo: `Ya existe un equipo con el nombre "${nombre}".` });
+                return;
+            }
+            if (codigosEnArchivo.has(codigoLower)) {
+                rechazados.push({ fila, motivo: `El código "${codigo}" está repetido dentro del archivo.` });
+                return;
+            }
+            if (nombresEnArchivo.has(nombreLower)) {
+                rechazados.push({ fila, motivo: `El nombre "${nombre}" está repetido dentro del archivo.` });
+                return;
+            }
+
+            codigosEnArchivo.add(codigoLower);
+            nombresEnArchivo.add(nombreLower);
+            validos.push({ codigo_megued: codigo, nombre_equipo: nombre });
+        });
+
+        const creados = validos.length > 0 ? await Equipo.bulkCreate(validos) : [];
+        res.status(201).json({ creados: creados.length, rechazados });
+    } catch (err) {
+        console.error('Error al importar equipos.', err);
+        res.status(500).json({ message: 'Error al importar equipos.' });
+    }
+};
+
 // Editar un Equipo
 export const actualizarEquipo = async (req: Request, res: Response): Promise<void> => {
     try {

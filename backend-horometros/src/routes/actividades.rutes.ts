@@ -3,6 +3,7 @@ import {
     ObtenerActividades,
     obtenerActividadPorId,
     crearActividad,
+    importarActividades,
     actualizarActividad,
     eliminarActividad,
 } from "../controllers/actividades.controller";
@@ -18,6 +19,8 @@ router.get('/:id',obtenerActividadPorId);
 // Mutaciones del catalogo: pestaña "Actividad" del Panel de Asistente (ADMIN/ASISTENTE, mismos roles que
 // gestionan Operador/Equipo).
 router.post('/nueva', verificarAutenticacion, requireRol('ADMIN', 'ASISTENTE'), crearActividad);
+// Importación masiva desde Excel (botón "Importar") - misma pestaña, mismos roles.
+router.post('/importar', verificarAutenticacion, requireRol('ADMIN', 'ASISTENTE'), importarActividades);
 router.put('/:id', verificarAutenticacion, requireRol('ADMIN', 'ASISTENTE'), actualizarActividad);
 router.delete('/:id', verificarAutenticacion, requireRol('ADMIN', 'ASISTENTE'), eliminarActividad);
 

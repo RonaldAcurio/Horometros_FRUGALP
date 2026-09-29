@@ -96,6 +96,71 @@ export const crearActividad = async(req:Request, res:Response ) => {
     }
 }
 
+/*
+Importación masiva desde Excel (pestaña "Actividad" del Panel de Asistente, mismo pedido que Equipo -
+2026-09-29). El parseo del .xlsx vive en el frontend (ver excel-importar.util.ts) - acá solo llega el JSON ya
+mapeado ({codigo_megued, description, categoria?}[]). Reporta fila por fila qué se creó y qué se rechazó (y
+por qué) en vez de fallar todo-o-nada, mismo criterio que importarEquipos (equipo.controller.ts).
+*/
+export const importarActividades = async(req:Request, res:Response) => {
+    try{
+        const items = req.body.items;
+        if(!Array.isArray(items) || items.length === 0){
+            return res.status(400).json({ message: 'No se recibió ninguna actividad para importar.' });
+        }
+        if(items.length > 2000){
+            return res.status(400).json({ message: 'Máximo 2000 filas por importación - divide el archivo en partes más pequeñas.' });
+        }
+
+        const existentes = await Actividad.findAll({ attributes: ['codigo_megued'] });
+        const codigosExistentes = new Set(existentes.map((a) => a.codigo_megued.trim().toLowerCase()));
+
+        const validos: { codigo_megued: string; description: string; categoria: 'TALLER' | 'CAMPO' }[] = [];
+        const rechazados: { fila: number; motivo: string }[] = [];
+        const codigosEnArchivo = new Set<string>();
+
+        (items as unknown[]).forEach((item, index) => {
+            const fila = index + 2;
+            const datos = item as { codigo_megued?: unknown; description?: unknown; categoria?: unknown };
+            const codigo = String(datos?.codigo_megued ?? '').trim();
+            const description = String(datos?.description ?? '').trim();
+            const categoriaTexto = String(datos?.categoria ?? '').trim().toUpperCase();
+            const categoria: 'TALLER' | 'CAMPO' = categoriaTexto === 'CAMPO' ? 'CAMPO' : 'TALLER';
+
+            if(!codigo || !description){
+                rechazados.push({ fila, motivo: 'Falta el código o la descripción de la actividad.' });
+                return;
+            }
+            if(codigo.length > 20){
+                rechazados.push({ fila, motivo: `El código "${codigo}" supera los 20 caracteres permitidos.` });
+                return;
+            }
+            if(description.length > 150){
+                rechazados.push({ fila, motivo: 'La descripción supera los 150 caracteres permitidos.' });
+                return;
+            }
+            const codigoLower = codigo.toLowerCase();
+            if(codigosExistentes.has(codigoLower)){
+                rechazados.push({ fila, motivo: `Ya existe una actividad con el código "${codigo}".` });
+                return;
+            }
+            if(codigosEnArchivo.has(codigoLower)){
+                rechazados.push({ fila, motivo: `El código "${codigo}" está repetido dentro del archivo.` });
+                return;
+            }
+
+            codigosEnArchivo.add(codigoLower);
+            validos.push({ codigo_megued: codigo, description, categoria });
+        });
+
+        const creados = validos.length > 0 ? await Actividad.bulkCreate(validos) : [];
+        return res.status(201).json({ creados: creados.length, rechazados });
+    } catch(err){
+        console.error('Error al importar actividades.', err);
+        return res.status(500).json({ message: 'Error al importar actividades.' });
+    }
+}
+
 // Editar una Actividad
 export const actualizarActividad = async(req: Request, res:Response) => {
     try{

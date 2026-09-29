@@ -138,6 +138,11 @@ export class AsistenciaService {
         return this.http.delete<{ message: string }>(`${environment.apiUrl}/actividad/${id}`);
     }
 
+    // POST -> /api/actividad/importar - importación masiva desde Excel (botón "Importar", pestaña "Actividad").
+    importarActividades(items: { codigo_megued: string; description: string; categoria?: string }[]): Observable<{ creados: number; rechazados: { fila: number; motivo: string }[] }> {
+        return this.http.post<{ creados: number; rechazados: { fila: number; motivo: string }[] }>(`${environment.apiUrl}/actividad/importar`, { items });
+    }
+
     // GET -> https://.../api/asistencia/hoy?fecha=YYYY-MM-DD&pagina=1&limite=30
     // Paginado: al Supervisor tampoco le llega de golpe todo el dia de una sola vez.
     // supervisorId opcional: lo usa el panel de ADMIN (ve TODAS las haciendas mezcladas aqui) para acotar a lo
