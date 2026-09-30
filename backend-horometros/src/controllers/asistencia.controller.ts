@@ -139,6 +139,18 @@ export const crearOperador = async (req:Request, res:Response):Promise<void> => 
             res.status(400).json({message:'El nombre completo y el codigo son obligatorios'});
             return;
         }
+        // Limites reales de columna (ver models/operador.ts) - sin este chequeo, un codigo/nombre demasiado
+        // largo llegaba hasta el INSERT y Postgres lo rechazaba con un error crudo que el catch de abajo
+        // convertia en un 500 generico ("Error al crear el operador. Intenta de nuevo."), sin decirle al
+        // usuario CUAL de los dos campos esta mal ni por que.
+        if(codigo_megued.length > 20){
+            res.status(400).json({message: `El código MEGUED no puede tener más de 20 caracteres (tiene ${codigo_megued.length}).`});
+            return;
+        }
+        if(nombre_completo.length > 150){
+            res.status(400).json({message: `El nombre completo no puede tener más de 150 caracteres (tiene ${nombre_completo.length}).`});
+            return;
+        }
         if(rol && !ROLES_OPERADOR_VALIDOS.includes(rol)){
             res.status(400).json({message: `rol debe ser uno de: ${ROLES_OPERADOR_VALIDOS.join(', ')}.`});
             return;
