@@ -81,6 +81,37 @@ Reporta fila por fila qué se creó y qué se rechazó (y por qué) en vez de fa
 filas pegadas/copiadas a mano, algún dato sucio (código repetido, celda vacía, texto larguísimo) es casi
 seguro, y el usuario necesita saber EXACTAMENTE cuáles para poder corregirlas en el Excel y reintentar solo esas.
 */
+/*
+Investiga, RECIEN cuando el INSERT de una fila ya chocó de verdad contra el UNIQUE de Postgres, cuál campo fue
+(código, nombre, o ambos) y si el dueño actual de ese valor está soft-deleted (eliminado antes) o activo -
+consulta directa a la BD en vez de comparar contra un mapa pre-armado. Reemplaza el enfoque anterior (chequear
+'existe?' ANTES del insert con un findAll(paranoid:false) y confiar en que ese chequeo detectó todo) porque un
+caso real (2026-09-30) demostró que esa comparación previa puede fallar a detectar un choque real y caer en un
+mensaje genérico que no dice nada útil - preguntándole a la BD DESPUÉS del error real, la respuesta siempre es
+correcta sin importar por qué el chequeo previo se lo perdió.
+*/
+const describirColisionEquipo = async (codigo: string, nombre: string): Promise<string> => {
+    const [porCodigo, porNombre] = await Promise.all([
+        Equipo.findOne({ where: { codigo_megued: codigo }, paranoid: false }),
+        Equipo.findOne({ where: { nombre_equipo: nombre }, paranoid: false }),
+    ]);
+    const piezas: string[] = [];
+    if (porCodigo) {
+        piezas.push(porCodigo.deletedAt
+            ? `el código "${codigo}" perteneció a un equipo eliminado antes - pide a un Admin que lo recupere si hace falta`
+            : `ya existe un equipo con el código "${codigo}"`);
+    }
+    if (porNombre) {
+        piezas.push(porNombre.deletedAt
+            ? `el nombre "${nombre}" perteneció a un equipo eliminado antes - pide a un Admin que lo recupere si hace falta`
+            : `ya existe un equipo con el nombre "${nombre}"`);
+    }
+    if (piezas.length === 0) {
+        return `El código "${codigo}" o el nombre "${nombre}" ya están en uso.`;
+    }
+    return piezas.join(' y ') + '.';
+};
+
 export const importarEquipos = async (req: Request, res: Response): Promise<void> => {
     try {
         const items = req.body.items;
@@ -93,93 +124,61 @@ export const importarEquipos = async (req: Request, res: Response): Promise<void
             return;
         }
 
-        /*
-        Bug real encontrado por el usuario (2026-09-30): 'paranoid:false' es a proposito - sin esto, un equipo
-        que YA fue eliminado (soft-delete, botón 🗑️) no aparece en un findAll() normal, así que este chequeo lo
-        daba por libre... pero el UNIQUE de Postgres sobre codigo_megued/nombre_equipo sigue viendo esa fila
-        eliminada como ocupada (el soft-delete no libera el código/nombre). Antes, esa fila pasaba el chequeo,
-        llegaba al bulkCreate de abajo, y chocaba ahí contra el UNIQUE - reventando TODA la importación con un
-        500 genérico ("Error al importar equipos"), incluso perdiendo las demás filas del archivo que sí eran
-        válidas (bulkCreate es un solo INSERT: si una fila falla, no se inserta ninguna). Con paranoid:false se
-        detecta ANTES, se rechaza solo esa fila con un motivo claro, y el resto del archivo se importa normal.
-        */
-        const existentes = await Equipo.findAll({ attributes: ['codigo_megued', 'nombre_equipo', 'deletedAt'], paranoid: false });
-        const codigosExistentes = new Map(existentes.map((e) => [e.codigo_megued.trim().toLowerCase(), !!e.deletedAt]));
-        const nombresExistentes = new Map(existentes.map((e) => [e.nombre_equipo.trim().toLowerCase(), !!e.deletedAt]));
-
-        const validos: { codigo_megued: string; nombre_equipo: string }[] = [];
         const rechazados: { fila: number; motivo: string }[] = [];
-        // Duplicados DENTRO del mismo archivo (ademas de contra lo que ya existe en la BD) - sin esto, 2 filas
-        // con el mismo codigo se insertarian ambas de un tiron via bulkCreate y chocarian recien contra el
-        // UNIQUE de Postgres, tumbando la importacion COMPLETA en vez de solo esas 2 filas.
+        // Duplicados DENTRO del mismo archivo (ademas de contra lo que ya existe en la BD) - chequeo en memoria,
+        // sin ir a la BD, antes de intentar el insert de cada fila.
         const codigosEnArchivo = new Set<string>();
         const nombresEnArchivo = new Set<string>();
+        let creados = 0;
 
-        (items as unknown[]).forEach((item, index) => {
+        // Insercion fila por fila (no bulkCreate): asi una fila que choca no tumba las demas, y el catch de
+        // abajo puede investigar EXACTAMENTE que choco recien despues del error real (ver describirColisionEquipo).
+        for (let index = 0; index < (items as unknown[]).length; index++) {
             // fila 2 en el Excel = primer registro (la fila 1 es el encabezado).
             const fila = index + 2;
-            const datos = item as { codigo_megued?: unknown; nombre_equipo?: unknown };
+            const datos = (items as unknown[])[index] as { codigo_megued?: unknown; nombre_equipo?: unknown };
             const codigo = String(datos?.codigo_megued ?? '').trim();
             const nombre = String(datos?.nombre_equipo ?? '').trim();
 
             if (!codigo || !nombre) {
                 rechazados.push({ fila, motivo: 'Falta el código o el nombre del equipo.' });
-                return;
+                continue;
             }
             if (codigo.length > 20) {
                 rechazados.push({ fila, motivo: `El código "${codigo}" supera los 20 caracteres permitidos.` });
-                return;
+                continue;
             }
             if (nombre.length > 150) {
                 rechazados.push({ fila, motivo: 'El nombre del equipo supera los 150 caracteres permitidos.' });
-                return;
+                continue;
             }
             const codigoLower = codigo.toLowerCase();
             const nombreLower = nombre.toLowerCase();
-            if (codigosExistentes.has(codigoLower)) {
-                const fueEliminado = codigosExistentes.get(codigoLower);
-                rechazados.push({
-                    fila,
-                    motivo: fueEliminado
-                        ? `El código "${codigo}" perteneció a un equipo eliminado antes - pide a un Admin que lo recupere si hace falta, no se puede reimportar con el mismo código.`
-                        : `Ya existe un equipo con el código "${codigo}".`,
-                });
-                return;
-            }
-            if (nombresExistentes.has(nombreLower)) {
-                const fueEliminado = nombresExistentes.get(nombreLower);
-                rechazados.push({
-                    fila,
-                    motivo: fueEliminado
-                        ? `El nombre "${nombre}" perteneció a un equipo eliminado antes - pide a un Admin que lo recupere si hace falta, no se puede reimportar con el mismo nombre.`
-                        : `Ya existe un equipo con el nombre "${nombre}".`,
-                });
-                return;
-            }
             if (codigosEnArchivo.has(codigoLower)) {
                 rechazados.push({ fila, motivo: `El código "${codigo}" está repetido dentro del archivo.` });
-                return;
+                continue;
             }
             if (nombresEnArchivo.has(nombreLower)) {
                 rechazados.push({ fila, motivo: `El nombre "${nombre}" está repetido dentro del archivo.` });
-                return;
+                continue;
             }
 
-            codigosEnArchivo.add(codigoLower);
-            nombresEnArchivo.add(nombreLower);
-            validos.push({ codigo_megued: codigo, nombre_equipo: nombre });
-        });
-
-        const creados = validos.length > 0 ? await Equipo.bulkCreate(validos) : [];
-        res.status(201).json({ creados: creados.length, rechazados });
-    } catch (err: any) {
-        // Red de seguridad además del chequeo de arriba (ej. 2 Asistentes importando al mismo tiempo el mismo
-        // código) - no debería pasar casi nunca ya con paranoid:false arriba, pero si pasa, mejor este mensaje
-        // que el genérico de abajo.
-        if (err.name === 'SequelizeUniqueConstraintError') {
-            res.status(409).json({ message: 'Alguna fila choca con un código o nombre que otra persona acaba de crear - vuelve a intentar la importación.' });
-            return;
+            try {
+                await Equipo.create({ codigo_megued: codigo, nombre_equipo: nombre });
+                codigosEnArchivo.add(codigoLower);
+                nombresEnArchivo.add(nombreLower);
+                creados++;
+            } catch (err: any) {
+                if (err.name === 'SequelizeUniqueConstraintError') {
+                    rechazados.push({ fila, motivo: await describirColisionEquipo(codigo, nombre) });
+                    continue;
+                }
+                throw err;
+            }
         }
+
+        res.status(201).json({ creados, rechazados });
+    } catch (err: any) {
         console.error('Error al importar equipos.', err);
         res.status(500).json({ message: 'Error al importar equipos.' });
     }
