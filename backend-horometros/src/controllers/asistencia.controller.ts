@@ -99,9 +99,12 @@ const validarCredencialesOperador = async(
             res.status(400).json({ message: 'La clave debe tener al menos 8 caracteres.'});
             return null;
         }
-        const usuarioExistente = await Usuario.findOne({ where: { usuario }});
+        // Comparacion sin distinguir mayusculas: evita crear dos cuentas que solo difieran en eso (ver login,
+        // auth.controller.ts, que ya busca asi) y quedarian indistinguibles para el trabajador.
+        const usuarioLike = { [Op.iLike]: String(usuario).trim() };
+        const usuarioExistente = await Usuario.findOne({ where: { usuario: usuarioLike }});
         const operadorConMismoUsuario = await Operador.findOne({
-            where: idAExcluir ? { usuario, id: { [Op.ne]: idAExcluir } } : { usuario },
+            where: idAExcluir ? { usuario: usuarioLike, id: { [Op.ne]: idAExcluir } } : { usuario: usuarioLike },
         });
         if(usuarioExistente || operadorConMismoUsuario){
             const nombreExistente = usuarioExistente?.nombre_completo ?? operadorConMismoUsuario?.nombre_completo;
@@ -767,7 +770,8 @@ export const marcarConCodigo = async(req:Request, res:Response):Promise<void> =>
             return;
         }
 
-        const operador = await Operador.findOne({ where: { usuario }});
+        // usuario sin distinguir mayusculas/espacios de mas - mismo motivo y fix que en auth.controller.ts (login).
+        const operador = await Operador.findOne({ where: { usuario: { [Op.iLike]: String(usuario).trim() } }});
         if(!operador || !operador.clave_hash){
             res.status(401).json({ message: 'Usuario o clave incorrectos.'});
             return;

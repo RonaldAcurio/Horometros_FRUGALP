@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import { Op } from 'sequelize';
 import { Usuario } from '../models/usuario';
 import { Operador } from '../models/operador';
 import { Asistencia } from '../models/asistencias';
@@ -31,9 +32,17 @@ export const login = async(req: Request, res: Response):Promise<void> => {
             res.status(400).json({ message:'Usuario y clave con obligatorios.'});
             return;
         }
+        /*
+        El usuario se compara SIN importar mayusculas/minusculas ni espacios de mas al inicio/final: el nombre de
+        usuario casi nunca lo elige el propio trabajador (lo genera el Admin/Asistente, ej. "Fernando1992") y en
+        un celular es facil que el teclado lo autocapitalice distinto, o que quede un espacio pegado por el
+        autocompletar - un caso real (2026-09-30) de "usuario o clave incorrectos" resulto ser exactamente esto.
+        La clave SI es sensible a mayusculas (bcrypt.compare, sin normalizar) - eso no cambia.
+        */
+        const usuarioNormalizado = String(usuario).trim();
 
         //1. Buscar en 'usuarios'(ADMIN/ASISTENTE/SUPERVISOR/ESCANER)
-        const cuentaUsuario = await Usuario.findOne({ where:{ usuario }});
+        const cuentaUsuario = await Usuario.findOne({ where:{ usuario: { [Op.iLike]: usuarioNormalizado } }});
         if(cuentaUsuario){
             if(!cuentaUsuario.activo){
                 res.status(403).json({ message:'Esta ceunta esta desactivada.'});
@@ -78,7 +87,7 @@ export const login = async(req: Request, res: Response):Promise<void> => {
         }
 
         //2. No estaba e 'usuarios' -> buscar en 'operadores' (Mecanico/Operador)
-        const cuentaOperador = await Operador.findOne({ where:{ usuario }});
+        const cuentaOperador = await Operador.findOne({ where:{ usuario: { [Op.iLike]: usuarioNormalizado } }});
         if(cuentaOperador && cuentaOperador.clave_hash){
             const claveValido = await bcrypt.compare(clave, cuentaOperador.clave_hash);
             if(!claveValido){

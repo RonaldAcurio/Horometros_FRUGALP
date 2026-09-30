@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import { Op } from 'sequelize';
 import { Usuario } from '../models/usuario';
 import { Operador } from '../models/operador';
 import { Hacienda } from '../models/hacienda';
@@ -47,8 +48,10 @@ export const crearUsuario = async(req:Request, res:Response):Promise<void> => {
             haciendaIdFinal = hacienda.id;
         }
 
-        const usuarioExistente = await Usuario.findOne({ where: { usuario }});
-        const operadorConMismoUsuario = await Operador.findOne({ where: { usuario }});
+        // Comparacion sin distinguir mayusculas - mismo motivo que en auth.controller.ts (login).
+        const usuarioLike = { [Op.iLike]: String(usuario).trim() };
+        const usuarioExistente = await Usuario.findOne({ where: { usuario: usuarioLike }});
+        const operadorConMismoUsuario = await Operador.findOne({ where: { usuario: usuarioLike }});
         if(usuarioExistente || operadorConMismoUsuario){
             const nombreExistente = usuarioExistente?.nombre_completo ?? operadorConMismoUsuario?.nombre_completo;
             res.status(409).json({ message: `El usuario "${usuario}" ya está en uso por ${nombreExistente}.`});
