@@ -13,6 +13,9 @@ export class Asistencia extends Model<InferAttributes<Asistencia>, InferCreation
     declare actividad_id: CreationOptional<number | null>;
     declare estado: CreationOptional<'EN_JORNADA' | 'PENDIENTE_REVISION' | 'FINALIZADO' | 'SALIDA_OLVIDADA' | 'OBSERVANDO'>;
     declare foto_ingreso: CreationOptional<string | null>;
+    // Key del objeto en Cloudflare R2 (ver r2.service.ts) - cuando esta presente, la foto real vive en R2 y
+    // 'foto_ingreso' se deja null. Nullable porque los registros viejos (antes de R2) solo tienen foto_ingreso.
+    declare foto_r2_key: CreationOptional<string | null>;
     declare observaciones: CreationOptional<string | null>;
     declare hacienda_prestamo_id: CreationOptional<number | null>;
     declare admitido_por_usuario_id: CreationOptional<number | null>;
@@ -61,6 +64,10 @@ Asistencia.init(
         },
         foto_ingreso:{
             type: DataTypes.TEXT,
+            allowNull: true,
+        },
+        foto_r2_key:{
+            type: DataTypes.STRING(255),
             allowNull: true,
         },
         observaciones:{

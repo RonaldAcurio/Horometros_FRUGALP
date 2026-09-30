@@ -11,6 +11,7 @@ import { generarTokenQrJornada, verificarTokenQrJornada, PayloadToken } from '..
 import { tokenHaciendaVigente } from '../utils/token-hacienda';
 import { registrarAuditoria } from '../utils/registrar-auditoria';
 import { cifrarDeterministico } from '../utils/cifrado';
+import { subirFoto, obtenerFotoBase64, r2EstaConfigurado } from '../services/r2.service';
 
 /*
 Columnas que excluimos de los LISTADOS (hoy/historial): la foto pesa decenas/cientos de KB en Base64, y si el supervisor tiene
@@ -19,8 +20,8 @@ En su lugar mandamos "tiene_fot" (un booleano liviano) y la foto real se pide ap
 (ver obtenerFotoAsistencia).
 */
 const ATRIBUTOS_SIN_FOTO = {
-    exclude: ['foto_ingreso'],
-    include: [[literal('"foto_ingreso" IS NOT NULL'), 'tiene_foto']] as any,
+    exclude: ['foto_ingreso', 'foto_r2_key'],
+    include: [[literal('"foto_ingreso" IS NOT NULL OR "foto_r2_key" IS NOT NULL'), 'tiene_foto']] as any,
 };
 
 //funcion auxiliar para obtener la decha 'YYYY-MM-DD' en la zona horario de Ecuador
@@ -361,6 +362,33 @@ const diferenciaEnDiasCalendario = (fechaAnterior: string, fechaActual: string):
 };
 
 /*
+Sube la foto de evidencia a R2 (fuera de la base de datos, ver CLAUDE.md) y devuelve donde debe quedar
+guardada. Si R2 no esta configurado o la subida falla por cualquier motivo, cae de vuelta al comportamiento
+viejo (guardar el base64 completo en 'foto_ingreso') - la marcacion de asistencia NUNCA debe fallar solo
+porque el almacenamiento de fotos tuvo un problema puntual.
+*/
+const prepararFotoParaGuardar = async (
+    fotoDataUri: string | null | undefined,
+    operadorId: number,
+    momento: Date
+): Promise<{ fotoIngreso: string | null; fotoR2Key: string | null }> => {
+    if (!fotoDataUri) {
+        return { fotoIngreso: null, fotoR2Key: null };
+    }
+    if (!r2EstaConfigurado()) {
+        return { fotoIngreso: fotoDataUri, fotoR2Key: null };
+    }
+    const key = `asistencias/${operadorId}/${momento.getTime()}.jpg`;
+    try {
+        await subirFoto(fotoDataUri, key);
+        return { fotoIngreso: null, fotoR2Key: key };
+    } catch (err) {
+        console.error('Error al subir foto a R2, se guarda en la base de datos como respaldo.', err);
+        return { fotoIngreso: fotoDataUri, fotoR2Key: null };
+    }
+};
+
+/*
 Nucleo de la logica de Entrada/Salida, compartido por los 4 caminos que hoy puede tomar una marcacion:
 carnet fisico (registrarMacarcoQR), codigo publico (marcarConCodigo), codigo autenticado (marcarConMiCodigo) y
 QR de sesion (marcarConQrSesion). Antes esta logica vivia duplicada solo en registrarMacarcoQR; sacarla de ahi
@@ -498,12 +526,14 @@ const procesarMarcacion = async(
     }
 
     //Paso 3: Entrada Nueva
+    const { fotoIngreso, fotoR2Key } = await prepararFotoParaGuardar(datos.foto_ingreso, operador.id, ahora);
     asistencia = await Asistencia.create({
         operador_id: operador.id,
         fecha: hoy,
         hora_ingreso: ahora,
         estado: 'EN_JORNADA',
-        foto_ingreso: datos.foto_ingreso || null,
+        foto_ingreso: fotoIngreso,
+        foto_r2_key: fotoR2Key,
         hacienda_prestamo_id: contexto.hacienda_prestamo_id ?? null,
         admitido_por_usuario_id: contexto.admitido_por_usuario_id ?? null,
     });
@@ -1244,7 +1274,7 @@ export const obtenerFotoAsistencia = async(req:Request, res:Response):Promise<vo
         const { id } = req.params;
 
         const asistencia = await Asistencia.findByPk(Number(id), {
-            attributes: ['id', 'foto_ingreso', 'hacienda_prestamo_id'],
+            attributes: ['id', 'foto_ingreso', 'foto_r2_key', 'hacienda_prestamo_id'],
             include: [{ model: Operador, as: 'operador', attributes: ['supervisor_id'], paranoid: false }],
         });
         if(!asistencia){
@@ -1257,12 +1287,18 @@ export const obtenerFotoAsistencia = async(req:Request, res:Response):Promise<vo
             return;
         }
 
-        if(!asistencia.foto_ingreso){
+        if(!asistencia.foto_ingreso && !asistencia.foto_r2_key){
             res.status(404).json({ message: 'Este registro no tiene foto de evidencia.'});
             return;
         }
 
-        res.json({ foto_ingreso: asistencia.foto_ingreso });
+        // Prioridad a R2 (foto nueva) - foto_ingreso queda como respaldo de registros viejos o de una
+        // subida a R2 que fallo en su momento (ver prepararFotoParaGuardar).
+        const fotoIngreso = asistencia.foto_r2_key
+            ? await obtenerFotoBase64(asistencia.foto_r2_key)
+            : asistencia.foto_ingreso;
+
+        res.json({ foto_ingreso: fotoIngreso });
 
     } catch(err){
         console.error('Error al obtener la foto de evidencia.', err);
