@@ -51,6 +51,12 @@
       </button>
     </form>
 
+    <!-- Solo en navegador normal (celular o computadora) - no tiene sentido "descargar el apk" desde adentro
+         del apk ya instalado. Ver login.ts, esNavegador. -->
+    <a *ngIf="esNavegador" href="/frugalp.apk" download class="btn btn-secondary login-boton-descarga">
+      ⬇️ Descargar app para Android
+    </a>
+
     <button type="button" class="login-link-politica" (click)="terminosService.abrir()">
       Política de Privacidad y Términos de Uso
     </button>

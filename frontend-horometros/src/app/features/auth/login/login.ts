@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
+import { Capacitor } from '@capacitor/core';
 import { AuthService } from '../../../core/services/auth.service';
 import { TerminosService } from '../../../core/services/terminos.service';
 import { rutaHomePorRol } from '../../../core/utils/rutas-por-rol';
@@ -17,6 +18,14 @@ export class Login {
   private authService = inject(AuthService);
   private router = inject(Router);
   protected terminosService = inject(TerminosService);
+
+  /*
+  Botón "Descargar app" (pedido del usuario 2026-09-30): solo tiene sentido para alguien visitando la página
+  desde un navegador normal (celular o computadora) - un trabajador que YA tiene la app empaquetada instalada
+  no necesita verlo, ni tendría sentido "descargar el apk" desde DENTRO del apk mismo. Capacitor.isNativePlatform()
+  ya se usa en el resto del proyecto para esta misma distinción (ver CLAUDE.md).
+  */
+  protected esNavegador = !Capacitor.isNativePlatform();
 
   usuario = '';
   clave = '';

@@ -20,6 +20,9 @@
     <button class="tab-btn" [class.active]="tabActual === 'actividades'" (click)="cambiarTab('actividades')">
       🛠️ Actividad
     </button>
+    <button class="tab-btn" [class.active]="tabActual === 'terminos'" (click)="cambiarTab('terminos')">
+      ✅ Términos
+    </button>
   </div>
 
   <!-- PESTAÑA: DIRECTORIO (tu contenido de siempre, sin cambios) -->
@@ -363,6 +366,86 @@
           <button [disabled]="paginaActividadesTab === 1" (click)="cambiarPaginaActividadesTab(paginaActividadesTab - 1)" class="btn btn-secondary btn-sm">◀</button>
           <button [disabled]="paginaActividadesTab === totalPaginasActividadesTab" (click)="cambiarPaginaActividadesTab(paginaActividadesTab + 1)" class="btn btn-secondary btn-sm">▶</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PESTAÑA: TÉRMINOS (quién ya aceptó la Política de Privacidad/Términos de Uso y quién no) -->
+  <div *ngIf="tabActual === 'terminos'">
+    <div class="filter-card">
+      <div class="filter-group">
+        <input
+          type="text"
+          [(ngModel)]="terminosBusquedaTab"
+          (ngModelChange)="onBuscarTerminosTab()"
+          placeholder="🔍 Buscar trabajador por código o nombre..."
+          class="input-control"
+        />
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="modal-title" style="margin-bottom: 0.5rem;">👷 Trabajadores</h3>
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Nombre</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let op of operadoresTerminos">
+              <td><strong class="code-badge">{{ op.codigo_megued }}</strong></td>
+              <td class="font-medium">{{ op.nombre_completo }}</td>
+              <td>
+                <span *ngIf="op.terminos_aceptados_en" class="text-muted-sm">✅ Aceptó el {{ op.terminos_aceptados_en | date:'dd/MM/yyyy HH:mm' }}</span>
+                <span *ngIf="!op.terminos_aceptados_en" class="alert-danger" style="padding: 0.15rem 0.5rem; border-radius: 6px; font-size: 0.85rem;">⚠️ Todavía no aceptó</span>
+              </td>
+            </tr>
+            <tr *ngIf="operadoresTerminos.length === 0">
+              <td colspan="3" class="table-empty">No hay trabajadores registrados.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination-bar" *ngIf="operadoresTerminos.length > 0">
+        <span>Página {{ paginaTerminosTab }} de {{ totalPaginasTerminosTab }} ({{ totalTerminosTab }} trabajadores)</span>
+        <div class="flex gap-1">
+          <button [disabled]="paginaTerminosTab === 1" (click)="cambiarPaginaTerminosTab(paginaTerminosTab - 1)" class="btn btn-secondary btn-sm">◀</button>
+          <button [disabled]="paginaTerminosTab === totalPaginasTerminosTab" (click)="cambiarPaginaTerminosTab(paginaTerminosTab + 1)" class="btn btn-secondary btn-sm">▶</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 1rem;">
+      <h3 class="modal-title" style="margin-bottom: 0.5rem;">🖥️ Usuarios de oficina</h3>
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Usuario</th>
+              <th>Nombre</th>
+              <th>Cargo</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let us of usuariosTerminos">
+              <td><strong class="code-badge">{{ us.usuario }}</strong></td>
+              <td class="font-medium">{{ us.nombre_completo }}</td>
+              <td class="text-muted-sm">{{ us.cargo }}</td>
+              <td>
+                <span *ngIf="us.terminos_aceptados_en" class="text-muted-sm">✅ Aceptó el {{ us.terminos_aceptados_en | date:'dd/MM/yyyy HH:mm' }}</span>
+                <span *ngIf="!us.terminos_aceptados_en" class="alert-danger" style="padding: 0.15rem 0.5rem; border-radius: 6px; font-size: 0.85rem;">⚠️ Todavía no aceptó</span>
+              </td>
+            </tr>
+            <tr *ngIf="usuariosTerminos.length === 0">
+              <td colspan="4" class="table-empty">No hay usuarios de oficina registrados.</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>

@@ -83,7 +83,7 @@ export class AsistenciaPanel implements OnInit{
   nuevoOperadorClave: string = '';
 
   //Historial de ASISTENCIA
-  tabActual: 'directorio' | 'historial' | 'equipos' | 'actividades' = 'directorio';
+  tabActual: 'directorio' | 'historial' | 'equipos' | 'actividades' | 'terminos' = 'directorio';
   historial: Asistencia[] = [];
   fechaInicioFiltro: string= '';
   fechaFinFiltro:string = '';
@@ -151,6 +151,22 @@ export class AsistenciaPanel implements OnInit{
   private debounceActividadesTab?: ReturnType<typeof setTimeout>;
   actividadEditando: Actividad | null = null;
   formActividad: { codigo_megued: string; description: string; categoria: 'TALLER' | 'CAMPO' } = { codigo_megued: '', description: '', categoria: 'TALLER' };
+
+  /*
+  Pestaña "Términos" (pedido del usuario 2026-09-30): quién ya aceptó la Política de Privacidad/Términos de Uso
+  (gate del primer login, ver terminos_aceptados_en) y quién todavía no - útil para que el Asistente audite
+  cumplimiento sin tener que loguearse como cada persona. Reusa los MISMOS endpoints que ya existen (Directorio
+  paginado de Operadores, lista de Usuarios de oficina) - terminos_aceptados_en ya venía en esas respuestas,
+  solo faltaba tiparlo y mostrarlo en algún lado.
+  */
+  operadoresTerminos: Operador[] = [];
+  terminosBusquedaTab: string = '';
+  paginaTerminosTab: number = 1;
+  totalPaginasTerminosTab: number = 1;
+  totalTerminosTab: number = 0;
+  private debounceTerminosTab?: ReturnType<typeof setTimeout>;
+  // Usuarios de oficina (ADMIN/ASISTENTE/SUPERVISOR/ESCANER): lista corta, no hace falta paginar.
+  usuariosTerminos: Usuario[] = [];
 
   /*
   "Importar desde Excel" (Equipo/Actividad, pedido del usuario 2026-09-29: tienen 300+ equipos y cargarlos uno
@@ -699,7 +715,7 @@ export class AsistenciaPanel implements OnInit{
     });
   }
 
-  cambiarTab(tab:'directorio' | 'historial' | 'equipos' | 'actividades'):void{
+  cambiarTab(tab:'directorio' | 'historial' | 'equipos' | 'actividades' | 'terminos'):void{
     this.tabActual = tab;
 
     if(tab === 'historial' && this.historial.length === 0){
@@ -710,6 +726,10 @@ export class AsistenciaPanel implements OnInit{
     }
     if(tab === 'actividades' && this.actividadesTab.length === 0){
       this.buscarActividadesTab();
+    }
+    if(tab === 'terminos' && this.operadoresTerminos.length === 0){
+      this.buscarTerminosTab();
+      this.cargarUsuariosTerminos();
     }
   }
 
@@ -923,6 +943,47 @@ export class AsistenciaPanel implements OnInit{
         this.notificacionService.error(err.error?.message || 'Error al eliminar la actividad.');
         this.cdr.detectChanges();
       },
+    });
+  }
+
+  // ==================== PESTAÑA "TÉRMINOS" ====================
+
+  onBuscarTerminosTab(): void {
+    if (this.debounceTerminosTab) clearTimeout(this.debounceTerminosTab);
+    this.debounceTerminosTab = setTimeout(() => this.buscarTerminosTab(), 300);
+  }
+
+  buscarTerminosTab(): void {
+    this.paginaTerminosTab = 1;
+    this.cargarPaginaTerminosTab();
+  }
+
+  cambiarPaginaTerminosTab(nuevaPagina: number): void {
+    if (nuevaPagina >= 1 && nuevaPagina <= this.totalPaginasTerminosTab) {
+      this.paginaTerminosTab = nuevaPagina;
+      this.cargarPaginaTerminosTab();
+    }
+  }
+
+  private cargarPaginaTerminosTab(): void {
+    this.asistenciaService.obtenerOperadoresPaginado(this.paginaTerminosTab, 20, this.terminosBusquedaTab || undefined).subscribe({
+      next: (res) => {
+        this.operadoresTerminos = res.data || [];
+        this.totalPaginasTerminosTab = res.totalPaginas || 1;
+        this.totalTerminosTab = res.total || 0;
+        this.cdr.detectChanges();
+      },
+      error: (err) => console.error('Error cargando operadores para Términos:', err),
+    });
+  }
+
+  private cargarUsuariosTerminos(): void {
+    this.usuarioService.obtenerUsuarios().subscribe({
+      next: (data) => {
+        this.usuariosTerminos = data;
+        this.cdr.detectChanges();
+      },
+      error: (err) => console.error('Error cargando usuarios de oficina para Términos:', err),
     });
   }
 

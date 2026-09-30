@@ -2251,6 +2251,35 @@ CHAPUL-01" en su captura) paso por paso.
 Verificado con `tsc --noEmit` limpio, 27/27 tests unitarios en verde, y el arreglo confirmado contra Postgres
 local reproduciendo el escenario exacto del reporte (crear → eliminar → reimportar) antes y después del cambio.
 
+### Botón "Descargar app" en Login + pestaña "Términos" en Panel de Asistente (2026-09-30)
+
+Dos pedidos del usuario, ambos 100% frontend (no hicieron falta cambios de backend - los dos reusan datos que
+ya venían en respuestas existentes, solo faltaba tiparlos/mostrarlos).
+
+**Botón "⬇️ Descargar app para Android"** (`login.html`/`.ts`): vive en la pantalla de Login, gateado con
+`*ngIf="esNavegador"` (`!Capacitor.isNativePlatform()`, mismo patrón ya usado en el resto del proyecto) - solo
+se ve visitando la página desde un navegador normal, nunca dentro de la app ya empaquetada (no tendría sentido
+"descargar el apk" desde adentro del apk). Apunta a `/frugalp.apk` - **el usuario tiene que subir el archivo
+real** a `frontend-horometros/public/frugalp.apk` (mismo lugar que `favicon.ico`/`manifest.json`, se sirve tal
+cual por Vercel) - no se generó ningún archivo placeholder, hacerlo hubiera sido publicar un .apk falso. Cada
+vez que compile una versión nueva desde Android Studio, el flujo es: generar el `.apk` firmado como siempre →
+reemplazar ese mismo archivo en `public/` → `git push` (Vercel redespliega solo) - no cambia en nada cómo se
+compila desde Android Studio, solo agrega ese paso de copiar el resultado a un lugar descargable.
+
+**Pestaña "✅ Términos"** (`asistencia-panel.ts`/`.html`, Panel de Asistente, al lado de "🛠️ Actividad" como
+pidió el usuario): lista quién ya aceptó la Política de Privacidad/Términos de Uso (gate del primer login,
+`terminos_aceptados_en`) y quién no, separado en "Trabajadores" (reusa `obtenerOperadoresPaginado`, mismo
+patrón de búsqueda+paginación que el Directorio - con los ~950 operadores reales no era opción traer todos de
+una) y "Usuarios de oficina" (reusa `usuarioService.obtenerUsuarios()`, lista corta, sin paginar). Los 2
+endpoints YA devolvían `terminos_aceptados_en` desde antes (solo excluyen `clave_hash`) - la única razón de que
+no se viera en ningún lado es que ni el modelo `Operador`/`Usuario` del frontend lo tenían tipado, ni había una
+pantalla que lo mostrara. Confirmado con una llamada real a los 2 endpoints contra Postgres local: el campo
+llega como `null` (pendiente) o como fecha ISO (aceptado), ambos casos ya cubiertos por el `*ngIf`/`date` pipe
+del template.
+
+Verificado con `tsc --noEmit` limpio, 27/27 tests unitarios en verde (sin cambios de backend), y la forma real
+de `terminos_aceptados_en` confirmada contra Postgres local vía HTTP en los 2 endpoints reusados.
+
 ## Flujo de trabajo de esta sesión
 
 Backend: todo cambio se prueba primero contra Postgres local (`service postgresql start`, rol `postgre`/`1234`,

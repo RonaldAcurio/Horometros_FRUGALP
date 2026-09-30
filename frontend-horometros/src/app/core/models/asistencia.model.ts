@@ -13,6 +13,9 @@ export interface Operador {
     // Solo viene en obtenerHistorial (hoja imprimible, asistencia-panel.ts) - la hacienda PERMANENTE del
     // trabajador, via su Supervisor.
     supervisor?: { hacienda_id?: number | null; hacienda?: { nombre: string } | null } | null;
+    // Fecha en que aceptó la Política de Privacidad/Términos de Uso (gate del primer login) - null/undefined =
+    // todavía no aceptó. Ya venía en la respuesta del backend (solo excluye clave_hash), faltaba tipar/mostrar.
+    terminos_aceptados_en?: string | null;
 }
 
 export interface Actividad{
