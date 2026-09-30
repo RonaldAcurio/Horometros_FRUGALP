@@ -1,0 +1,102 @@
+name: Compilar y publicar APK
+
+# Compila y firma el .apk de Android automaticamente en cada push a main que toque el frontend, y lo deja
+# listo para descargar desde el login (frontend-horometros/public/frugalp.apk) - asi nadie tiene que abrir
+# Android Studio a mano para sacar una version nueva. Tambien se puede disparar a mano (workflow_dispatch) para
+# recompilar sin necesidad de otro cambio de codigo (ej. si solo cambio el proceso de firma).
+#
+# Requiere 4 secretos del repositorio (Settings -> Secrets and variables -> Actions), nunca commiteados:
+#   ANDROID_KEYSTORE_BASE64   - el archivo .jks/.keystore, codificado en base64 (ver CLAUDE.md, "Empaquetado")
+#   ANDROID_KEYSTORE_PASSWORD - contraseña del keystore
+#   ANDROID_KEY_ALIAS         - alias de la llave dentro del keystore
+#   ANDROID_KEY_PASSWORD      - contraseña de esa llave (a veces es la misma que la del keystore)
+# Si faltan, el job se salta solo (ver 'if' del job) en vez de fallar en rojo - asi un fork o un PR sin
+# acceso a los secretos no rompe el CI general.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend-horometros/**'
+      - '.github/workflows/build-apk.yml'
+  workflow_dispatch: {}
+
+jobs:
+  build-apk:
+    name: Build APK firmado
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'RonaldAcurio/Horometros_FRUGALP' }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend-horometros/package-lock.json
+
+      - name: Instalar dependencias del frontend
+        working-directory: frontend-horometros
+        run: npm ci
+
+      - name: Compilar Angular (build de produccion)
+        working-directory: frontend-horometros
+        run: npm run build
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Asegurar plataforma/build-tools de Android
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" >/dev/null
+
+      - name: Sincronizar el build de Angular hacia el proyecto Android (Capacitor)
+        working-directory: frontend-horometros
+        run: npx cap sync android
+
+      - name: Verificar que los 4 secretos de firma esten configurados
+        id: firma
+        run: |
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ] && [ -n "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" ] \
+             && [ -n "${{ secrets.ANDROID_KEY_ALIAS }}" ] && [ -n "${{ secrets.ANDROID_KEY_PASSWORD }}" ]; then
+            echo "disponible=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "disponible=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Faltan uno o mas secretos de firma (ANDROID_KEYSTORE_BASE64/ANDROID_KEYSTORE_PASSWORD/ANDROID_KEY_ALIAS/ANDROID_KEY_PASSWORD) - no se puede compilar un .apk firmado todavia."
+          fi
+
+      - name: Decodificar el keystore (nunca se commitea, vive solo en este runner temporal)
+        if: steps.firma.outputs.disponible == 'true'
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/frugalp-release.keystore"
+
+      - name: Compilar el .apk de release (firmado)
+        if: steps.firma.outputs.disponible == 'true'
+        working-directory: frontend-horometros/android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/frugalp-release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_VERSION_CODE: ${{ github.run_number }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Publicar el .apk nuevo (reemplaza el de descarga del login)
+        if: steps.firma.outputs.disponible == 'true'
+        run: |
+          cp frontend-horometros/android/app/build/outputs/apk/release/app-release.apk frontend-horometros/public/frugalp.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add frontend-horometros/public/frugalp.apk
+          if git diff --cached --quiet; then
+            echo "El .apk no cambio (mismo contenido) - nada que commitear."
+          else
+            git commit -m "chore: actualizar frugalp.apk (build automatico #${{ github.run_number }})"
+            git push
+          fi
+
+      - name: Borrar el keystore temporal
+        if: always() && steps.firma.outputs.disponible == 'true'
+        run: rm -f "$RUNNER_TEMP/frugalp-release.keystore"

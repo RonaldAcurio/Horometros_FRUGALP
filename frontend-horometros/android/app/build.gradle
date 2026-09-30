@@ -1,5 +1,18 @@
 apply plugin: 'com.android.application'
 
+/*
+Firma del release leida de VARIABLES DE ENTORNO (nunca de un archivo commiteado): la usa el workflow de GitHub
+Actions '.github/workflows/build-apk.yml' para compilar y firmar el .apk automaticamente en cada push a main,
+sin que nadie tenga que abrir Android Studio a mano. Si las variables no estan (build local de alguien sin el
+keystore), signingConfigs.release queda sin crear y el build de 'release' sale SIN FIRMAR - sigue sirviendo
+para probar en un emulador/dispositivo de pruebas, solo no se puede publicar así.
+*/
+def keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+def keystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+def keyAliasEnv = System.getenv("ANDROID_KEY_ALIAS")
+def keyPasswordEnv = System.getenv("ANDROID_KEY_PASSWORD")
+def firmaDisponible = keystorePath && keystorePassword && keyAliasEnv && keyPasswordEnv
+
 android {
     namespace = "com.frugalp.horometros"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,7 +20,10 @@ android {
         applicationId "com.frugalp.horometros"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
+        // versionCode sube solo con cada build automatico (numero de corrida de GitHub Actions) - 1 por defecto
+        // en un build local. No lo usamos para auto-actualizar (eso sigue siendo descargar el .apk de nuevo),
+        // solo es buena practica que cada build tenga un numero distinto.
+        versionCode (System.getenv("ANDROID_VERSION_CODE") as Integer) ?: 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -16,10 +32,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    if (firmaDisponible) {
+        signingConfigs {
+            release {
+                storeFile file(keystorePath)
+                storePassword keystorePassword
+                keyAlias keyAliasEnv
+                keyPassword keyPasswordEnv
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (firmaDisponible) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
