@@ -76,7 +76,11 @@ para no rechazar el usuario que el operador YA tenia asignado.
 const validarCredencialesOperador = async(
     req: Request, res: Response, idAExcluir?: number
 ): Promise<{ supervisor_id: number | null; usuario: string | null; clave_hash: string | null } | null> => {
-    const { supervisor_id, usuario, clave } = req.body;
+    const { supervisor_id } = req.body;
+    // Recortar espacios al inicio/final ANTES de guardar - ver auth.controller.ts (login), mismo motivo real
+    // (2026-09-30): un espacio pegado por el celular quedaba GUARDADO dentro del hash y ni el login lo salvaba.
+    const usuario = typeof req.body.usuario === 'string' ? req.body.usuario.trim() : req.body.usuario;
+    const clave = typeof req.body.clave === 'string' ? req.body.clave.trim() : req.body.clave;
 
     let supervisorIdFinal: number | null = null;
     if(supervisor_id){
@@ -101,7 +105,7 @@ const validarCredencialesOperador = async(
         }
         // Comparacion sin distinguir mayusculas: evita crear dos cuentas que solo difieran en eso (ver login,
         // auth.controller.ts, que ya busca asi) y quedarian indistinguibles para el trabajador.
-        const usuarioLike = { [Op.iLike]: String(usuario).trim() };
+        const usuarioLike = { [Op.iLike]: usuario };
         const usuarioExistente = await Usuario.findOne({ where: { usuario: usuarioLike }});
         const operadorConMismoUsuario = await Operador.findOne({
             where: idAExcluir ? { usuario: usuarioLike, id: { [Op.ne]: idAExcluir } } : { usuario: usuarioLike },
@@ -776,7 +780,9 @@ export const marcarConCodigo = async(req:Request, res:Response):Promise<void> =>
             res.status(401).json({ message: 'Usuario o clave incorrectos.'});
             return;
         }
-        const claveValida = await bcrypt.compare(clave, operador.clave_hash);
+        // clave: mismo recorte de espacios de mas que en auth.controller.ts (login) - no cambia la sensibilidad
+        // a mayusculas.
+        const claveValida = await bcrypt.compare(String(clave).trim(), operador.clave_hash);
         if(!claveValida){
             res.status(401).json({ message: 'Usuario o clave incorrectos.'});
             return;
@@ -1528,7 +1534,8 @@ reversible). Requiere JWT con rol ADMIN o ASISTIENTE.
 export const resetearClaveOperador = async(req:Request, res:Response):Promise<void> => {
     try{
         const { id } = req.params;
-        const { clave } = req.body;
+        // Recortar espacios al inicio/final ANTES de guardar - ver auth.controller.ts (login), mismo motivo.
+        const clave = typeof req.body.clave === 'string' ? req.body.clave.trim() : req.body.clave;
 
         if(!clave || clave.length < 8){
             res.status(400).json({message:'La clave debe tener al menos 8 caracteres.'});

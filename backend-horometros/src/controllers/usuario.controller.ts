@@ -19,9 +19,9 @@ escogerla.
 */
 export const crearUsuario = async(req:Request, res:Response):Promise<void> => {
     try{
-        const { nombre_completo, usuario, clave, cargo, hacienda_id } = req.body;
+        const { nombre_completo, cargo, hacienda_id } = req.body;
 
-        if(!nombre_completo || !usuario || !clave || !cargo){
+        if(!nombre_completo || !req.body.usuario || !req.body.clave || !cargo){
             res.status(400).json({ message: 'nombre_completo, usuario, clave y cargo son obligatorios.'});
             return;
         }
@@ -29,6 +29,13 @@ export const crearUsuario = async(req:Request, res:Response):Promise<void> => {
             res.status(400).json({ message: `cargo debe ser uno de: ${CARGOS_VALIDOS.join(', ')}.`});
             return;
         }
+        /*
+        Se recorta usuario/clave (espacios al inicio/final) ANTES de guardar, no solo al comparar en el login:
+        un espacio de mas quedaba GUARDADO dentro del hash si venia pegado por autocompletar/autocorrector del
+        celular, y ahi ni el login mas tolerante lo salva - caso real (2026-09-30), ver auth.controller.ts.
+        */
+        const usuario = String(req.body.usuario).trim();
+        const clave = String(req.body.clave).trim();
         if(clave.length < 8){
             res.status(400).json({ message: 'La clave debe tener al menos 8 caracteres.'});
             return;
@@ -49,7 +56,7 @@ export const crearUsuario = async(req:Request, res:Response):Promise<void> => {
         }
 
         // Comparacion sin distinguir mayusculas - mismo motivo que en auth.controller.ts (login).
-        const usuarioLike = { [Op.iLike]: String(usuario).trim() };
+        const usuarioLike = { [Op.iLike]: usuario };
         const usuarioExistente = await Usuario.findOne({ where: { usuario: usuarioLike }});
         const operadorConMismoUsuario = await Operador.findOne({ where: { usuario: usuarioLike }});
         if(usuarioExistente || operadorConMismoUsuario){
@@ -105,7 +112,8 @@ Require JWT con el rol ADMIN.
 export const resetearClaveUsuario = async(req:Request, res:Response):Promise<void> => {
     try{
         const { id } = req.params;
-        const { clave } = req.body;
+        // Recortar espacios al inicio/final ANTES de guardar - ver crearUsuario, mismo motivo.
+        const clave = typeof req.body.clave === 'string' ? req.body.clave.trim() : req.body.clave;
 
         if(!clave || clave.length < 8){
             res.status(400).json({message:'La clave debe tener al menos 8 caracteres.'});

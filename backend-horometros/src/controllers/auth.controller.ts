@@ -37,9 +37,12 @@ export const login = async(req: Request, res: Response):Promise<void> => {
         usuario casi nunca lo elige el propio trabajador (lo genera el Admin/Asistente, ej. "Fernando1992") y en
         un celular es facil que el teclado lo autocapitalice distinto, o que quede un espacio pegado por el
         autocompletar - un caso real (2026-09-30) de "usuario o clave incorrectos" resulto ser exactamente esto.
-        La clave SI es sensible a mayusculas (bcrypt.compare, sin normalizar) - eso no cambia.
+        La clave SIGUE siendo sensible a mayusculas (bcrypt.compare) - eso no cambia. Pero SI se recorta el
+        espacio de mas al inicio/final, igual que al crear/resetear la clave (ver usuario.controller.ts y
+        asistencia.controller.ts) - si no, un espacio pegado por el celular la volveria imposible de escribir bien.
         */
         const usuarioNormalizado = String(usuario).trim();
+        const claveNormalizada = String(clave).trim();
 
         //1. Buscar en 'usuarios'(ADMIN/ASISTENTE/SUPERVISOR/ESCANER)
         const cuentaUsuario = await Usuario.findOne({ where:{ usuario: { [Op.iLike]: usuarioNormalizado } }});
@@ -48,7 +51,7 @@ export const login = async(req: Request, res: Response):Promise<void> => {
                 res.status(403).json({ message:'Esta ceunta esta desactivada.'});
                 return;
             }
-            const claveValida = await bcrypt.compare(clave, cuentaUsuario.clave_hash);
+            const claveValida = await bcrypt.compare(claveNormalizada, cuentaUsuario.clave_hash);
             if(!claveValida){
                 res.status(401).json({ message:'Usuario o clave incorrectos.'});
                 return;
@@ -89,7 +92,7 @@ export const login = async(req: Request, res: Response):Promise<void> => {
         //2. No estaba e 'usuarios' -> buscar en 'operadores' (Mecanico/Operador)
         const cuentaOperador = await Operador.findOne({ where:{ usuario: { [Op.iLike]: usuarioNormalizado } }});
         if(cuentaOperador && cuentaOperador.clave_hash){
-            const claveValido = await bcrypt.compare(clave, cuentaOperador.clave_hash);
+            const claveValido = await bcrypt.compare(claveNormalizada, cuentaOperador.clave_hash);
             if(!claveValido){
                 res.status(401).json({ message:'Usuario o clave incorrectos.'});
                 return;
