@@ -93,9 +93,19 @@ export const importarEquipos = async (req: Request, res: Response): Promise<void
             return;
         }
 
-        const existentes = await Equipo.findAll({ attributes: ['codigo_megued', 'nombre_equipo'] });
-        const codigosExistentes = new Set(existentes.map((e) => e.codigo_megued.trim().toLowerCase()));
-        const nombresExistentes = new Set(existentes.map((e) => e.nombre_equipo.trim().toLowerCase()));
+        /*
+        Bug real encontrado por el usuario (2026-09-30): 'paranoid:false' es a proposito - sin esto, un equipo
+        que YA fue eliminado (soft-delete, botón 🗑️) no aparece en un findAll() normal, así que este chequeo lo
+        daba por libre... pero el UNIQUE de Postgres sobre codigo_megued/nombre_equipo sigue viendo esa fila
+        eliminada como ocupada (el soft-delete no libera el código/nombre). Antes, esa fila pasaba el chequeo,
+        llegaba al bulkCreate de abajo, y chocaba ahí contra el UNIQUE - reventando TODA la importación con un
+        500 genérico ("Error al importar equipos"), incluso perdiendo las demás filas del archivo que sí eran
+        válidas (bulkCreate es un solo INSERT: si una fila falla, no se inserta ninguna). Con paranoid:false se
+        detecta ANTES, se rechaza solo esa fila con un motivo claro, y el resto del archivo se importa normal.
+        */
+        const existentes = await Equipo.findAll({ attributes: ['codigo_megued', 'nombre_equipo', 'deletedAt'], paranoid: false });
+        const codigosExistentes = new Map(existentes.map((e) => [e.codigo_megued.trim().toLowerCase(), !!e.deletedAt]));
+        const nombresExistentes = new Map(existentes.map((e) => [e.nombre_equipo.trim().toLowerCase(), !!e.deletedAt]));
 
         const validos: { codigo_megued: string; nombre_equipo: string }[] = [];
         const rechazados: { fila: number; motivo: string }[] = [];
@@ -127,11 +137,23 @@ export const importarEquipos = async (req: Request, res: Response): Promise<void
             const codigoLower = codigo.toLowerCase();
             const nombreLower = nombre.toLowerCase();
             if (codigosExistentes.has(codigoLower)) {
-                rechazados.push({ fila, motivo: `Ya existe un equipo con el código "${codigo}".` });
+                const fueEliminado = codigosExistentes.get(codigoLower);
+                rechazados.push({
+                    fila,
+                    motivo: fueEliminado
+                        ? `El código "${codigo}" perteneció a un equipo eliminado antes - pide a un Admin que lo recupere si hace falta, no se puede reimportar con el mismo código.`
+                        : `Ya existe un equipo con el código "${codigo}".`,
+                });
                 return;
             }
             if (nombresExistentes.has(nombreLower)) {
-                rechazados.push({ fila, motivo: `Ya existe un equipo con el nombre "${nombre}".` });
+                const fueEliminado = nombresExistentes.get(nombreLower);
+                rechazados.push({
+                    fila,
+                    motivo: fueEliminado
+                        ? `El nombre "${nombre}" perteneció a un equipo eliminado antes - pide a un Admin que lo recupere si hace falta, no se puede reimportar con el mismo nombre.`
+                        : `Ya existe un equipo con el nombre "${nombre}".`,
+                });
                 return;
             }
             if (codigosEnArchivo.has(codigoLower)) {
@@ -150,7 +172,14 @@ export const importarEquipos = async (req: Request, res: Response): Promise<void
 
         const creados = validos.length > 0 ? await Equipo.bulkCreate(validos) : [];
         res.status(201).json({ creados: creados.length, rechazados });
-    } catch (err) {
+    } catch (err: any) {
+        // Red de seguridad además del chequeo de arriba (ej. 2 Asistentes importando al mismo tiempo el mismo
+        // código) - no debería pasar casi nunca ya con paranoid:false arriba, pero si pasa, mejor este mensaje
+        // que el genérico de abajo.
+        if (err.name === 'SequelizeUniqueConstraintError') {
+            res.status(409).json({ message: 'Alguna fila choca con un código o nombre que otra persona acaba de crear - vuelve a intentar la importación.' });
+            return;
+        }
         console.error('Error al importar equipos.', err);
         res.status(500).json({ message: 'Error al importar equipos.' });
     }

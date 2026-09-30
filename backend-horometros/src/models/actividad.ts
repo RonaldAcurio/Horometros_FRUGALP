@@ -6,6 +6,9 @@ export class Actividad extends Model < InferAttributes<Actividad>, InferCreation
     declare codigo_megued: string;
     declare description: string;
     declare categoria: CreationOptional<'TALLER' | 'CAMPO'>;
+    // Declarado a proposito (a diferencia de antes) - importarActividades (actividades.controller.ts) lo
+    // necesita leer con paranoid:false, mismo motivo que Equipo (ver models/equipo.ts).
+    declare deletedAt: CreationOptional<Date | null>;
 }
 
 Actividad.init(
@@ -27,6 +30,10 @@ Actividad.init(
         categoria:{
             type: DataTypes.STRING(50),
             defaultValue: 'TALLER',
+        },
+        deletedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
         },
     },
     {

@@ -112,8 +112,15 @@ export const importarActividades = async(req:Request, res:Response) => {
             return res.status(400).json({ message: 'Máximo 2000 filas por importación - divide el archivo en partes más pequeñas.' });
         }
 
-        const existentes = await Actividad.findAll({ attributes: ['codigo_megued'] });
-        const codigosExistentes = new Set(existentes.map((a) => a.codigo_megued.trim().toLowerCase()));
+        /*
+        paranoid:false a proposito - mismo bug real encontrado por el usuario en Equipo (2026-09-30, ver
+        equipo.controller.ts/importarEquipos): una Actividad eliminada (soft-delete) no sale en un findAll()
+        normal, pero el UNIQUE de codigo_megued en Postgres sigue viendo ese código como ocupado. Sin esto, esa
+        fila pasaba el chequeo, chocaba en el bulkCreate de abajo, y reventaba TODA la importación (incluyendo
+        las demás filas válidas del mismo archivo, porque bulkCreate es un solo INSERT).
+        */
+        const existentes = await Actividad.findAll({ attributes: ['codigo_megued', 'deletedAt'], paranoid: false });
+        const codigosExistentes = new Map(existentes.map((a) => [a.codigo_megued.trim().toLowerCase(), !!a.deletedAt]));
 
         const validos: { codigo_megued: string; description: string; categoria: 'TALLER' | 'CAMPO' }[] = [];
         const rechazados: { fila: number; motivo: string }[] = [];
@@ -141,7 +148,13 @@ export const importarActividades = async(req:Request, res:Response) => {
             }
             const codigoLower = codigo.toLowerCase();
             if(codigosExistentes.has(codigoLower)){
-                rechazados.push({ fila, motivo: `Ya existe una actividad con el código "${codigo}".` });
+                const fueEliminada = codigosExistentes.get(codigoLower);
+                rechazados.push({
+                    fila,
+                    motivo: fueEliminada
+                        ? `El código "${codigo}" perteneció a una actividad eliminada antes - pide a un Admin que la recupere si hace falta, no se puede reimportar con el mismo código.`
+                        : `Ya existe una actividad con el código "${codigo}".`,
+                });
                 return;
             }
             if(codigosEnArchivo.has(codigoLower)){
@@ -155,7 +168,10 @@ export const importarActividades = async(req:Request, res:Response) => {
 
         const creados = validos.length > 0 ? await Actividad.bulkCreate(validos) : [];
         return res.status(201).json({ creados: creados.length, rechazados });
-    } catch(err){
+    } catch(err: any){
+        if(err.name === 'SequelizeUniqueConstraintError'){
+            return res.status(409).json({ message: 'Alguna fila choca con un código que otra persona acaba de crear - vuelve a intentar la importación.' });
+        }
         console.error('Error al importar actividades.', err);
         return res.status(500).json({ message: 'Error al importar actividades.' });
     }

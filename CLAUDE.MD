@@ -2168,6 +2168,89 @@ pudo correr `ng build` en este entorno (Node instalado un patch por debajo del m
 Angular CLI, preexistente a este cambio) - falta probar el bundle real, dejarlo para cuando el usuario lo pruebe
 localmente.
 
+### Service Worker de Angular - base para actualizar sin reinstalar el .apk (2026-09-29, EN CURSO)
+
+**Motivo:** el usuario preguntó cómo hacen las apps para actualizarse sin tener que volver a descargar el
+`.apk` cada vez - hoy `capacitor.config.ts` no tiene `server.url`, así que el WebView carga el HTML/JS/CSS
+empaquetado DENTRO del `.apk` (`webDir`), y cada cambio de frontend exige `ng build` → `cap sync` → recompilar →
+reinstalar en cada celular. La idea acordada: que el WebView cargue el link de Vercel en vivo en su lugar, para
+que cualquier redeploy le llegue a todos los celulares ya instalados sin tocar el `.apk`.
+
+**Riesgo real identificado (por eso esto está en 2 pasos, no 1):** el Panel de Actividades es offline-first (ya
+probado por el usuario con la señal cortada) - si el WebView pasara a cargar SIEMPRE desde una URL remota sin
+ningún cacheo local, la app ni siquiera arrancaría sin señal (fallaría al cargar el propio `index.html`), rompiendo
+justo la funcionalidad de la que el usuario está más orgulloso. Se agregó primero la pieza que lo previene:
+
+- `@angular/service-worker` instalado (versión exacta `22.1.4`, pareja del `@angular/core` ya instalado - el
+  peer dependency de Angular exige coincidencia exacta de versión, no solo compatible).
+- `ngsw-config.json` (nuevo, raíz de `frontend-horometros`): cachea el shell completo (`index.html`, JS, CSS,
+  manifest, ícono) en modo `prefetch` (se descarga y guarda apenas carga la app), y `assets/**` en modo `lazy`.
+- `angular.json`: `"serviceWorker": "ngsw-config.json"` en la configuración `production` (sintaxis del builder
+  nuevo `@angular/build:application` - la app usa Angular 22, NO es la sintaxis vieja `"serviceWorker": true` +
+  `"ngswConfigPath"` de builders anteriores).
+- `app.config.ts`: `provideServiceWorker('ngsw-worker.js', { enabled: !isDevMode(), registrationStrategy:
+  'registerWhenStable:30000' })` - mismos valores por defecto que genera el schematic oficial de Angular
+  (`ng add @angular/pwa`, que no se pudo correr en este entorno por el mismo tema de versión de Node que ya
+  bloqueaba `ng build` - se replicó a mano el mismo resultado, verificando cada pieza contra el schema real de
+  los paquetes instalados en vez de adivinar).
+
+**Deliberadamente SIN TOCAR todavía:** `capacitor.config.ts` sigue sin `server.url` - la app empaquetada sigue
+funcionando EXACTAMENTE igual que hoy, cero cambio de comportamiento, hasta que se resuelva el punto siguiente.
+
+**Punto pendiente de decisión del usuario, encontrado al revisar la documentación real de Capacitor:**
+`server.url` (la opción que se iba a usar para apuntar al link de Vercel) tiene esta advertencia textual en su
+propia definición de tipos: *"This is intended for use with live-reload servers. **This is not intended for use
+in production.**"* - es decir, Capacitor mismo no la diseñó ni la soporta oficialmente para este uso, aunque en
+la práctica muy probablemente funcione bien para un piloto chico y controlado. Se le presentaron 2 opciones al
+usuario: (1) usar `server.url` de todas formas, más simple y sin dependencias nuevas, con el Service Worker ya
+construido como red de seguridad offline; o (2) una herramienta hecha específicamente para actualizaciones OTA
+de apps Capacitor sin pasar por la tienda (Capgo, de código abierto, o Ionic Live Updates) - el camino que
+Capacitor sí soporta oficialmente, con mejor manejo de fallas a medio-descargar. Queda pendiente la respuesta
+del usuario para decidir el siguiente paso.
+
+Verificado con `tsc --noEmit` limpio - no se pudo correr `ng build` en este entorno (misma limitación de Node ya
+documentada arriba), así que falta la confirmación del usuario con el build real antes de dar esto por cerrado.
+
+### Bug real de IMPORTAR: chocaba con equipos/actividades eliminados antes (paranoid + UNIQUE), 500 genérico (2026-09-30)
+
+El usuario reportó "reconoció los equipos pero al importar salió un error" - reproducido y confirmado contra
+Postgres local, causa raíz encontrada con certeza (no es una suposición, se replicó el error exacto y se
+verificó el arreglo).
+
+**Causa raíz:** `importarEquipos`/`importarActividades` chequeaban duplicados contra
+`Equipo.findAll()`/`Actividad.findAll()` SIN `paranoid:false` - un equipo/actividad que ya fue ELIMINADO antes
+(soft-delete, botón 🗑️, pone `deletedAt` pero no borra la fila) no aparece en un `findAll()` normal, así que el
+chequeo de "¿ya existe?" lo daba como libre. Pero el `UNIQUE` de Postgres sobre `codigo_megued`/`nombre_equipo`
+sigue viendo esa fila eliminada como ocupada (el soft-delete no libera el código/nombre para que otro lo use).
+Resultado real: la fila pasaba el chequeo, llegaba al `bulkCreate`, chocaba ahí contra el `UNIQUE`, y
+`SequelizeUniqueConstraintError` caía en el `catch` genérico → 500 "Error al importar equipos." - **y como
+`bulkCreate` es UN SOLO `INSERT` con todas las filas, si una sola choca, NINGUNA se crea**, así que un archivo
+de 300 equipos con un solo código repetido de uno eliminado antes perdía los 300, no solo el problemático.
+
+**Cómo se reprodujo (no se adivinó):** un script contra Postgres local creó un Equipo, lo eliminó (soft-delete,
+mismo método que usa el botón real), y volvió a correr la lógica exacta de `importarEquipos` con el mismo
+código/nombre - el chequeo lo dejó pasar como "válido" y el `bulkCreate` lanzó
+`SequelizeUniqueConstraintError`, replicando el error real del usuario ("CHAPUL-01" / "N/A / Aguilones /
+CHAPUL-01" en su captura) paso por paso.
+
+**Arreglo (mismo patrón en los 2 controllers):**
+- El `findAll()` de existentes ahora usa `paranoid:false` (incluye eliminados) y también trae `deletedAt`, para
+  poder distinguir "ya existe activo" de "existió y lo eliminaron".
+- Mensaje de rechazo diferenciado: si el código/nombre perteneció a un registro eliminado, el mensaje se lo
+  dice explícito (`"...perteneció a un equipo eliminado antes - pide a un Admin que lo recupere si hace
+  falta..."`) en vez del genérico "ya existe" - más claro para que el Asistente entienda que no es un typo
+  suyo, es un registro viejo que hay que recuperar aparte (no se construyó un botón de "restaurar" todavía,
+  fuera de alcance de este arreglo puntual).
+- Red de seguridad adicional: el `catch` ahora distingue `SequelizeUniqueConstraintError` (409, mensaje
+  específico) del resto de errores (500 genérico) - por si dos Asistentes importan el mismo código al mismo
+  tiempo, caso que el chequeo de arriba no puede prevenir por diseño (race condition).
+- `models/equipo.ts`/`models/actividad.ts`: `deletedAt` pasó a declararse explícitamente (antes el comentario
+  decía a propósito que no hacía falta, porque nada lo leía) - Sequelize ya lo manejaba solo vía
+  `paranoid:true`, esto solo lo expone al tipado de TypeScript para poder leerlo en el controller.
+
+Verificado con `tsc --noEmit` limpio, 27/27 tests unitarios en verde, y el arreglo confirmado contra Postgres
+local reproduciendo el escenario exacto del reporte (crear → eliminar → reimportar) antes y después del cambio.
+
 ## Flujo de trabajo de esta sesión
 
 Backend: todo cambio se prueba primero contra Postgres local (`service postgresql start`, rol `postgre`/`1234`,

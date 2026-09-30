@@ -12,8 +12,12 @@ export class Equipo extends Model <InferAttributes<Equipo>, InferCreationAttribu
     declare ultimo_km_inicial: CreationOptional<number>;
     declare ultimo_real: CreationOptional<number>;
     declare nombre_maquinaria: CreationOptional<string | null>;
-    // createdAt/updatedAt/deletedAt: Sequelize los maneja solo via timestamps+paranoid (ver init() abajo),
-    // mismo patron que Actividad (models/actividad.ts) - no hace falta declararlos aqui.
+    // createdAt/updatedAt: Sequelize los maneja solo via timestamps (ver init() abajo) - no hace falta
+    // declararlos aqui. deletedAt SI se declara (a diferencia de antes) porque importarEquipos
+    // (equipo.controller.ts) lo necesita leer explicitamente con paranoid:false, para detectar un
+    // codigo_megued/nombre_equipo que perteneció a un equipo eliminado (el UNIQUE de Postgres sigue viendolo
+    // ocupado aunque el soft-delete lo esconda de un findAll() normal).
+    declare deletedAt: CreationOptional<Date | null>;
 }
 
 Equipo.init(
@@ -54,6 +58,10 @@ Equipo.init(
         },
         nombre_maquinaria:{
             type: DataTypes.STRING(50)
+        },
+        deletedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
         },
     },
     {
