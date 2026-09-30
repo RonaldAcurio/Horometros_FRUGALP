@@ -8,8 +8,8 @@ import { Operador, Asistencia, Actividad, RespuestaPaginada } from '../models/as
     providedIn: 'root'
 })
 export class AsistenciaService {
-    // 1. Limpiamos '/horometros' para obtener la base limpia: 'https://horometros-frugalp.onrender.com/api'
-    // Y le pegamos directo a la base del módulo de asistencia: 'https://horometros-frugalp.onrender.com/api/asistencia'
+    // 1. Limpiamos '/horometros' para obtener la base limpia: environment.apiUrl (Railway en produccion)
+    // Y le pegamos directo a la base del módulo de asistencia: `${environment.apiUrl}/asistencia`
     private baseUrl = `${environment.apiUrl}/asistencia`;
 
     constructor(private http: HttpClient) {}
