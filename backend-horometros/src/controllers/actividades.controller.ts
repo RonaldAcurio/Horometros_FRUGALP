@@ -102,6 +102,22 @@ Importación masiva desde Excel (pestaña "Actividad" del Panel de Asistente, mi
 mapeado ({codigo_megued, description, categoria?}[]). Reporta fila por fila qué se creó y qué se rechazó (y
 por qué) en vez de fallar todo-o-nada, mismo criterio que importarEquipos (equipo.controller.ts).
 */
+/*
+Investiga, RECIEN cuando el INSERT de una fila ya chocó de verdad contra el UNIQUE de Postgres, si el código fue
+de una actividad activa o de una soft-deleted - consulta directa a la BD en vez de comparar contra un mapa
+pre-armado. Mismo motivo que describirColisionEquipo en equipo.controller.ts: un caso real (2026-09-30) demostró
+que el chequeo previo (findAll(paranoid:false) + Map ANTES del insert) puede fallar a detectar un choque real.
+*/
+const describirColisionActividad = async (codigo: string): Promise<string> => {
+    const existente = await Actividad.findOne({ where: { codigo_megued: codigo }, paranoid: false });
+    if (!existente) {
+        return `El código "${codigo}" ya está en uso.`;
+    }
+    return existente.deletedAt
+        ? `El código "${codigo}" perteneció a una actividad eliminada antes - pide a un Admin que la recupere si hace falta.`
+        : `Ya existe una actividad con el código "${codigo}".`;
+};
+
 export const importarActividades = async(req:Request, res:Response) => {
     try{
         const items = req.body.items;
@@ -112,23 +128,13 @@ export const importarActividades = async(req:Request, res:Response) => {
             return res.status(400).json({ message: 'Máximo 2000 filas por importación - divide el archivo en partes más pequeñas.' });
         }
 
-        /*
-        paranoid:false a proposito - mismo bug real encontrado por el usuario en Equipo (2026-09-30, ver
-        equipo.controller.ts/importarEquipos): una Actividad eliminada (soft-delete) no sale en un findAll()
-        normal, pero el UNIQUE de codigo_megued en Postgres sigue viendo ese código como ocupado. Sin esto, esa
-        fila pasaba el chequeo, chocaba en el bulkCreate de abajo, y reventaba TODA la importación (incluyendo
-        las demás filas válidas del mismo archivo, porque bulkCreate es un solo INSERT).
-        */
-        const existentes = await Actividad.findAll({ attributes: ['codigo_megued', 'deletedAt'], paranoid: false });
-        const codigosExistentes = new Map(existentes.map((a) => [a.codigo_megued.trim().toLowerCase(), !!a.deletedAt]));
-
-        const validos: { codigo_megued: string; description: string; categoria: 'TALLER' | 'CAMPO' }[] = [];
         const rechazados: { fila: number; motivo: string }[] = [];
         const codigosEnArchivo = new Set<string>();
+        let creados = 0;
 
-        (items as unknown[]).forEach((item, index) => {
+        for (let index = 0; index < (items as unknown[]).length; index++) {
             const fila = index + 2;
-            const datos = item as { codigo_megued?: unknown; description?: unknown; categoria?: unknown };
+            const datos = (items as unknown[])[index] as { codigo_megued?: unknown; description?: unknown; categoria?: unknown };
             const codigo = String(datos?.codigo_megued ?? '').trim();
             const description = String(datos?.description ?? '').trim();
             const categoriaTexto = String(datos?.categoria ?? '').trim().toUpperCase();
@@ -136,42 +142,37 @@ export const importarActividades = async(req:Request, res:Response) => {
 
             if(!codigo || !description){
                 rechazados.push({ fila, motivo: 'Falta el código o la descripción de la actividad.' });
-                return;
+                continue;
             }
             if(codigo.length > 20){
                 rechazados.push({ fila, motivo: `El código "${codigo}" supera los 20 caracteres permitidos.` });
-                return;
+                continue;
             }
             if(description.length > 150){
                 rechazados.push({ fila, motivo: 'La descripción supera los 150 caracteres permitidos.' });
-                return;
+                continue;
             }
             const codigoLower = codigo.toLowerCase();
-            if(codigosExistentes.has(codigoLower)){
-                const fueEliminada = codigosExistentes.get(codigoLower);
-                rechazados.push({
-                    fila,
-                    motivo: fueEliminada
-                        ? `El código "${codigo}" perteneció a una actividad eliminada antes - pide a un Admin que la recupere si hace falta, no se puede reimportar con el mismo código.`
-                        : `Ya existe una actividad con el código "${codigo}".`,
-                });
-                return;
-            }
             if(codigosEnArchivo.has(codigoLower)){
                 rechazados.push({ fila, motivo: `El código "${codigo}" está repetido dentro del archivo.` });
-                return;
+                continue;
             }
 
-            codigosEnArchivo.add(codigoLower);
-            validos.push({ codigo_megued: codigo, description, categoria });
-        });
-
-        const creados = validos.length > 0 ? await Actividad.bulkCreate(validos) : [];
-        return res.status(201).json({ creados: creados.length, rechazados });
-    } catch(err: any){
-        if(err.name === 'SequelizeUniqueConstraintError'){
-            return res.status(409).json({ message: 'Alguna fila choca con un código que otra persona acaba de crear - vuelve a intentar la importación.' });
+            try {
+                await Actividad.create({ codigo_megued: codigo, description, categoria });
+                codigosEnArchivo.add(codigoLower);
+                creados++;
+            } catch (err: any) {
+                if (err.name === 'SequelizeUniqueConstraintError') {
+                    rechazados.push({ fila, motivo: await describirColisionActividad(codigo) });
+                    continue;
+                }
+                throw err;
+            }
         }
+
+        return res.status(201).json({ creados, rechazados });
+    } catch(err: any){
         console.error('Error al importar actividades.', err);
         return res.status(500).json({ message: 'Error al importar actividades.' });
     }

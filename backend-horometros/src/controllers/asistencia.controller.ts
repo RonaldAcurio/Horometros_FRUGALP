@@ -203,6 +203,37 @@ codigo/cedula a nivel de UNIQUE aunque no aparezcan en un findAll() normal). La 
 si viene, se resuelve por nombre contra los Usuarios con cargo SUPERVISOR (asi el trabajador queda vinculado a
 la hacienda correspondiente sin que el archivo tenga que conocer IDs internos).
 */
+/*
+Investiga, RECIEN cuando el INSERT de una fila ya chocó de verdad contra el UNIQUE de Postgres, si fue por
+codigo_megued o por cedula (o ambos) y si el dueño actual esta soft-deleted o activo - consulta directa a la BD
+en vez de comparar contra un mapa pre-armado. Mismo motivo que describirColisionEquipo en equipo.controller.ts:
+un caso real (2026-09-30) demostró que el chequeo previo (findAll(paranoid:false) + Map ANTES del insert) puede
+fallar a detectar un choque real. 'cedula' se busca con su valor YA CIFRADO (cifrarDeterministico), igual que el
+resto de este archivo (ver comentario de verificarDuplicadosOperador) porque el where: no pasa por el set() del
+modelo.
+*/
+const describirColisionOperador = async (codigo: string, cedulaCifrada: string | null): Promise<string> => {
+    const [porCodigo, porCedula] = await Promise.all([
+        Operador.findOne({ where: { codigo_megued: codigo }, paranoid: false }),
+        cedulaCifrada ? Operador.findOne({ where: { cedula: cedulaCifrada as any }, paranoid: false }) : Promise.resolve(null),
+    ]);
+    const piezas: string[] = [];
+    if (porCodigo) {
+        piezas.push(porCodigo.deletedAt
+            ? `el código "${codigo}" perteneció a un trabajador eliminado antes - pide a un Admin que lo recupere si hace falta`
+            : `ya existe un trabajador con el código "${codigo}"`);
+    }
+    if (porCedula) {
+        piezas.push(porCedula.deletedAt
+            ? `la cédula perteneció a un trabajador eliminado antes - pide a un Admin que lo recupere si hace falta`
+            : `ya existe un trabajador con esa cédula`);
+    }
+    if (piezas.length === 0) {
+        return `El código "${codigo}" o la cédula ya están en uso.`;
+    }
+    return piezas.join(' y ') + '.';
+};
+
 export const importarOperadores = async (req: Request, res: Response): Promise<void> => {
     try {
         const items = req.body.items;
@@ -215,27 +246,18 @@ export const importarOperadores = async (req: Request, res: Response): Promise<v
             return;
         }
 
-        const existentes = await Operador.findAll({ attributes: ['codigo_megued', 'cedula', 'deletedAt'], paranoid: false });
-        const codigosExistentes = new Map(existentes.map((o) => [o.codigo_megued.trim().toLowerCase(), !!o.deletedAt]));
-        // 'cedula' viene DESCIFRADA por el get() del modelo (ver models/operador.ts) - se vuelve a cifrar acá
-        // para poder comparar contra lo que traiga el archivo, mismo motivo que verificarDuplicadosOperador.
-        const cedulasExistentes = new Map<string, boolean>();
-        existentes.forEach((o) => {
-            if (o.cedula) cedulasExistentes.set(cifrarDeterministico(o.cedula) as string, !!o.deletedAt);
-        });
-
         const supervisores = await Usuario.findAll({ where: { cargo: 'SUPERVISOR' }, attributes: ['id', 'nombre_completo'] });
         const supervisorPorNombre = new Map(supervisores.map((s) => [s.nombre_completo.trim().toLowerCase(), s.id]));
 
-        const validos: { nombre_completo: string; codigo_megued: string; rol: 'MECANICO' | 'OPERADOR'; cedula: string | null; supervisor_id: number | null }[] = [];
         const rechazados: { fila: number; motivo: string }[] = [];
         const codigosEnArchivo = new Set<string>();
         const cedulasEnArchivo = new Set<string>();
+        let creados = 0;
 
-        (items as unknown[]).forEach((item, index) => {
+        for (let index = 0; index < (items as unknown[]).length; index++) {
             // fila 2 en el Excel = primer registro (la fila 1 es el encabezado).
             const fila = index + 2;
-            const datos = item as { nombre_completo?: unknown; rol?: unknown; codigo_megued?: unknown; cedula?: unknown; supervisor?: unknown };
+            const datos = (items as unknown[])[index] as { nombre_completo?: unknown; rol?: unknown; codigo_megued?: unknown; cedula?: unknown; supervisor?: unknown };
             const nombre = String(datos?.nombre_completo ?? '').trim();
             const codigo = String(datos?.codigo_megued ?? '').trim();
             const rolCrudo = String(datos?.rol ?? '').trim();
@@ -244,15 +266,15 @@ export const importarOperadores = async (req: Request, res: Response): Promise<v
 
             if (!nombre || !codigo) {
                 rechazados.push({ fila, motivo: 'Falta el nombre o el código del trabajador.' });
-                return;
+                continue;
             }
             if (codigo.length > 20) {
                 rechazados.push({ fila, motivo: `El código "${codigo}" supera los 20 caracteres permitidos.` });
-                return;
+                continue;
             }
             if (nombre.length > 150) {
                 rechazados.push({ fila, motivo: 'El nombre supera los 150 caracteres permitidos.' });
-                return;
+                continue;
             }
 
             let rol: 'MECANICO' | 'OPERADOR' = 'MECANICO';
@@ -260,43 +282,23 @@ export const importarOperadores = async (req: Request, res: Response): Promise<v
                 const rolMayus = rolCrudo.toUpperCase();
                 if (!ROLES_OPERADOR_VALIDOS.includes(rolMayus)) {
                     rechazados.push({ fila, motivo: `El cargo "${rolCrudo}" debe ser MECANICO u OPERADOR.` });
-                    return;
+                    continue;
                 }
                 rol = rolMayus as 'MECANICO' | 'OPERADOR';
             }
 
             const codigoLower = codigo.toLowerCase();
-            if (codigosExistentes.has(codigoLower)) {
-                const fueEliminado = codigosExistentes.get(codigoLower);
-                rechazados.push({
-                    fila,
-                    motivo: fueEliminado
-                        ? `El código "${codigo}" perteneció a un trabajador eliminado antes - pide a un Admin que lo recupere si hace falta, no se puede reimportar con el mismo código.`
-                        : `Ya existe un trabajador con el código "${codigo}".`,
-                });
-                return;
-            }
             if (codigosEnArchivo.has(codigoLower)) {
                 rechazados.push({ fila, motivo: `El código "${codigo}" está repetido dentro del archivo.` });
-                return;
+                continue;
             }
 
             let cedulaCifrada: string | null = null;
             if (cedula) {
                 cedulaCifrada = cifrarDeterministico(cedula) as string;
-                if (cedulasExistentes.has(cedulaCifrada)) {
-                    const fueEliminado = cedulasExistentes.get(cedulaCifrada);
-                    rechazados.push({
-                        fila,
-                        motivo: fueEliminado
-                            ? `La cédula "${cedula}" perteneció a un trabajador eliminado antes - pide a un Admin que lo recupere si hace falta.`
-                            : `Ya existe un trabajador con la cédula "${cedula}".`,
-                    });
-                    return;
-                }
                 if (cedulasEnArchivo.has(cedulaCifrada)) {
                     rechazados.push({ fila, motivo: `La cédula "${cedula}" está repetida dentro del archivo.` });
-                    return;
+                    continue;
                 }
             }
 
@@ -305,23 +307,27 @@ export const importarOperadores = async (req: Request, res: Response): Promise<v
                 const idEncontrado = supervisorPorNombre.get(supervisorTexto.toLowerCase());
                 if (!idEncontrado) {
                     rechazados.push({ fila, motivo: `No se encontró ningún Supervisor con el nombre "${supervisorTexto}" - revisa que coincida exacto con el nombre registrado en el sistema.` });
-                    return;
+                    continue;
                 }
                 supervisor_id = idEncontrado;
             }
 
-            codigosEnArchivo.add(codigoLower);
-            if (cedulaCifrada) cedulasEnArchivo.add(cedulaCifrada);
-            validos.push({ nombre_completo: nombre, codigo_megued: codigo, rol, cedula: cedula || null, supervisor_id });
-        });
-
-        const creados = validos.length > 0 ? await Operador.bulkCreate(validos as any) : [];
-        res.status(201).json({ creados: creados.length, rechazados });
-    } catch (err: any) {
-        if (err.name === 'SequelizeUniqueConstraintError') {
-            res.status(409).json({ message: 'Alguna fila choca con un código o cédula que otra persona acaba de crear - vuelve a intentar la importación.' });
-            return;
+            try {
+                await Operador.create({ nombre_completo: nombre, codigo_megued: codigo, rol, cedula: cedula || null, supervisor_id } as any);
+                codigosEnArchivo.add(codigoLower);
+                if (cedulaCifrada) cedulasEnArchivo.add(cedulaCifrada);
+                creados++;
+            } catch (err: any) {
+                if (err.name === 'SequelizeUniqueConstraintError') {
+                    rechazados.push({ fila, motivo: await describirColisionOperador(codigo, cedulaCifrada) });
+                    continue;
+                }
+                throw err;
+            }
         }
+
+        res.status(201).json({ creados, rechazados });
+    } catch (err: any) {
         console.error('Error al importar trabajadores.', err);
         res.status(500).json({ message: 'Error al importar trabajadores.' });
     }
