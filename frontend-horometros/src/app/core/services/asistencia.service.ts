@@ -18,7 +18,14 @@ export class AsistenciaService {
     crearOperador(operador: Partial<Operador>): Observable<Operador> {
         return this.http.post<Operador>(`${this.baseUrl}/operadores`, operador);
     }
-    
+
+    // POST -> /api/asistencia/operadores/importar - importación masiva desde Excel (botón "Importar", Directorio
+    // de Operadores). 'supervisor' es el NOMBRE del Supervisor (texto libre, resuelto por el backend) - así el
+    // trabajador queda vinculado a la hacienda correspondiente sin que el archivo conozca IDs internos.
+    importarOperadores(items: { nombre_completo: string; codigo_megued: string; rol?: string; cedula?: string; supervisor?: string }[]): Observable<{ creados: number; rechazados: { fila: number; motivo: string }[] }> {
+        return this.http.post<{ creados: number; rechazados: { fila: number; motivo: string }[] }>(`${this.baseUrl}/operadores/importar`, { items });
+    }
+
     // GET -> https://.../api/asistencia/operadores?pagina=1&limite=20&q=... - paginado y filtrable por texto
     // (mandar pagina/limite activa esa respuesta en el backend, ver asistencia.controller.ts), lo consume el
     // Directorio de Operadores del Panel de Asistente.

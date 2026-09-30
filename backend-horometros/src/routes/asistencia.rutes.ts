@@ -19,6 +19,7 @@ import {
     marcarConQrSesion,
     confirmarAsistencia,
     eliminarOperador,
+    importarOperadores,
 } from "../controllers/asistencia.controller";
 import { verificarAutenticacion, requireRol, verificarJornadaOperadorActiva } from "../middlewares/auth.middleware";
 import { limitadorLogin, limitadorMarcacion } from "../middlewares/rate-limit.middleware";
@@ -28,6 +29,8 @@ const router = Router();
 // Gestion de Personal (Directorio de Operadores, Historial): mismos roles que ya protegen /asistencia/asistente
 // en el frontend (ver roleGuard en app.routes.ts) - crear/editar Operador, listarlos y ver el Historial de auditoria.
 router.post('/operadores', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), crearOperador);
+// Importación masiva desde Excel (mismo patrón que /equipos/importar y /actividad/importar).
+router.post('/operadores/importar', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), importarOperadores);
 router.get('/operadores', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), obtenerOperadores);
 router.put('/operadores/:id', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), actualizarOperador);
 router.delete('/operadores/:id', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), eliminarOperador);

@@ -24,8 +24,11 @@ export class Operador extends Model <InferAttributes<Operador>, InferCreationAtt
     // null = ningun JWT invalidado explicitamente. Se pisa con NOW() al cambiar la clave (ver CLAUDE.md,
     // "Revocacion de sesiones JWT", y middlewares/auth.middleware.ts).
     declare sesion_valida_desde: CreationOptional<Date | null>;
-    // createdAt/updatedAt/deletedAt: Sequelize los maneja solo via timestamps+paranoid (ver init() abajo),
-    // mismo patron que Actividad (models/actividad.ts) - no hace falta declararlos aqui.
+    // createdAt/updatedAt: Sequelize los maneja solo via timestamps (ver init() abajo). deletedAt SI se declara
+    // (a diferencia de esos dos) porque importarOperadores lo necesita leer para distinguir "codigo/cedula ya
+    // en uso" de "perteneció a un trabajador eliminado antes" - mismo motivo que Equipo/Actividad
+    // (models/equipo.ts).
+    declare deletedAt: CreationOptional<Date | null>;
 }
 
 Operador.init(
@@ -125,6 +128,10 @@ Operador.init(
             allowNull: true,
         },
         sesion_valida_desde:{
+            type: DataTypes.DATE,
+            allowNull: true,
+        },
+        deletedAt: {
             type: DataTypes.DATE,
             allowNull: true,
         },

@@ -186,6 +186,14 @@ export class AsistenciaPanel implements OnInit{
   filasParaImportarActividad: { codigo_megued: string; description: string; categoria: string }[] = [];
   resultadoImportarActividad: ResultadoImportacion | null = null;
 
+  // Importar Trabajadores (Directorio de Operadores) - 'supervisor' viaja como NOMBRE de texto libre, el
+  // backend lo resuelve contra los Usuarios con cargo SUPERVISOR y de ahi deriva la hacienda automaticamente.
+  mostrarModalImportarOperador = false;
+  importandoOperadores = false;
+  errorImportarOperador = '';
+  filasParaImportarOperador: { nombre_completo: string; rol: string; codigo_megued: string; cedula: string; supervisor: string }[] = [];
+  resultadoImportarOperador: ResultadoImportacion | null = null;
+
   constructor(
     private asistenciaService: AsistenciaService,
     private usuarioService: UsuarioService,
@@ -1050,6 +1058,71 @@ export class AsistenciaPanel implements OnInit{
       error: (err) => {
         this.importandoEquipos = false;
         this.notificacionService.error(err.error?.message || 'Error al importar los equipos.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  abrirModalImportarOperador(): void {
+    this.mostrarModalImportarOperador = true;
+    this.filasParaImportarOperador = [];
+    this.resultadoImportarOperador = null;
+    this.errorImportarOperador = '';
+  }
+
+  cerrarModalImportarOperador(): void {
+    this.mostrarModalImportarOperador = false;
+  }
+
+  descargarPlantillaOperadores(): void {
+    descargarPlantillaExcel('plantilla-trabajadores.xlsx', 'Trabajadores', ['NOMBRE', 'CARGO', 'CODIGO', 'CEDULA', 'SUPERVISOR']);
+  }
+
+  async onArchivoOperadoresSeleccionado(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const archivo = input.files?.[0];
+    if (!archivo) return;
+
+    this.errorImportarOperador = '';
+    this.resultadoImportarOperador = null;
+    try {
+      const filas = await leerFilasExcel<{ nombre_completo: string; rol: string; codigo_megued: string; cedula: string; supervisor: string }>(archivo, [
+        { clave: 'nombre_completo', encabezados: ['nombre', 'nombre completo', 'nombre_completo'] },
+        { clave: 'rol', encabezados: ['cargo', 'rol'] },
+        { clave: 'codigo_megued', encabezados: ['codigo', 'codigo megued', 'codigo_megued'] },
+        { clave: 'cedula', encabezados: ['cedula'] },
+        { clave: 'supervisor', encabezados: ['supervisor'] },
+      ]);
+      this.filasParaImportarOperador = filas;
+      if (filas.length === 0) {
+        this.errorImportarOperador = 'No se encontraron filas con datos - revisa que uses la plantilla y que las columnas tengan esos mismos encabezados.';
+      }
+    } catch {
+      this.errorImportarOperador = 'No se pudo leer el archivo. Asegúrate de que sea un .xlsx o .xls válido.';
+    } finally {
+      input.value = '';
+      this.cdr.detectChanges();
+    }
+  }
+
+  confirmarImportarOperadores(): void {
+    if (this.filasParaImportarOperador.length === 0) return;
+
+    this.importandoOperadores = true;
+    this.asistenciaService.importarOperadores(this.filasParaImportarOperador).subscribe({
+      next: (res) => {
+        this.importandoOperadores = false;
+        this.resultadoImportarOperador = res;
+        this.filasParaImportarOperador = [];
+        if (res.creados > 0) {
+          this.notificacionService.exito(`${res.creados} trabajador(es) importado(s) con éxito.`);
+          this.cargarOperadores();
+        }
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.importandoOperadores = false;
+        this.notificacionService.error(err.error?.message || 'Error al importar los trabajadores.');
         this.cdr.detectChanges();
       },
     });
