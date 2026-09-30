@@ -184,6 +184,37 @@ export const importarEquipos = async (req: Request, res: Response): Promise<void
     }
 };
 
+/*
+Endpoint temporal de SOLO LECTURA (2026-09-30): investigar, con datos reales y sin adivinar, por qué la
+migracion que repara el UNIQUE de codigo_megued/nombre_equipo no logra aplicarse en produccion. Un UNIQUE
+CONSTRAINT normal de Postgres se aplica sobre TODAS las filas de la tabla, incluidas las soft-deleted
+(paranoid) - si ya existen varias filas (activas o eliminadas) con el mismo valor, Postgres rechaza crear el
+constraint. Esto solo lista los grupos duplicados (incluye eliminados, via paranoid:false) para decidir la
+correccion exacta antes de borrar nada. Se elimina despues de resolver el incidente.
+*/
+export const diagnosticoDuplicadosEquipos = async (_req: Request, res: Response): Promise<void> => {
+    try {
+        const todos = await Equipo.findAll({ paranoid: false, order: [['id', 'ASC']] });
+        const porCodigo = new Map<string, typeof todos>();
+        const porNombre = new Map<string, typeof todos>();
+        for (const e of todos) {
+            const c = e.codigo_megued;
+            const n = e.nombre_equipo;
+            if (!porCodigo.has(c)) porCodigo.set(c, [] as any);
+            (porCodigo.get(c) as any).push(e);
+            if (!porNombre.has(n)) porNombre.set(n, [] as any);
+            (porNombre.get(n) as any).push(e);
+        }
+        const resumir = (e: any) => ({ id: e.id, codigo_megued: e.codigo_megued, nombre_equipo: e.nombre_equipo, deletedAt: e.deletedAt, createdAt: e.createdAt });
+        const gruposCodigo = [...porCodigo.entries()].filter(([, v]) => (v as any).length > 1).map(([k, v]) => ({ valor: k, filas: (v as any).map(resumir) }));
+        const gruposNombre = [...porNombre.entries()].filter(([, v]) => (v as any).length > 1).map(([k, v]) => ({ valor: k, filas: (v as any).map(resumir) }));
+        res.json({ total_filas: todos.length, duplicados_codigo: gruposCodigo, duplicados_nombre: gruposNombre });
+    } catch (err) {
+        console.error('Error en diagnostico de duplicados.', err);
+        res.status(500).json({ message: 'Error en diagnostico de duplicados.' });
+    }
+};
+
 // Editar un Equipo
 export const actualizarEquipo = async (req: Request, res: Response): Promise<void> => {
     try {
