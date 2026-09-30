@@ -1,2289 +1,495 @@
 # FRUGALP - Sistema de Asistencia
 
-(El nombre del proyecto/repo/BD sigue siendo "Horometros_FRUGALP"/`horometros_db` por historia - el módulo
-Horómetros que le daba ese nombre ya no existe, ver "Módulos del sistema" abajo.)
+(El nombre del repo/BD sigue siendo "Horometros_FRUGALP"/`horometros_db` por historia - el módulo Horómetros que
+le daba ese nombre se eliminó por completo, ver "Módulos del sistema".)
 
-Empresa agrícola. Backend Node/Express + TypeScript + Sequelize sobre PostgreSQL (Render, `dpg-dab9e9ojo6nc739j25ug-a`).
-Frontend Angular 22 (standalone components) + Tailwind CSS, desplegado en **Vercel**. El destino final es empaquetar
-la app **nativo** (no PWA) para los celulares de Mecánicos/Operadores, pero mientras se construye el Frontend se
-prueba directo en el link de Vercel (navegador), no hace falta empaquetar para cada prueba.
+Empresa agrícola, ~950 trabajadores de campo (Mecánicos/Operadores) + ~150 de oficina. Backend Node/Express +
+TypeScript + Sequelize sobre PostgreSQL, desplegado en **Railway** (backend + BD, red privada entre ambos).
+Frontend Angular 22 (standalone components) + Tailwind CSS, desplegado en **Vercel**. Fotos de evidencia en
+**Cloudflare R2**. Empaquetado Android nativo vía Capacitor (`.apk`, sin Play Store); iPhone se queda como
+PWA-lite (Safari, "Agregar a pantalla de inicio") - ver "Infraestructura y despliegue" al final.
 
-Este documento es el briefing de arquitectura para retomar el proyecto en cualquier momento: qué existe, qué reglas
-de negocio ya están confirmadas, y qué falta. No es un documento para el usuario final de la app.
+Este documento es el briefing de arquitectura para retomar el proyecto: qué existe, qué reglas de negocio están
+confirmadas, y qué falta. No es un documento para el usuario final de la app (ver `README.md` para eso).
 
 ## Módulos del sistema
 
-**Asistencia** es el único módulo activo - el que describe todo este documento. El módulo **Horómetros** (OCR con
-Gemini para leer horómetros de fotos, `horometros.controller.ts`/`gemini.service.ts`) **se eliminó por completo**
-(decisión del usuario, ejecutada - ver "Eliminación del módulo Horómetros (OCR)" más abajo para el detalle de qué
-se borró y qué quedó). Las columnas de `Equipo` que eran exclusivas de ese módulo (`ultimo_km_inicial`,
-`ultimo_real`, `numero_hoja`, `tiene_tope_10k`, `nombre_maquinaria`) **no se tocaron** - siguen en la tabla, sin
-uso, por decisión explícita del usuario de no borrar columnas.
-
-### Eliminación del módulo Horómetros (OCR)
-
-Pedido explícito del usuario: el módulo Horómetros (subía fotos de la hoja física del tractor, las procesaba con
-IA vía Gemini y actualizaba `Equipo`/`Ingresos_Semanales`) ya no se necesita dentro de esta app. Era un módulo
-autocontenido desde el inicio (nunca compartía componentes/servicios con Asistencia, solo el modelo `Equipo`), así
-que se pudo borrar de raíz sin dejar código muerto:
-
-**Backend - borrado:** `controllers/horometros.controller.ts`, `routes/horometros.routees.ts`,
-`services/gemini.service.ts` (OCR vía Gemini), `middlewares/upload.middleware.ts` (Multer, sin otro consumidor en
-todo el backend), `models/ingresos_semanales.ts` (la tabla de resultados del OCR - el modelo Sequelize se borró,
-la tabla en Postgres NO, ver más abajo). `package.json`: se quitaron `@google/genai` y `multer` (+
-`@types/multer`) y se corrió `npm install` para limpiar `package-lock.json`.
-
-**Backend - editado:** `app.ts` (el `import`/`app.use('/api/horometros', ...)`), `models/index.ts` (el `import
-Ingresos_Semanales`, sus 3 asociaciones con Equipo/Operador/Actividad y su entrada en el `export`). De paso,
-`index.ts` perdió una consulta de prueba suelta (`Equipo.findOne({numero_hoja:'33'})` al arrancar, resto de una
-prueba manual de cuando se armó el modelo `Equipo` - no era parte de ningún flujo real).
-
-**Frontend - borrado:** carpeta `features/horometros/` completa (`horometros.component.*` +
-`components/carga-lote/`), `core/services/horometros.services.ts`, `core/models/horometro.model.ts`. **Editado:**
-`app.routes.ts` (la ruta `path: 'horometros'`) y `dashboard.component.html` (la tarjeta "+ Horómetro" entre
-"Asistencia" y "Administración" - el Dashboard de ADMIN/ASISTENTE/SUPERVISOR ahora solo tiene 1 o 2 tarjetas).
-
-**Explícitamente NO se tocó** (columnas/tablas en Postgres, por pedido directo del usuario de no borrar ninguna):
-- `equipos`: `ultimo_km_inicial`, `ultimo_real`, `numero_hoja`, `tiene_tope_10k`, `nombre_maquinaria` - eran
-  exclusivas de Horómetros (las escribía `horometros.controller.ts`, nadie más), quedan como columnas sin uso.
-  El modelo Sequelize `Equipo` las sigue declarando (no tenía sentido borrarlas del modelo si la columna sigue
-  viva en la BD - dejaría de poder leerlas si alguna vez hicieran falta).
-- `ingresos_semanales` (la tabla completa): el modelo Sequelize que la mapeaba se borró (arriba), pero la tabla en
-  sí sigue existiendo en Postgres, simplemente ya no la escribe ni lee ningún código de la app. No se corrió
-  ninguna migración para eliminarla.
-
-Con esto, "Equipo" pasó a ser un modelo 100% de Asistencia: su CRUD completo vive en `equipo.controller.ts` (lo
-usan tanto el Panel de Actividades - solo lectura, `GET /api/equipos` - como la pestaña "Equipo" del Panel de
-Asistente, ver "Gestión de Equipo/Actividad + soft-delete").
-
-**Fase 2 de `RegistroActividad` para OPERADOR, construida en la misma ronda**: como parte de este mismo pedido
-("no quiero perder las dos columnas donde se ingresa horómetro inicio/fin, que aparezcan solo para OPERADOR"), se
-construyó en el Panel de Actividades (`mi-jornada.html`) lo que el modelo `registro_actividad.ts` ya traía
-preparado desde antes pero sin UI: los campos `horometro_inicio`/`horometro_final`, visibles únicamente cuando
-`esMecanico` es `false` (ver "Panel de Actividades" arriba para el detalle). Se evaluó construir un panel
-**separado** exclusivo de OPERADOR para no "saturar de condiciones" el componente compartido - se descartó: el
-componente ya tenía exactamente este mismo patrón resuelto para MECANICO (el campo `area`/"OT", con un solo
-`*ngIf="esMecanico"`), y todo lo demás de la pantalla (fases código/QR, polling de estado, autocompletar de
-Equipo/Actividad, editor de finalizar, salida) es 100% idéntico entre los dos roles - duplicarlo en dos
-componentes hubiera significado mantener dos copias de esa lógica compartida por cada cambio futuro, a cambio de
-evitarse dos `*ngIf` más. Se prefirió extender el patrón ya existente: un `*ngIf="!esMecanico"` para el input de
-horómetro inicial (junto a "Hora de inicio"), otro dentro del editor inline de finalizar para el horómetro final,
-y una columna "Horómetro" en la tabla "Labores de hoy" con el mismo guard.
+**Asistencia** es el único módulo activo. El módulo **Horómetros** (OCR con Gemini para leer horómetros de
+fotos) se eliminó por completo a pedido del usuario - código y rutas borrados de raíz. Quedó sin tocar, a
+propósito, por decisión explícita de no borrar columnas/tablas existentes: las columnas de `Equipo` exclusivas
+de ese módulo (`ultimo_km_inicial`, `ultimo_real`, `numero_hoja`, `tiene_tope_10k`, `nombre_maquinaria`, todas
+sin uso hoy) y la tabla `ingresos_semanales` completa (sin modelo Sequelize, la tabla sigue en Postgres). `Equipo`
+es hoy un modelo 100% de Asistencia, CRUD completo en `equipo.controller.ts`.
 
 ## Roles
 
 | Rol | Vive en | Alcance | Login |
 |---|---|---|---|
-| ADMIN | `usuarios` | Todo el sistema. Menú propio que además reproduce lo que hace SUPERVISOR y ASISTENTE. | JWT de sesión (8h) |
-| ASISTENTE | `usuarios` | Auditoría/gestión de personal, Historial de Asistencia con filtro por fecha. **También** crea/lista Usuarios de oficina y resetea sus claves (decisión de negocio: lo va a manejar la Asistente de gerencia) - **no** administra Haciendas/Token, eso sigue siendo solo ADMIN/SUPERVISOR. | JWT de sesión (8h) |
+| ADMIN | `usuarios` | Todo el sistema. | JWT de sesión (8h) |
+| ASISTENTE | `usuarios` | Auditoría/gestión de personal, Historial con filtros. También crea/lista Usuarios de oficina y resetea claves. No administra Haciendas/Token. | JWT de sesión (8h) |
 | SUPERVISOR | `usuarios` | Una hacienda fija (`hacienda_id`). Valida marcaciones del día, confirma O/X, cierra jornada, escanea. | JWT de sesión (8h) |
-| **ESCANER** | `usuarios` | Cuenta de un **punto de control físico** (tablet/celular fijo en la entrada de una hacienda). Una hacienda fija. Solo puede escanear/confirmar marcaciones - no ve reportes ni administra nada. | JWT de sesión (8h) |
-| MECANICO / OPERADOR | `operadores` | Trabajador de taller/campo. `usuario`/`clave_hash` son columnas propias de `operadores` (no duplican identidad en `usuarios`, ver decisión abajo). | JWT de sesión, vigencia atada a su jornada (ver sección de sesión) |
+| ESCANER | `usuarios` | Cuenta de un punto de control físico (tablet/celular fijo). Una hacienda fija. Solo escanea/confirma - no ve reportes ni administra nada. | JWT de sesión (8h) |
+| MECANICO / OPERADOR | `operadores` | Trabajador de taller/campo. `usuario`/`clave_hash` son columnas propias de `operadores` (no duplica identidad en `usuarios`). | JWT atado a la jornada (ver abajo) |
 
-**Por qué Operador no vive en `usuarios`:** ya existe una tabla que identifica a esa persona (código Megued, cédula,
-carnet QR). Crear un segundo registro en `usuarios` para lo mismo duplicaría la identidad en 2 tablas y las
-desincronizaría con el tiempo. En su lugar, `operadores` ganó columnas propias: `supervisor_id` (a qué
-Supervisor/hacienda pertenece de forma permanente), `usuario`, `clave_hash`.
+**Por qué Operador no vive en `usuarios`:** ya existe una tabla que identifica a esa persona (código Megued,
+cédula, carnet QR) - un segundo registro en `usuarios` duplicaría la identidad y las desincronizaría con el
+tiempo. `operadores` tiene columnas propias: `supervisor_id` (a qué Supervisor/hacienda pertenece de forma
+permanente), `usuario`, `clave_hash`.
 
-**Login único:** una sola pantalla en el frontend. `POST /api/auth/login` busca primero en `usuarios`, si no
-encuentra busca en `operadores`. Un mismo `usuario` nunca puede existir en las dos tablas a la vez (se valida al
-crear cada cuenta).
+**Login único:** `POST /api/auth/login` busca primero en `usuarios`, si no encuentra busca en `operadores`. Un
+mismo `usuario` nunca existe en las dos tablas a la vez (se valida al crear cada cuenta).
 
-## ESCANER: por qué existe y cómo se ata a su hacienda
+## ESCANER: cómo se ata a su hacienda
 
-Antes solo el Supervisor podía escanear. En la práctica, algunos puntos de control físicos (portón/garita) necesitan
-un dispositivo fijo dedicado a escanear/confirmar, sin que dependa de que el Supervisor tenga su celular ahí. ESCANER
-es esa cuenta.
+Cuenta de un dispositivo fijo de punto de control (portón/garita) para escanear/confirmar sin depender del
+celular del Supervisor. Su hacienda (igual que la de un SUPERVISOR) se fija **en el momento de creación**, por
+el Admin, nunca en el login - el login NO deja elegir hacienda de un menú, solo la muestra de forma informativa.
+`usuarios.hacienda_id` no tiene UNIQUE simple: son 2 índices UNIQUE **parciales** (`WHERE cargo='SUPERVISOR'` y
+`WHERE cargo='ESCANER'`, migración `20260921060000`) - máximo 1 Supervisor y 1 Escáner por hacienda, pero ambos
+coexisten. `crearUsuario` devuelve 409 con mensaje claro si se viola. No hay relación directa Escáner↔Supervisor
+en el modelo - se vinculan solo por `hacienda_id` compartido; cuando cualquiera de los dos escanea, el backend
+usa el `hacienda_id` de quien está logueado para decidir préstamo (ver `marcarConQrSesion`).
 
-**Decisión de diseño (la pregunta que quedaba abierta se resolvió así):** la hacienda de una cuenta ESCANER (igual
-que la de un SUPERVISOR) se fija **en el momento de creación**, por el Admin, nunca en el login. El login **NO deja
-elegir** la hacienda de un menú - eso abriría la puerta a que alguien (por error o a propósito) mezcle trabajadores
-de una hacienda con la marcación de otra. Lo único que el login hace es **mostrar** `hacienda_nombre` como
-confirmación visual ("estás operando en Santa Clara"), de solo lectura. Detalle técnico: `usuarios.hacienda_id` ya
-no tiene un UNIQUE de columna simple; son 2 índices UNIQUE **parciales** (`WHERE cargo = 'SUPERVISOR'` y
-`WHERE cargo = 'ESCANER'`), así una misma hacienda tiene como máximo 1 Supervisor y 1 Escáner, pero ambos pueden
-coexistir (migración `20260921060000`).
+## Dos caminos de entrada a la jornada (Mecánico/Operador)
 
-## Dos caminos de entrada a la jornada (Mecánico/Operador) - unificados en el login
+Cuál camino le toca a un trabajador se deriva automáticamente de si su hacienda tiene ahora mismo un **Token de
+Hacienda vigente** (`hacienda.token_actual` + `token_expira_en` en el futuro) - nunca una elección manual.
+`POST /api/auth/login` lo calcula y manda `hacienda_requiere_codigo: boolean` en el perfil. Si el Supervisor
+genera un Token hoy, sus trabajadores ven código; si lo deja vencer, ven QR.
 
-**Decisión de diseño de esta ronda:** cuál camino le toca a un trabajador NO es una elección manual del Supervisor en
-el frontend ni un campo aparte en la BD - se deriva automáticamente de si la hacienda de ese trabajador tiene ahora
-mismo un **Token de Hacienda vigente** (`hacienda.token_actual` + `token_expira_en` en el futuro). El propio
-`POST /api/auth/login` lo calcula y lo manda en el perfil como `hacienda_requiere_codigo: boolean`
-(`auth.controller.ts`, rama `operador`) - así el frontend nunca tiene que adivinar ni ofrecer los dos caminos a la
-vez: **es estricto**, uno u otro, decidido en el momento exacto del login. Si el Supervisor genera un Token hoy, sus
-trabajadores ven código; si lo deja vencer, ven QR - sin que nadie tenga que tocar un "modo" a mano en ningún lado.
+### Camino A - Código (hacienda con Token vigente)
 
-### Camino A - Código (haciendas con Token de Hacienda vigente)
+- `POST /api/asistencia/marcar-codigo` (público, sin JWT): kiosco clásico, usuario+clave+Token de Hacienda desde
+  cero.
+- `POST /api/asistencia/marcar-mi-codigo` (autenticado): pantalla **"mi jornada"** (fase `codigo`) - ya logueado,
+  solo confirma el Token. La respuesta dice `tipo: 'ENTRADA' | 'SALIDA'`. ENTRADA lleva al Panel de Actividades
+  (igual que QR). SALIDA termina la jornada (fase `terminado`, botón explícito "Cerrar sesión", nunca logout
+  automático). Marcar salida por código **reenvía el mismo token que funcionó en la entrada** (`tokenHaciendaUsado`
+  guardado en memoria) sin volver a pedirlo - solo si el backend lo rechaza (venció, cambió) se muestra el
+  formulario para escribirlo de nuevo.
+- Ambas comparten `procesarMarcacion` (núcleo único de entrada/salida para los 4 caminos, evita triplicar reglas
+  como el cruce de medianoche).
+- Trabajador marcando en una hacienda que no es la suya vía Token: se autoadmite bajo el Supervisor de esa
+  hacienda (el Token ya prueba presencia física).
+- **"¿Hoy trabajas en otra hacienda?"** (botón en la pantalla de código, solo `!asistenciaId`): en vez de pedir
+  el token de una hacienda ajena (rechazado por seguridad, cualquiera con el token de otra hacienda se
+  autoadmitiría sin verificación), muestra el QR normal del trabajador (mismo `generarMiQr`) para que lo escanee
+  el Supervisor/Escáner de la hacienda destino - la prueba de presencia la sigue dando quien escanea, no el
+  trabajador solo. `GET /api/asistencia/mi-estado` devuelve `es_prestamo: boolean` (de `hacienda_prestamo_id` de
+  la jornada abierta) para que la SALIDA también muestre QR en vez de código, aunque su hacienda propia use Token.
 
-Dos variantes del mismo núcleo (comparten `procesarMarcacion`):
-- `POST /api/asistencia/marcar-codigo` (público, sin JWT): el kiosco clásico sin login, donde el trabajador teclea
-  usuario+clave+Token de Hacienda desde cero. Sigue existiendo para dispositivos compartidos que no quieren manejar
-  sesiones.
-- `POST /api/asistencia/marcar-mi-codigo` (autenticado, tipo `operador`): la pantalla **"mi jornada"** del propio
-  trabajador (`mi-jornada.ts`, fase `codigo`) - ya se logueó con usuario+clave una sola vez (`POST /api/auth/login`),
-  así que aquí solo confirma el Token de Hacienda, sin volver a escribir su clave. Marca al instante (entrada o
-  salida, `procesarMarcacion` decide cuál según si ya tiene jornada abierta y lo dice explícito en la respuesta,
-  `tipo: 'ENTRADA' | 'SALIDA'`).
-  - **ENTRADA**: lleva al Panel de Actividades (`entrarAActividades()`), **igual que el camino QR** - el código
-    solo reemplaza la forma de marcar presencia, no le quita al trabajador la posibilidad de registrar sus
-    labores del día. (Antes terminaba la sesión de inmediato tras la entrada, sin dejarlo entrar al panel - el
-    usuario reportó esto como que "no lo dejaba trabajar", se corrigió esta ronda.)
-  - **SALIDA**: sigue terminando la jornada de una vez (fase `terminado`, con un botón explícito "Cerrar sesión" -
-    antes se cerraba sola la sesión con un `setTimeout` de 4s, se sentía como un error/redirect inesperado al
-    login, se quitó a favor de que el propio trabajador decida cuándo cerrar; mismo criterio en las 3 fases que
-    llegan a `terminado`: código, detección de salida por QR, y salida olvidada). Se dispara con el botón
-    "🔚 Marcar salida" del Panel de Actividades (`marcarSalida()`, que por código vuelve a **pedir el código desde
-    cero** - no reutiliza el de la entrada, porque el código prueba presencia física en el momento, tanto a la
-    entrada como a la salida - y por QR vuelve a mostrar el QR flotante). Un refresco de página con jornada ya
-    abierta (código o QR) siempre vuelve al Panel de Actividades, nunca fuerza la pantalla de salida - la salida
-    es una acción explícita del trabajador, no algo que se infiera solo por volver a abrir la pantalla.
+### Camino B - Login + QR de sesión (hacienda SIN Token vigente)
 
-Si el trabajador marca en una hacienda que no es la suya, el sistema lo autoadmite bajo el Supervisor de esa
-hacienda (reemplaza "admitir externo" para este camino, porque el Token ya probó la presencia física).
+`GET /api/asistencia/mi-qr` + `POST /api/asistencia/marcar-qr-sesion`. El QR **no** es el `operador_id` fijo: es
+un JWT corto (`qr_token`, tipo `qr_jornada`, 90s de vigencia) que el frontend repide y redibuja en bucle - una
+foto/captura deja de servir en minutos. Alguien más (Supervisor/Escáner, desde `/asistencia/escanear`) tiene que
+escanearlo, obligatorio. `mi-jornada.ts` detecta el escaneo por **polling** de `GET /api/asistencia/mi-estado`
+cada 5s y pasa sola a la fase `actividades`. La salida también requiere escaneo nuevo.
 
-### Camino B - Login + QR de sesión (haciendas SIN Token de Hacienda vigente)
+**Salida por QR NO vuelve a pedir actividades**: `marcarConQrSesion` deriva la lista directo de los
+`RegistroActividad` ya cargados en el Panel de Actividades (`omitirActividadRequerida` en `ContextoMarcacion`) -
+exclusivo del Camino B y del Camino A ya logueado (`marcarConMiCodigo`, mismo tratamiento); el kiosco físico y
+el código público sin sesión siguen exigiendo elegir actividad al marcar salida.
 
-`GET /api/asistencia/mi-qr` + `POST /api/asistencia/marcar-qr-sesion`. El trabajador se loguea (una sola vez), y ya
-logueado, la pantalla **"mi jornada"** (fase `qr`) le muestra su propio QR de jornada en bucle - **obligatorio**,
-no hay forma de saltárselo: alguien más (Supervisor o Escáner, desde `/asistencia/escanear`, ver más abajo) tiene que
-escanearlo. El QR **no** es su `operador_id` fijo: es un JWT corto y aparte (`qr_token`, 90s de vigencia, tipo
-`qr_jornada`) que el frontend vuelve a pedir y redibujar en bucle mientras está en pantalla - una foto/captura deja
-de servir en menos de 2 minutos (reemplaza el viejo esquema "QR = operador_id", reusable indefinidamente).
+**Autoservicio "Salida Olvidada"** (`POST /api/asistencia/marcar-salida-olvidada`, jornada activa requerida):
+cuando el trabajador no puede volver a un punto de escaneo ni reingresar el código (sale tarde, ya se fue). Cierra
+la jornada como `SALIDA_OLVIDADA` con la hora del clic (editable) y desloguea. El Supervisor la ve congelada,
+igual que las que él cierra en bloque. También deriva actividades de `RegistroActividad` (mismo patrón que arriba
+- si no lo hiciera, perdería las labores ya cargadas).
 
-Una vez escaneado (entrada), `mi-jornada.ts` detecta el cambio por **polling** de `GET /api/asistencia/mi-estado`
-(cada 5s, endpoint nuevo de esta ronda) y pasa sola a la fase `actividades` (Panel de Actividades, ver abajo). Para
-la salida, el trabajador pulsa "Marcar salida" (vuelve a mostrar el QR) y **también** tiene que ser escaneado de
-nuevo - no hay salida sin escaneo, es la misma regla que la entrada.
+### El carnet físico (kiosco público)
 
-**La salida por QR de sesión NO vuelve a pedir actividades** (corrección de esta ronda): al escanear una salida,
-`marcarConQrSesion` detecta que ya hay una jornada abierta y, en vez de exigir que quien escanea elija actividades a
-mano (`require_actividad`, el comportamiento original heredado del carnet físico), **deriva la lista directamente
-de los `RegistroActividad` que el trabajador ya cargó en el Panel de Actividades** durante el día - así el resumen
-que ve el Supervisor (`AsistenciaActividad`) sigue quedando poblado, sin el cuadro redundante de "selecciona una
-actividad" que ya no tiene sentido si el trabajador ya las registró una por una. Este cambio es **exclusivo del
-Camino B** (`omitirActividadRequerida` en `ContextoMarcacion`) - el kiosco físico y el Camino A (código) siguen
-exigiendo elegir actividad al marcar salida, porque esos caminos no tienen Panel de Actividades detrás.
+`POST /api/asistencia/marcar-qr` (sin autenticación, `marcacion-kiosco.ts`, ruta `/asistencia/marcacion`) - flujo
+clásico de escanear el carnet QR impreso sin loguearse. Comparte `procesarMarcacion` con los otros 3 caminos.
 
-**Autoservicio "Salida Olvidada"** (`POST /api/asistencia/marcar-salida-olvidada`, nuevo endpoint de esta ronda):
-antes, `estado: 'SALIDA_OLVIDADA'` solo lo ponía el Supervisor en bloque al cerrar el día (`finalizarDia`) - el
-trabajador no tenía ninguna forma de cerrar su propia jornada si no lograba volver a un punto de escaneo ni
-reingresar el código (ej. sale muy tarde y ya se fue a su casa). Ahora `mi-jornada.ts` ofrece un link discreto
-("¿No puedes llegar a un punto de control?" / "No podré escanear hoy" / "¿No tienes el código...?") en las 3 fases
-donde puede hacer falta - `qr` (cuando ya es una salida), `codigo` (idem) y `actividades` - que llama a este
-endpoint directamente: cierra la jornada como `SALIDA_OLVIDADA` con la hora del clic (opcionalmente editable, mismo
-patrón que `hora_inicio`/`hora_fin` del Panel de Actividades) y desloguea. El Supervisor la ve igual que las que
-él mismo cierra en bloque - queda congelada (no se puede hacer O/X ni editar, mismo trato que `FINALIZADO`).
+### Panel de Actividades (ambos caminos)
 
-### El carnet físico (kiosco público) sigue existiendo, sin cambios
+Con la jornada abierta, el trabajador registra labores contra **Equipos** (`GET /api/equipos`, solo lectura) y
+**Actividades** (`GET /api/actividad`), vía `RegistroActividad`. El formulario cambia según el rol
+(`esMecanico = perfil.rol !== 'OPERADOR'`):
+- **MECANICO**: campo `area` (etiqueta "OT", Orden de Trabajo).
+- **OPERADOR**: `horometro_inicio`/`horometro_final` (opcionales, sin validar que uno sea mayor que el otro).
 
-`POST /api/asistencia/marcar-qr` (sin autenticación, `marcacion-kiosco.ts`, ruta `/asistencia/marcacion`) es el
-flujo clásico original: alguien escanea el carnet QR impreso del trabajador, sin que nadie tenga que loguearse. No
-se tocó en esta ronda - sigue siendo el único camino que no pasa por `procesarMarcacion` vía sesión de nadie.
-Los 4 caminos (kiosco, código público, código autenticado, QR de sesión) comparten el mismo núcleo de lógica de
-entrada/salida (`procesarMarcacion` en `asistencia.controller.ts`), para no triplicar reglas como el cruce de
-medianoche.
+Equipo/Actividad son autocompletar sobre **catálogos cacheados enteros en el celular** (`OfflineSyncService`,
+signals `catalogoEquipos`/`catalogoActividades` persistidos en `@capacitor/preferences`, refrescados al detectar
+conexión) - la búsqueda es instantánea con o sin señal, sin petición de red por letra escrita. Backend:
+`obtenerEquipos`/`obtenerActividad` sin `pagina`/`limite` devuelven el catálogo completo; con esos parámetros,
+paginado con `q` opcional (`ILIKE` sobre código/nombre).
 
-### Panel de Actividades (ambos caminos, código y QR)
+`hora_inicio`/`hora_fin` de cada labor son **editables** (el trabajador puede cargar esto después de hacer la
+labor) - opcionales, caen a la hora del servidor si no vienen. `hora_fin` debe ser posterior a `hora_inicio` de
+esa misma labor. Una labor nueva tampoco puede empezar antes de la última ya registrada ese día
+(`crearRegistroActividad` calcula el máximo de `hora_fin ?? hora_inicio` de la jornada). **Totalmente aparte** de
+`hora_ingreso`/`hora_salida` de la `Asistencia` (la jornada completa).
 
-Una vez con la jornada abierta (código o QR, ver "Camino A"/"Camino B" arriba), el trabajador entra al Panel de
-Actividades de su propia jornada (`mi-jornada.ts`, fase `actividades`): registra labores puntuales contra el
-catálogo de **Equipos** (`GET /api/equipos`, endpoint de solo lectura - el CRUD completo de Equipo vive en
-`equipo.controller.ts`, compartido con la pestaña "Equipo" del Panel de Asistente) y **Actividades**
-(`GET /api/actividad`), usando el modelo `RegistroActividad` que ya existía en el backend sin frontend
-(`registro_actividad.controller.ts`). El formulario cambia de campo según el rol de quien inició sesión
-(`esMecanico = perfil.rol !== 'OPERADOR'`, ver `mi-jornada.ts`):
-- **MECANICO**: campo `area`, con la etiqueta "OT" (Orden de Trabajo).
-- **OPERADOR**: campos `horometro_inicio` (al iniciar la labor, etiqueta "Horómetro inicial") y `horometro_final`
-  (al finalizarla, dentro del mismo editor inline de la hora de fin, etiqueta "Horómetro final") - ambos
-  opcionales, sin validación de que uno sea mayor que el otro (mismo criterio que `area`: campo de captura libre,
-  sin reglas de negocio extra que el usuario no pidió). La tabla "Labores de hoy" gana una columna "Horómetro"
-  (`inicio / final`) solo quien no sea MECANICO la ve. `seccion_id` sigue sin UI (fase 2, siempre en NULL).
-
-**Selectores como autocompletar**: ambos catálogos pueden crecer, así que Equipo/Actividad de este panel no son
-un `<select>` sino un input de texto + lista desplegable (`abrirOpcionesEquipo`/`onBuscarEquipo`/
-`seleccionarEquipo` y sus equivalentes de Actividad) - el trabajador escribe y van apareciendo las coincidencias
-(con debounce de 300ms), y un link "Cargar más" al fondo de la lista trae la siguiente página de la MISMA
-búsqueda. Cambiar el texto sin volver a elegir una opción borra la selección anterior (`nuevoRegistro.equipo_id`/
-`actividad_id` vuelve a `null`), para no mandar un id que ya no corresponde a lo que se ve escrito - el botón
-"Iniciar labor" se deshabilita en ese caso. `GET /api/equipos` siempre responde paginado
-(`{data, total, pagina, totalPaginas}`, mismo patrón que `obtenerAsistenciaHoy`) y acepta `q` opcional para
-filtrar por `codigo_megued`/`nombre_equipo` (`ILIKE`) - es el único consumidor de este endpoint. `GET /api/actividad`
-es compartido (lo usan también el kiosco y el checklist de salida del camino código, que sí quieren ver el
-catálogo completo de una vez como checklist, no autocompletar) - por eso ahí la paginación (y el filtro `q`) son
-opcionales: sin `pagina`/`limite` en la query responde el arreglo plano de siempre; con cualquiera de los dos,
-paginado, y `q` (si viene) filtra por `codigo_megued`/`description`. `mi-jornada.ts` mantiene dos catálogos de
-actividades separados por esto: `actividadesCatalogo` (completo, checklist de salida) y
-`actividadesCatalogoPanel` (paginado/buscable, este selector).
-
-**`hora_inicio`/`hora_fin` de cada labor son editables, a propósito** (decisión de negocio: el trabajador puede
-estar cargando esto en su tiempo libre, después de haber hecho la labor, así que necesita poder decir "esto lo hice
-a tal hora" en vez de que el sistema le imponga el momento exacto del clic). Ambos campos son opcionales en
-`crearRegistroActividad`/`finalizarRegistroActividad` (si no vienen, caen al comportamiento de antes: la hora del
-servidor en ese instante) y se validan: `hora_fin` tiene que ser posterior a `hora_inicio` de esa misma labor, o
-el backend responde 400. **Esto es un concepto totalmente aparte** de `hora_ingreso`/`hora_salida` de la
-`Asistencia` (la jornada completa - esas las pone el QR/código al marcar entrada/salida, y las ve el Supervisor en
-su panel; si el trabajador nunca marca salida, esa jornada queda `SALIDA_OLVIDADA`, ver Tablas) - no hay que
-confundir "cuánto duró la jornada completa" con "cuánto duró CADA labor dentro de ella".
-
-**Los inputs de hora son DOS `<input type="number">` (HH y MM), no un `<input type="time">` nativo** - la labor
-siempre es de HOY, no hace falta selector de fecha/calendario, y el widget nativo de hora tiene un bug de UX real
-que se encontró y confirmó con pruebas: es un control compuesto de 3 "segmentos" internos (hora/minuto/am-pm), y
-un clic en CUALQUIER punto del input NO enfoca siempre el segmento de la hora - basta con que el clic caiga sobre
-el segmento de minutos o AM/PM (muy fácil en un input ancho, donde la mayor parte del área no corresponde a
-ningún segmento útil) para que lo que se teclee después vaya a ESE segmento en vez de a la hora que el trabajador
-cree estar editando. Resultado: guarda una hora distinta a la que ve escrita, o el backend la rechaza por quedar
-antes de la hora de inicio - el usuario lo reportó como "no me deja poner la hora finalizada". Dos inputs
-separados (`horaInicioHH`/`horaInicioMM`, `horaFinHH`/`horaFinMM` en `mi-jornada.ts`), cada uno con un solo
-propósito, eliminan la ambigüedad por completo. `horaComponentesAIso(hh, mm)` combina ambos con la fecha de hoy y
-manda un ISO completo (con `Z`) al backend - **nunca el string crudo del input**. (Esto reemplaza un intento
-anterior con un solo `<input type="time">`: correcto en la conversión de zona horaria, pero seguía teniendo el
-bug de UX del widget nativo.) Antes de la conversión a ISO explícita, el backend, en OTRA zona horaria que el
-dispositivo del trabajador, reinterpretaba mal un string sin zona (`new Date("...")` sin offset se lee como hora
-local de quien lo parsea, no de quien lo escribió) y la hora guardada quedaba desfasada varias horas frente a lo
-que el trabajador realmente escribió - bug real reportado y confirmado con pruebas cruzando zonas horarias.
-
-**Bug relacionado pero distinto** (mismo reporte del usuario, "la fecha con la zona horaria"): los mensajes
-`"Bienvenido! Entrada registrada a las..."` / `"Hasta Luego! Salida registrada a las..."` que arma
-`procesarMarcacion` (asistencia.controller.ts) usaban `ahora.toLocaleTimeString('es-EC')` **sin** `timeZone`, que
-solo fija el idioma/formato del texto, no la zona horaria - sin eso, `toLocaleTimeString` usa la zona horaria del
-SERVIDOR (Render corre en UTC), no la de Ecuador. Un trabajador marcando a las 7am Ecuador veía "Entrada
-registrada a las 12:00 p.m." Se corrigió agregando `{ timeZone: 'America/Guayaquil' }` (mismo patrón que
-`getFetchLocalEcuador`/`getFechaLocalEcuador`, que sí lo tenían bien desde antes).
+**Inputs de hora**: dos `<input type="number">` (HH y MM) en vez de `<input type="time">` nativo - el widget
+nativo tiene 3 "segmentos" internos y un clic en cualquier punto no siempre enfoca el de la hora, causando que se
+edite el segmento equivocado sin que el usuario lo note. `horaComponentesAIso(hh, mm)` combina con la fecha de
+hoy y manda ISO completo (con `Z`) - nunca el string crudo del input (un string sin offset se interpreta en la
+zona horaria de quien lo parsea, no de quien lo escribió). Mensajes de "Entrada/Salida registrada a las..." usan
+`{ timeZone: 'America/Guayaquil' }` explícito en `toLocaleTimeString` (sin esto, usa la zona del servidor).
 
 ## Dos tokens que NO son lo mismo
 
 | | JWT de sesión | Token de Hacienda | QR de jornada |
 |---|---|---|---|
-| Qué es | Firma stateless (`jwt.service.ts`) | Cadena aleatoria random | JWT corto, tipo `qr_jornada` |
-| Dónde vive | No se guarda en la BD | `haciendas.token_actual` / `token_expira_en` | No se guarda en la BD |
-| Vigencia | 8h (oficina) / atada a la jornada (Operador) | 24h | 90 segundos |
-| Prueba qué | Quién sos (identidad) | Que estás físicamente en esa hacienda | Que esta persona sigue en jornada activa AHORA |
+| Qué es | Firma stateless (`jwt.service.ts`) | Cadena aleatoria | JWT corto, tipo `qr_jornada` |
+| Dónde vive | No se guarda en BD | `haciendas.token_actual`/`token_expira_en` | No se guarda en BD |
+| Vigencia | 8h (oficina) / atada a jornada (Operador) | 24h | 90 segundos |
+| Prueba qué | Identidad | Presencia física en esa hacienda | Jornada activa AHORA |
 
-## Sesión del Operador atada a la jornada (no a una expiración fija)
+## Sesión del Operador atada a la jornada
 
-Para ADMIN/ASISTENTE/SUPERVISOR/ESCANER el JWT dura 8h fijas, sin más reglas. Para Mecánico/Operador es distinto **a
-propósito**: la sesión debe durar lo que dura su jornada, para que sus credenciales no puedan "cubrir" a un
-compañero ausente con logins repetidos.
+ADMIN/ASISTENTE/SUPERVISOR/ESCANER: JWT dura 8h fijas. Mecánico/Operador: la sesión dura lo que dura su jornada,
+para que sus credenciales no puedan "cubrir" a un compañero ausente con logins repetidos.
 
-- **Al hacer login** (`auth.controller.ts`): si ya existe una `Asistencia` de hoy en estado `PENDIENTE_REVISION`,
-  `FINALIZADO`, `SALIDA_OLVIDADA` u `OBSERVANDO`, el login se **rechaza** (403) - ya no hay nada que hacer hoy.
-- **En cada request autenticado** (`verificarJornadaOperadorActiva` en `auth.middleware.ts`): revisa lo mismo por si
-  el token fue emitido esta mañana (cuando la jornada seguía `EN_JORNADA`) y la jornada se cerró **mientras el token
-  seguía vivo** - en ese caso lo corta igual, aunque el JWT todavía no haya expirado por tiempo.
-- Aplica solo a rutas de cara al propio Operador: `GET /api/asistencia/mi-qr` y `POST /api/asistencia/marcar-mi-codigo`.
-  No aplica a `GET /api/asistencia/mi-estado` a propósito - ese endpoint reporta el estado tal cual está, incluido
-  "ya se cerró" (lo usa la pantalla del QR flotante para detectar la salida), cortarse a sí mismo no tendría sentido.
-  Tampoco aplica a rutas de oficina.
+- **Al login**: si ya existe una `Asistencia` de hoy en `PENDIENTE_REVISION`/`FINALIZADO`/`SALIDA_OLVIDADA`/
+  `OBSERVANDO`, se rechaza (403).
+- **En cada request** (`verificarJornadaOperadorActiva`): corta igual si la jornada se cerró mientras el token
+  seguía vivo, aunque no haya expirado por tiempo. Aplica a `GET /mi-qr` y `POST /marcar-mi-codigo`. No aplica a
+  `GET /mi-estado` (reporta el estado tal cual, incluido "ya se cerró") ni a rutas de oficina.
 
 ## O/X - Confirmación de asistencia del Supervisor
 
-Al lado de cada trabajador que aparece logueado hoy en su panel, el Supervisor confirma si de verdad vino:
 `PUT /api/asistencia/:id/confirmar` con `{ presente: boolean }`.
+- **O**: marca `confirmado_por_supervisor = true`.
+- **X**: mueve `estado` a `OBSERVANDO` + genera observación automática con fecha/hora. Atrapa el caso de que
+  alguien pase su código/QR a un compañero ausente. `OBSERVANDO` corta la sesión y sale del Historial oficial
+  (que solo muestra `FINALIZADO`/`SALIDA_OLVIDADA`/`OBSERVANDO`).
+- Funciona aunque el registro ya esté cerrado (`FINALIZADO`/`SALIDA_OLVIDADA`) - una X sobre un registro cerrado
+  lo **reabre** a `OBSERVANDO`, a propósito: el Token puede circular sin que el Supervisor lo note al momento.
+- **Se congela por completo una vez que "Cerrar Jornada" cerró el día de esa hacienda** (`calcularDiaCerrado`,
+  ver abajo) - si se detecta fraude después de cerrado, no hay forma de corregirlo desde este endpoint.
 
-- **O (`presente:true`)**: solo marca `confirmado_por_supervisor = true`.
-- **X (`presente:false`)**: además mueve `estado` a `OBSERVANDO` y **genera una observación automática** con fecha/hora
-  ("Marcado como NO presente por el supervisor"). Esto es lo que atrapa el caso de que alguien pase su código/QR a un
-  compañero que no llegó a trabajar - `OBSERVANDO` también corta su sesión (ver arriba) y lo saca del Historial oficial
-  (que solo muestra `FINALIZADO`/`SALIDA_OLVIDADA`).
-- **A diferencia de `revisarAsistencia` (edición de observaciones/hora_salida), esto SÍ funciona aunque el registro
-  ya esté cerrado** (`FINALIZADO`/`SALIDA_OLVIDADA`) - decisión de negocio: la confirmación del Supervisor es su
-  observación directa de la realidad (¿vio o no vio a ese trabajador hoy?), independiente de si el sistema ya
-  cerró esa jornada. El Token de Hacienda puede circular entre trabajadores sin que el Supervisor lo note al
-  momento de marcar, así que necesita poder decir "esto no fue real" incluso después de cerrado - de hecho X sobre
-  un registro cerrado lo **reabre** a `OBSERVANDO`, justo el comportamiento buscado.
-
-**Frontend**: botones O/X en la columna "Confirmar" de `supervisor-panel` (`confirmarPresencia()`), al lado de
-cada fila, **nunca deshabilitados por el estado del registro** (a propósito, ver arriba). El botón O se aplica
-directo (bajo riesgo, reversible con otro clic); el X pide confirmación con `ConfirmacionService.preguntar()`
-antes de mandar la petición, porque mueve el registro a `OBSERVANDO` y deja la nota automática. El botón de
-Observación (edición de texto libre) se congela a nivel de **día completo** (`diaCerrado`), no por el estado de
-cada fila puntual - ver el bloque de `calcularDiaCerrado` más abajo, es el mismo motivo que "Cerrar Jornada".
-
-**"Cerrar Jornada" exige que TODOS estén confirmados primero** - decisión de negocio (el usuario lo pidió
-explícitamente): si el cierre de día se pudiera hacer sin que el Supervisor haya revisado O/X a cada trabajador,
-el chequeo de O/X no serviría de nada - bastaría con que un trabajador se autocierre (`SALIDA_OLVIDADA`,
-autoservicio) sin que el Supervisor lo haya visto nunca para que "el día ya está cerrado" y nadie note nada raro.
-`calcularDiaCerrado(fecha)` (helper compartido en `asistencia.controller.ts`) es la fuente única de verdad: un
-día está cerrado cuando NINGÚN registro de esa fecha sigue `EN_JORNADA`/`PENDIENTE_REVISION` Y NINGUNO tiene
-`confirmado_por_supervisor: null`. Tres consumidores:
-- `diaCerrado` (`obtenerAsistenciaHoy`) - controla el botón "Cerrar Jornada" (habilitado/"🔒 Jornada Cerrada").
-  Mientras falte confirmar a alguien, el botón sigue mostrando "🔒 Cerrar Jornada" (habilitado), aunque todos los
-  trabajadores ya hayan cerrado su propia jornada.
-- `finalizarDia` valida esto ANTES de tocar nada: si hay algún registro del día con `confirmado_por_supervisor:
-  null`, responde 400 con `{ message: "Falta confirmar (O/X) la asistencia de: <nombres>.", faltan_confirmar:
-  [...] }` (nombres reales del `Operador`, vía el include de la consulta) y no cierra nada. El frontend no
-  necesitó cambios para mostrar esto - `ejecutarCierreDiario()` ya mostraba `err.error?.message` tal cual.
-- `revisarAsistencia` (edición de Observación/hora_salida) - **congelado a nivel de día completo, no por fila**:
-  antes miraba solo el `estado` de ESE registro puntual (`FINALIZADO`/`SALIDA_OLVIDADA`), lo que congelaba la
-  Observación de un trabajador que se autocerró mucho antes de que el Supervisor terminara de revisar a los
-  demás - el usuario lo reportó explícitamente ("las observaciones se tienen que cerrar solo cuando se CIERRE
-  JORNADA"). Ahora usa `calcularDiaCerrado(asistencia.fecha)`: la Observación de CUALQUIER fila sigue editable
-  mientras el día siga abierto, sin importar si esa fila en particular ya está en un estado terminal.
+**"Cerrar Jornada" exige que TODOS estén confirmados primero.** `calcularDiaCerrado(fecha, supervisorId?)` es la
+fuente única de verdad (acotada por hacienda cuando aplica): un día está cerrado cuando ningún registro de esa
+fecha (y ese alcance) sigue `EN_JORNADA`/`PENDIENTE_REVISION` y ninguno tiene `confirmado_por_supervisor: null`.
+3 consumidores: `diaCerrado` en `obtenerAsistenciaHoy` (controla el botón), `finalizarDia` (400 con
+`{ message, faltan_confirmar: [...] }` si falta alguien), `revisarAsistencia` (Observación/hora_salida editable
+mientras el día siga abierto, sin importar el estado de esa fila puntual).
 
 ## Reglas de negocio confirmadas
 
-1. Trabajador prestado entre haciendas: `admitirTrabajadorExterno` (acción manual del Supervisor receptor) sigue
-   existiendo para el carnet físico; Camino A y Camino B lo automatizan solos porque el Token/QR ya prueban dónde
-   está físicamente el trabajador.
-2. Solo SUPERVISOR y ADMIN pueden admitir externos y confirmar O/X. SUPERVISOR y ESCANER pueden escanear
-   (marcar-qr-sesion). Solo ADMIN/SUPERVISOR generan/invalidan el Token de Hacienda (Supervisor solo el de su
-   propia hacienda) y crean haciendas nuevas (esto último solo ADMIN, un Supervisor no crea haciendas). ADMIN y
-   ASISTENTE crean/listan Usuarios de oficina y resetean su clave.
-3. `finalizarDia` (Supervisor) cierra la jornada de **su hacienda**, no de las demás - cada Supervisor cierra solo la
-   suya. ✅ Arreglado 2026-09-27 (ver "Cierre de jornada acotado por hacienda" más abajo).
-4. Reseteo de clave (Usuario u Operador): quien resetea fija una nueva, nunca puede "ver" la anterior (bcrypt no es
-   reversible). No hay recuperación de clave por email/SMS en este alcance.
-5. Un mismo `usuario` no puede existir a la vez en `usuarios` y en `operadores`.
-6. Historial de Asistencia (Asistente/Admin) solo muestra jornadas ya cerradas (`FINALIZADO`/`SALIDA_OLVIDADA`),
-   nunca `EN_JORNADA`/`PENDIENTE_REVISION`/`OBSERVANDO`.
-7. Las fotos de evidencia (`foto_ingreso`, Base64) se excluyen de los listados (`hoy`/`historial`) y se piden aparte
-   solo al hacer clic en "Ver Evidencia" (`GET /:id/foto`) - evita bajar cientos de KB por registro sin que nadie los
-   pida.
-8. Paginación en `hoy` y `historial` (server-side, `pagina`/`limite`).
+1. Trabajador prestado entre haciendas: `admitirTrabajadorExterno` (acción manual del Supervisor receptor) para
+   el carnet físico; Camino A y B lo automatizan solos (Token/QR ya prueban dónde está el trabajador).
+2. SUPERVISOR y ESCANER escanean (`marcar-qr-sesion`). Solo ADMIN/SUPERVISOR generan/invalidan el Token de
+   Hacienda (Supervisor solo el suyo) y confirman O/X. Solo ADMIN crea haciendas. ADMIN y ASISTENTE crean/listan
+   Usuarios de oficina y resetean claves.
+3. `finalizarDia` cierra solo la hacienda del Supervisor que ejecuta (o la que ADMIN elija vía `supervisor_id`
+   opcional) - nunca todas a la vez para un Supervisor real.
+4. Reseteo de clave: quien resetea fija una nueva, nunca ve la anterior (bcrypt no es reversible). Sin
+   recuperación por email/SMS.
+5. Un mismo `usuario` no existe a la vez en `usuarios` y `operadores`.
+6. Historial de Asistencia solo muestra jornadas ya cerradas Y confirmadas (`confirmado_por_supervisor != null`)
+   - una `SALIDA_OLVIDADA` autoservicio (que no pasa por `finalizarDia`) no debe aparecer sin que el Supervisor
+   ya haya revisado O/X.
+7. Fotos de evidencia se excluyen de los listados (`hoy`/`historial`), se piden aparte solo al hacer clic en "Ver
+   Evidencia" (`GET /:id/foto`) - evita bajar cientos de KB por registro sin que nadie los pida.
+8. Paginación server-side en `hoy` y `historial` (`pagina`/`limite`).
+9. **Alcance por Supervisor**: un SUPERVISOR real solo ve/edita lo de su propia hacienda (nunca elige otra vía
+   parámetro) - aplica a `obtenerAsistenciaHoy`, `revisarAsistencia`, `confirmarAsistencia`, `obtenerFotoAsistencia`,
+   `finalizarDia`, `calcularDiaCerrado`, y a `registro_actividad.controller.ts` completo
+   (`puedeOperarSobreAsistencia` para operar sobre una jornada puntual, `puedeVerHistorialDeOperador` para el
+   historial completo - este último NO cuenta trabajadores prestados, prestar un día no da acceso al historial
+   laboral completo en otras haciendas). `obtenerHaciendas` no expone `token_actual`/`token_expira_en` de otras
+   haciendas a un SUPERVISOR. ADMIN/ASISTENTE nunca quedan restringidos. Un Supervisor SÍ tiene permiso sobre un
+   trabajador prestado que él mismo admitió hoy (`hacienda_prestamo_id`).
+10. **Jornada ambigua al reingresar** (`procesarMarcacion`, `diferenciaEnDiasCalendario`): al encontrar una
+    jornada `EN_JORNADA` sin cerrar, compara la fecha de esa jornada contra hoy en DÍAS CALENDARIO, no en horas -
+    0 días: sigue como salida normal (turno nocturno cruzando medianoche). 2+ días: se cierra sola como
+    `SALIDA_OLVIDADA`, el escaneo actual es una entrada nueva. Exactamente 1 día: caso ambiguo real (turno
+    nocturno en curso vs. entrada olvidada de ayer) - el código autenticado (única pantalla con UI para
+    preguntar) responde 409 `jornada_ambigua:true` y el trabajador elige `'cerrar' | 'iniciar_nuevo'`
+    (`accion_jornada_anterior`); los caminos sin pantalla propia (kiosco, código público, QR escaneado por
+    otro) se auto-resuelven como `'iniciar_nuevo'` (`permiteAutoDecidirJornadaAnterior`). La ambigüedad solo
+    puede aparecer después de que el trabajador toque "Marcar salida" explícitamente - un refresh con jornada
+    abierta siempre va directo al Panel de Actividades, nunca al formulario en blanco.
 
 ## Tablas (estado real en producción)
 
 - **haciendas**: `nombre`, `token_actual`, `token_expira_en`.
-- **usuarios**: `nombre_completo`, `usuario`, `clave_hash`, `cargo` (ADMIN/ASISTENTE/SUPERVISOR/ESCANER), `activo`,
-  `hacienda_id` (solo Supervisor/Escáner; UNIQUE parcial por cargo, no UNIQUE simple).
-- **operadores**: datos personales + `rol` (MECANICO/OPERADOR) + `supervisor_id`, `usuario`, `clave_hash`
-  (credenciales opcionales, van siempre juntas).
-- **secciones**: ahora con `hacienda_id` obligatorio.
+- **usuarios**: `nombre_completo`, `usuario`, `clave_hash`, `cargo` (ADMIN/ASISTENTE/SUPERVISOR/ESCANER),
+  `activo`, `hacienda_id` (solo Supervisor/Escáner; UNIQUE parcial por cargo), `terminos_aceptados_en`,
+  `sesion_valida_desde`.
+- **operadores**: datos personales (`cedula`/`telefono`/`direccion` cifrados, ver abajo) + `rol`
+  (MECANICO/OPERADOR) + `supervisor_id`, `usuario`, `clave_hash`, `terminos_aceptados_en`, `sesion_valida_desde`.
+  Soft-delete (`paranoid`).
+- **equipos** / **actividades**: catálogos, soft-delete (`paranoid`). `equipos.numero_hoja` admite NULL (era
+  `NOT NULL`, exclusivo de Horómetros).
+- **secciones**: `hacienda_id` obligatorio. Sin CRUD/UI todavía (fase 2, siempre NULL en `registro_actividad`).
 - **asistencias**: `estado` (`EN_JORNADA`/`PENDIENTE_REVISION`/`FINALIZADO`/`SALIDA_OLVIDADA`/`OBSERVANDO`),
-  `hacienda_prestamo_id` + `admitido_por_usuario_id` (trabajador externo), `diesel_consumido`,
-  `confirmado_por_supervisor` (O/X, null hasta que el Supervisor lo revisa).
-- **registro_actividades**: el detalle del Panel de Actividades (equipo + actividad + sección + horómetro por
-  jornada) - el backend ya existía (`registro_actividad.controller.ts`/`.rutes.ts`); el frontend (`mi-jornada.ts`,
-  fase `actividades`) usa ya los campos de MECANICO (`area`) y de OPERADOR (`horometro_inicio`/`horometro_final`) -
-  solo `seccion_id` sigue sin UI (ver "Panel de Actividades" arriba).
-- ~~`asistencias.diesel_consumido`~~: columna sin usar en ningún controlador ni en el frontend - se sacó del modelo
-  Sequelize (`asistencias.ts`) en la auditoría de código suelto de esta ronda. La columna sigue existiendo en la BD
-  (no se tocó ninguna migración), simplemente Sequelize ya no la conoce.
+  `hacienda_prestamo_id` + `admitido_por_usuario_id` (trabajador externo), `confirmado_por_supervisor` (O/X, null
+  hasta revisión), `foto_ingreso` (base64, legado) + `foto_r2_key` (key en Cloudflare R2, ver "Fotos en R2").
+- **registro_actividades**: detalle del Panel de Actividades (equipo + actividad + sección + horómetro por
+  jornada).
+- **registros_auditoria** / **registros_dispositivo**: append-only, ver "Auditoría y observabilidad".
 
-## Frontend (estado real, revisado directo del repo)
+## Frontend
 
-Angular 22 standalone (sin NgModules), Tailwind CSS, `@zxing/ngx-scanner` (lectura de cámara) + `qrcode` (generación
-de QR), HttpClient con interceptor de auth, testing con Vitest. Rutas por `loadComponent` (lazy), con guards.
+Angular 22 standalone (sin NgModules), Tailwind CSS, `@zxing/ngx-scanner` (cámara) + `qrcode` (generación),
+HttpClient con interceptor de auth (agrega JWT, desloguea solo en 401), Vitest.
 
-### Ruteo por rol: cada rol tiene su propia "casa", nunca un menú compartido con `*ngIf`
+### Ruteo por rol: cada rol tiene su propia "casa"
 
-Decisión de esta ronda, en respuesta a un hueco real (ESCANER y MECANICO/OPERADOR terminaban viendo el Dashboard de
-oficina y el menú de 3 tarjetas de Asistencia, sin deberían). `rutas-por-rol.ts` centraliza en una sola función
-(`rutaHomePorRol(perfil)`) a dónde pertenece cada rol - la usan el login (a dónde navegar tras autenticarse),
-`roleGuard` (a dónde mandar a quien no tiene el rol de la ruta - **nunca** un `/dashboard` fijo, que además causaría
-un loop de redirects para roles sin Dashboard), `homeRedirectGuard` (rutas `''` y `**`) y el botón "Menú" del header:
+`rutas-por-rol.ts` centraliza a dónde pertenece cada rol (`rutaHomePorRol`) - la usan login, `roleGuard` (nunca
+manda a un `/dashboard` fijo, causaría loop para roles sin Dashboard), `homeRedirectGuard`, y el botón "Menú".
 
 | Rol | Ruta hogar | Qué ve |
 |---|---|---|
-| ADMIN, ASISTENTE, SUPERVISOR | `/dashboard` | Menú con tarjetas (Asistencia, + Administración si aplica) |
-| ESCANER | `/escaner` | Un solo botón "📷 Escanear" (ver abajo) |
-| MECANICO, OPERADOR | `/mi-jornada` | Código o QR flotante, según su hacienda (ver arriba), después Panel de Actividades |
+| ADMIN, ASISTENTE, SUPERVISOR | `/dashboard` | Menú (Asistencia, + Administración si aplica) |
+| ESCANER | `/escaner` | Un solo botón "📷 Escanear" |
+| MECANICO, OPERADOR | `/mi-jornada` | Código o QR según su hacienda, luego Panel de Actividades |
 
-`/dashboard` lleva `roleGuard('ADMIN','ASISTENTE','SUPERVISOR')` (antes solo `authGuard`, cualquier rol logueado
-entraba) - ESCANER y MECANICO/OPERADOR nunca tuvieron necesidad real de esa pantalla. (`/horometros` existió con
-el mismo guard, pero la ruta y el módulo entero se eliminaron - ver "Eliminación del módulo Horómetros (OCR)".)
+**Páginas:**
+- `dashboard` - menú principal, solo ADMIN/ASISTENTE/SUPERVISOR.
+- `asistencia-menu` (`/asistencia`, guard `asistenciaRedirectGuard`) - manda cada rol directo a su panel sin
+  pasar por el menú compartido (SUPERVISOR→`/asistencia/supervisor`, ASISTENTE→`/asistencia/asistente`).
+- `escaner-menu` (`/escaner`, rol ESCANER) - un solo botón a propósito, lleva a `/asistencia/escanear`.
+- `escaneo-sesion` (`/asistencia/escanear`, ADMIN/SUPERVISOR/ESCANER) - escaneo autenticado del QR de sesión
+  (Camino B), distinto del kiosco público (`marcacion-kiosco`, `/asistencia/marcacion`, público, sin guard).
+- `supervisor-panel` (`/asistencia/supervisor`) - validación diaria, O/X, Finalizar Día, botón Escanear.
+- `asistencia-panel` (`/asistencia/asistente`) - Directorio de Operadores, Historial, pestañas Equipo/Actividad/
+  Términos (ver abajo).
+- `mi-jornada` (`/mi-jornada`, MECANICO/OPERADOR, pantalla cautiva sin botón Menú) - 3 fases: `codigo`, `qr`,
+  `actividades` (ver "Dos caminos" arriba). Al entrar, consulta `mi-estado` antes de decidir la fase - jornada
+  abierta siempre va directo a Actividades.
+- `admin-panel` (`/admin`, ADMIN y ASISTENTE) - pestañas Usuarios (crear ADMIN/ASISTENTE/SUPERVISOR/ESCANER) y
+  Haciendas (crear/generar-invalidar Token, solo visible a ADMIN) e Historial de auditoría (solo ADMIN).
+- `modal-actividad`, `visor-foto` - piezas compartidas entre `marcacion-kiosco`, `escaneo-sesion`, `mi-jornada`.
+- `login` (`/login`) - única pantalla (usuarios + operadores). Botón "⬇️ Descargar app para Android"
+  (`*ngIf="esNavegador"`, oculto dentro de la app empaquetada) apunta a `/frugalp.apk`
+  (`public/frugalp.apk` - reemplazar ese archivo y hacer push en cada release nueva).
+- `NotificacionService`/`<app-toast>` y `ConfirmacionService`/`<app-confirm-modal>` - reemplazan `alert()`/
+  `confirm()` nativos en todo el proyecto.
+- `TerminosModal` (`shared/terminos-modal/`, montado en `app.html` fuera del router-outlet) - modo bloqueante
+  (`terminos_aceptados === false`, sin botón Cerrar hasta aceptar) y modo libre (botón del header/login, solo
+  releer). `POST /api/auth/aceptar-terminos` pone `terminos_aceptados_en = NOW()`.
+- Pestaña **"✅ Términos"** (Panel de Asistente, junto a Actividad) - quién aceptó/falta aceptar, separado en
+  Trabajadores (paginado) y Usuarios de oficina.
 
-**Ya construido:**
-- `dashboard` - menú principal (Asistencia, + "Administración" si el rol es ADMIN o ASISTENTE). Solo
-  ADMIN/ASISTENTE/SUPERVISOR llegan aquí (ver tabla de arriba).
-- `asistencia-menu` - submenú del módulo Asistencia con las 3 tarjetas (Gestión de Personal / Punto de Marcación /
-  Panel de Supervisor). Solo lo ve tal cual el ADMIN: `/asistencia` tiene el guard `asistenciaRedirectGuard`, que
-  manda a cada otro rol directo a SU panel (SUPERVISOR → `/asistencia/supervisor`, ASISTENTE → `/asistencia/asistente`,
-  ESCANER/MECANICO/OPERADOR → su propia ruta hogar, por si alguien escribe `/asistencia` a mano) sin pasar por el
-  menú - corrige un bug real donde un SUPERVISOR podía entrar al panel de la Asistente solo porque el menú no
-  distinguía roles. Los 3 paneles además llevan `roleGuard` propio (`/asistencia/asistente` → ADMIN/ASISTENTE,
-  `/asistencia/supervisor` → ADMIN/SUPERVISOR) para que esto no dependa solo de la navegación.
-- `escaner-menu` (`/escaner`, rol ESCANER únicamente) - **un solo botón**, a propósito (pedido explícito del
-  usuario): "📷 Escanear" lleva a `/asistencia/escanear`. El botón "Menú" del header siempre vuelve aquí, lo que
-  desmonta el componente de escaneo y apaga la cámara sola (`ngOnDestroy`) - así el dispositivo "descansa la
-  cámara" sin cerrar sesión, sin necesitar ningún botón especial de "pausa".
-- `escaneo-sesion` (`/asistencia/escanear`, ADMIN/SUPERVISOR/ESCANER) - escaneo **autenticado** del QR flotante de
-  Camino B (`marcar-qr-sesion`), distinto del kiosco público de abajo (que escanea el carnet físico con
-  `marcar-qr`). Estructuralmente calcado del kiosco (misma lógica de cámara/evidencia) pero mantenido aparte porque
-  son 2 caminos de negocio distintos, no el mismo flujo - queda anotado como candidato a unificar más adelante si
-  hace falta (ver Pendiente). Lo usan el botón "📷 Escanear" del Panel de Supervisor y el único botón de ESCANER.
-- `marcacion-kiosco` (`/asistencia/marcacion`, público) - el flujo clásico de escaneo de carnet físico (cámara al
-  40%, captura de evidencia). Sin guard a propósito: el trabajador lo usa SIN loguearse. **No se tocó en esta
-  ronda** - sigue siendo un camino totalmente aparte del QR de sesión.
-- `supervisor-panel` - validación diaria, observaciones, Finalizar Día, botón "📷 Escanear" hacia `/asistencia/escanear`.
-- `asistencia-panel` - Directorio de Operadores (+ credenciales usuario/clave/supervisor_id) e Historial de
-  Asistencia con filtro de fecha (rol Asistente).
-- `mi-jornada` (`/mi-jornada`, rol MECANICO/OPERADOR únicamente) - pantalla única y cautiva (sin botón "Menú": no
-  hay a dónde más ir). 3 fases internas según el estado real, nunca las 3 a la vez:
-  1. **`codigo`** (hacienda con Token vigente): input de código, confirma con `marcar-mi-codigo`. La respuesta
-     dice `tipo: 'ENTRADA' | 'SALIDA'` - con ENTRADA pasa directo al Panel de Actividades (fase `actividades`,
-     ver abajo); con SALIDA (el backend respondió pidiendo actividad porque ya tenía jornada abierta) muestra el
-     mismo selector de actividades que el kiosco, confirma, y pasa a fase `terminado`: mensaje de cierre + botón
-     explícito "Cerrar sesión" (ya no hay logout automático, ver arriba en Camino A).
-  2. **`qr`**: QR flotante que se auto-regenera cada 80s (vence a los 90s) + cuenta regresiva visible. Hace
-     **polling de `GET /api/asistencia/mi-estado` cada 5s** para detectar que lo escanearon, sin que el trabajador
-     tenga que hacer nada.
-  3. **`actividades`** (Panel de Actividades, **ambos caminos** - código y QR): formulario para iniciar una labor
-     (equipo + actividad + área si es MECANICO + hora de inicio editable, solo `time` sin calendario + observaciones)
-     y tabla de labores del día con botón "Finalizar" por labor (editor inline con la hora de fin, también editable
-     - ninguna de las 2 horas se le impone al trabajador, puede estar cargando esto más tarde). Botón
-     "🔚 Marcar salida" (`marcarSalida()`) según el camino: código vuelve a fase `codigo` a pedir el código desde
-     cero (no reutiliza el de la entrada); QR vuelve a mostrar el QR flotante (fase `qr`) para que lo vuelvan a
-     escanear - el mismo polling de estado detecta la salida y pasa a fase `terminado`. Ninguna de las 2 salidas
-     pide elegir actividades otra vez salvo que el backend lo exija (código: siempre; QR: nunca, ver "Camino B").
-  Al entrar (`ngOnInit`), consulta `mi-estado` ANTES de decidir la fase inicial - si el trabajador ya tenía una
-  jornada abierta (refrescó la página, entrada nueva, o se desconectó y volvió), **siempre** va directo al Panel
-  de Actividades, sin importar el camino - la salida es una acción explícita del trabajador (el botón de arriba),
-  nunca algo que se infiera solo por volver a abrir la pantalla.
-  **Autoservicio "Salida Olvidada"**: link discreto en las fases `qr` (solo si ya es una salida), `codigo` (solo
-  si ya es una salida) y `actividades`, para cuando el trabajador no va a poder cerrar su jornada por el camino
-  normal (ver "Autoservicio Salida Olvidada" arriba).
-- `modal-actividad`, `visor-foto` - piezas compartidas (selector de actividades en la salida, ventana flotante de
-  evidencia). `modal-actividad` ahora lo reusan 3 componentes: `marcacion-kiosco`, `escaneo-sesion` y `mi-jornada`.
-- `login` (`/login`) - pantalla única (usuarios + operadores), con `AuthService` (signals: `token`/`perfil`),
-  `authGuard`/`guestGuard`/`roleGuard`, e interceptor que agrega el JWT a cada request y desloguea solo en un 401.
-  Tras un login exitoso, navega a `rutaHomePorRol(perfil)` - nunca a `/dashboard` fijo (ver tabla de arriba). El
-  formulario en sí sigue siendo solo usuario+clave: el código de hacienda (si aplica) se pide después, ya
-  autenticado, en `mi-jornada`.
-- `admin-panel` (`/admin`, ADMIN y ASISTENTE) - pestaña **Usuarios** (crear ADMIN/ASISTENTE/SUPERVISOR/ESCANER con
-  clave, selector de hacienda solo si el cargo la necesita, resetear clave) y pestaña **Haciendas** (crear hacienda
-  nueva, generar/invalidar su Token) - esta segunda pestaña **solo visible para ADMIN**, un Asistente no la ve.
-- `NotificacionService`/`<app-toast>` y `ConfirmacionService`/`<app-confirm-modal>` (montados una vez en `app.html`) -
-  reemplazan `alert()`/`confirm()` nativos del navegador en TODO el proyecto (no tienen sentido en una app
-  empaquetada nativo). Todo campo de clave tiene su "ojito" para mostrar/ocultar.
+**Detalle técnico importante:** esta app necesita `ChangeDetectorRef.detectChanges()` explícito después de cada
+respuesta HTTP que mute un campo plano (no-signal) - el zone.js del proyecto no lo dispara solo. Los `signal()`
+(toggles de UI) sí se actualizan solos.
 
-**Botón "Menú" del header (`app.ts`):** calcula `rutaHomePorRol(perfil)` en cada navegación y:
-- MECANICO/OPERADOR: el botón **no se muestra** (`mostrarBotonMenu = false`) - pantalla cautiva, no hay a dónde ir.
-- ESCANER: siempre apunta a `/escaner` (oculto si ya está ahí).
-- ADMIN en `/asistencia/*`: apunta a `/asistencia` (el menú de 3 tarjetas, tiene sentido para ese rol).
-- Cualquier otro caso: apunta a la ruta hogar del rol, oculto si ya está en ella.
-Antes apuntaba a un `/dashboard` fijo en varias ramas - roto para ESCANER/MECANICO/OPERADOR desde que dejaron de
-tener Dashboard, y para roles de un solo panel (ej. Asistente en su propio panel) el botón "no hacía nada" porque
-`asistenciaRedirectGuard` lo rebotaba al mismo sitio (bug real reportado y corregido).
+**Al agregar una columna UNIQUE nueva:** chequear el duplicado ANTES del INSERT/UPDATE y devolver 409 con mensaje
+claro (campo, valor, quién ya lo tiene) - un `SequelizeUniqueConstraintError` que se escapa da un error crudo de
+Postgres (fuga de SQL/parámetros al cliente, no solo mal UX). **Ojo con `paranoid` + UNIQUE**: una fila
+soft-deleted no aparece en `findAll()` normal pero el `UNIQUE` de Postgres la sigue viendo ocupada - cualquier
+chequeo de duplicado contra un modelo `paranoid` necesita `paranoid:false` explícito para ver el universo real de
+la restricción (bug real encontrado en `importarEquipos`/`importarActividades`, con el agravante de que
+`bulkCreate` es un solo INSERT: si una fila choca, ninguna del lote se crea).
 
-**Detalle técnico importante para el que siga tocando componentes nuevos:** esta app necesita
-`ChangeDetectorRef.detectChanges()` explícito después de cada respuesta HTTP que mute un campo plano (no-signal) del
-componente - el zone.js de este proyecto no lo dispara solo. Es el patrón que ya usa TODO el código existente
-(`cargarOperadores`, `guardarObservacion`, etc.); si un componente nuevo lo omite, la UI se actualiza mal en
-silencio (se descubrió así un bug real: los modales de "Nuevo Usuario"/"Nuevo Operador" no se cerraban tras guardar).
-Los `signal()` (usados para toggles de UI como mostrar/ocultar clave, o los estados de `NotificacionService`/
-`ConfirmacionService`) sí se actualizan solos, sin necesitar este truco.
-
-**Otro detalle importante para quien agregue una columna UNIQUE nueva:** `crearOperador`/`actualizarOperador`
-(`codigo_megued`, `cedula`) y `crearUsuario` (`usuario`) ahora chequean el duplicado ANTES del INSERT/UPDATE
-(`verificarDuplicadosOperador`) y devuelven un 409 con un mensaje que nombra el campo, el valor y quién ya lo tiene
-(ej: `La cédula "1111111111" ya está registrada a nombre de Juan Pérez.`) - el catch general también traduce
-cualquier `SequelizeUniqueConstraintError` que se escape (condición de carrera) al mismo tipo de mensaje, en vez de
-devolver el error crudo de Sequelize/Postgres (que además exponía SQL y parámetros en la respuesta al cliente - un
-detalle de seguridad, no solo de UX). Antes de este fix, crear/editar con un dato duplicado tumbaba con un 500
-genérico sin decir cuál campo chocaba ni con quién (bug real reportado por el usuario).
-
-**Deuda técnica heredada (ya corregida donde se indica):**
-- ~~`apuUrl`~~ → corregido a `apiUrl` en environments y en los servicios que lo usaban.
-- `package.json` tiene una dependencia `qcore` instalada que no se usa en ningún lado del código (`grep` sin
-  resultados) - candidata a eliminar, no se toca hasta confirmar que de verdad no se necesita.
-- No hay `vercel.json` en el repo - el deploy en Vercel corre con auto-detección de Angular. Si Vercel necesita config
-  especial (rewrites para rutas de Angular, variables de entorno de build), anotar aquí cuando se confirme.
-
-## Cuenta ADMIN de arranque
-
-Como `POST /api/usuarios` exige ya estar logueado como ADMIN, el primer Admin no se puede crear por la API (huevo y
-gallina) - se insertó a mano por SQL directo en la base de producción de Render. Usuario `ronald_admin`, cargo
-`ADMIN`, sin `hacienda_id`. Ya probado: login exitoso, devuelve JWT con `rol:"ADMIN"`.
+**Capacitor - APIs que no se comportan igual en el WebView:** `window.open`/`window.print()` no funcionan en el
+WebView de Capacitor (no hay multi-ventana ni diálogo de impresión nativo) - usar `@capacitor/share` +
+`@capacitor/filesystem` para compartir en nativo, rama aparte con `Capacitor.isNativePlatform()`, dejando
+`window.print()` intacto para escritorio. El botón/gesto "Atrás" de Android cierra la app en vez de navegar si no
+se maneja: `@capacitor/app`, listener de `backButton` que navega si hay historial o deja salir si no lo hay -
+bloqueado del todo para MECANICO/OPERADOR (pantalla cautiva, no debe poder volver al login a mitad de jornada).
+`@capacitor/clipboard` en vez de `navigator.clipboard` (comportamiento inconsistente en WebView).
 
 ## Endpoints
 
 | Método/Ruta | Rol requerido | Qué hace |
 |---|---|---|
-| POST /api/auth/login | público | Login único (usuarios u operadores). Rechaza operador con jornada de hoy ya cerrada. |
+| POST /api/auth/login | público | Login único. Rechaza operador con jornada de hoy ya cerrada. |
 | POST /api/usuarios | ADMIN, ASISTENTE | Crea Usuario de oficina (incluye ESCANER). |
-| GET /api/usuarios | ADMIN, ASISTENTE | Lista usuarios (sin `clave_hash`). |
+| GET /api/usuarios | ADMIN, ASISTENTE | Lista usuarios. |
 | PUT /api/usuarios/:id/clave | ADMIN, ASISTENTE | Resetea clave de un Usuario. |
-| POST /api/asistencia/operadores | ADMIN, ASISTENTE | Crea Operador (+ credenciales opcionales). |
-| PUT /api/asistencia/operadores/:id | ADMIN, ASISTENTE | Actualiza Operador (+ credenciales opcionales, no las borra si no vienen). |
-| GET /api/asistencia/operadores | ADMIN, ASISTENTE | Lista operadores (sin `clave_hash`, ni el del supervisor incluido). |
+| POST /api/asistencia/operadores | ADMIN, ASISTENTE | Crea Operador. |
+| PUT/GET /api/asistencia/operadores(/:id) | ADMIN, ASISTENTE | Actualiza/lista Operadores. |
 | PUT /api/asistencia/operadores/:id/clave | ADMIN, ASISTENTE | Resetea clave de un Operador. |
-| POST /api/asistencia/marcar-qr | público | Carnet físico clásico (entrada/salida) - sin JWT **a propósito**, lo usa el trabajador SIN loguearse en el kiosco. |
-| POST /api/asistencia/marcar-codigo | público | Camino A: usuario+clave+Token de Hacienda - sin JWT **a propósito**, la credencial ES el operador. |
-| GET /api/asistencia/mi-qr | operador, jornada activa | Camino B paso 1: genera el QR de 90s. |
-| GET /api/asistencia/mi-estado | operador | El propio Operador consulta si ya tiene jornada EN_JORNADA hoy (lo usa mi-jornada para detectar el escaneo por polling). |
-| POST /api/asistencia/marcar-mi-codigo | operador, jornada activa | Camino A para un Operador YA logueado - solo confirma el Token de Hacienda, sin re-pedir su clave. |
-| POST /api/asistencia/marcar-salida-olvidada | operador, jornada activa | Autoservicio: el trabajador cierra su propia jornada como SALIDA_OLVIDADA cuando no puede escanear ni reingresar el código. |
-| POST /api/asistencia/marcar-qr-sesion | ADMIN, SUPERVISOR, ESCANER | Camino B paso 2: valida el QR y marca (desde `/asistencia/escanear`). |
-| PUT /api/asistencia/:id/confirmar | SUPERVISOR, ADMIN | O/X de asistencia. |
-| GET /api/asistencia/hoy | ADMIN, SUPERVISOR | Reporte del día, paginado. |
-| POST /api/asistencia/finalizar-dia | ADMIN, SUPERVISOR | Cierra jornada (⚠️ todavía no filtra por hacienda, ver Deuda técnica). |
-| GET /api/asistencia/historial | ADMIN, ASISTENTE | Historial con filtros de fecha. |
+| POST /api/asistencia/marcar-qr | público | Carnet físico, sin JWT a propósito. |
+| POST /api/asistencia/marcar-codigo | público | Camino A: usuario+clave+Token de Hacienda. |
+| GET /api/asistencia/mi-qr | operador, jornada activa | Camino B paso 1: QR de 90s. |
+| GET /api/asistencia/mi-estado | operador | Consulta si ya tiene jornada hoy (usado por polling). |
+| POST /api/asistencia/marcar-mi-codigo | operador, jornada activa | Camino A ya logueado. |
+| POST /api/asistencia/marcar-salida-olvidada | operador, jornada activa | Autoservicio SALIDA_OLVIDADA. |
+| POST /api/asistencia/marcar-qr-sesion | ADMIN, SUPERVISOR, ESCANER | Camino B paso 2: escanea y marca. |
+| PUT /api/asistencia/:id/confirmar | SUPERVISOR, ADMIN | O/X. |
+| GET /api/asistencia/hoy | ADMIN, SUPERVISOR | Reporte del día, paginado, acotado por hacienda. |
+| POST /api/asistencia/finalizar-dia | ADMIN, SUPERVISOR | Cierra jornada, acotado por hacienda. |
+| GET /api/asistencia/historial | ADMIN, ASISTENTE | Historial con filtros (fecha, hacienda, supervisor). |
 | PUT /api/asistencia/revisar/:id | ADMIN, SUPERVISOR | Ajustes del Supervisor sobre un registro. |
-| GET /api/asistencia/:id/foto | ADMIN, ASISTENTE, SUPERVISOR | Trae solo la foto de un registro (VisorFoto, compartido por ambos paneles). |
-| POST /api/asistencia/admitir-externo | SUPERVISOR, ADMIN | Reclama a un trabajador prestado. |
-| GET /api/actividad | público | Catálogo de actividades - sin JWT **a propósito**, lo usa el kiosco (modal-actividad) al marcar salida. Sin `pagina`/`limite` en la query responde el arreglo completo (de siempre); con cualquiera de los dos, paginado (lo usa el selector del Panel de Actividades). |
-| GET /api/actividad/:id | público | Idem, una sola actividad. |
-| POST /api/actividad/nueva | ADMIN | Crea una actividad del catálogo (sin UI todavía, ver Pendiente). |
-| PUT /api/actividad/:id | ADMIN | Edita una actividad del catálogo. |
-| DELETE /api/actividad/:id | ADMIN | Elimina una actividad del catálogo. |
-| GET /api/equipos | cualquier cuenta logueada | Catálogo de Equipos, solo lectura - siempre paginado (`pagina`/`limite`, default 1/20), lo usa el selector del Panel de Actividades. El CRUD completo es `POST`/`PUT`/`DELETE /api/equipos` (ver "Gestión de Equipo/Actividad + soft-delete"). |
-| GET /api/haciendas | ADMIN, SUPERVISOR, ASISTENTE | Lista haciendas (id, nombre, token vigente). |
-| POST /api/haciendas | ADMIN | Crea una hacienda nueva. |
-| POST /api/haciendas/:id/token | ADMIN, SUPERVISOR (solo la suya) | Genera/regenera el Token de Hacienda. |
-| DELETE /api/haciendas/:id/token | ADMIN, SUPERVISOR (solo la suya) | Invalida el Token antes de tiempo. |
-
-**Auditoría de accesos (cerrada):** hasta esta ronda, `operadores`, `hoy`, `finalizar-dia`, `historial`, `revisar/:id`,
-`:id/foto` (en `asistencia.rutes.ts`) y las mutaciones de `actividad` no tenían
-`verificarAutenticacion` ni `requireRol` - cualquiera que conociera la URL podía llamarlas sin loguearse. Quedó
-documentado como deuda "temporal" desde antes del Login, pero el Login ya existe hace rato y nunca se cerró. Cada
-ruta arriba quedó con el mismo rol que ya la protegía en el frontend (roleGuard/`*ngIf` de cada panel) - no se
-inventó ningún permiso nuevo, solo se hizo cumplir en el backend lo que el frontend ya asumía. Se probó con curl
-(401 sin token, 403 con rol equivocado, pasa con el rol correcto) y con Playwright contra los 3 paneles para
-confirmar que ningún flujo real se rompió. `marcar-qr`, `marcar-codigo` y el catálogo de `actividad` (GET) siguen
-públicos **a propósito**: los usa el kiosco sin login.
-
-## Auditoría de código suelto (esta ronda)
-
-Pedido explícito del usuario: revisar y dejar solo lo que se usa, sin redundancia. Se investigó con un agente de
-solo-lectura (rutas duplicadas, componentes/imports huérfanos, bloques comentados, exports sin enrutar) y se aplicó
-lo confirmado:
-
-- **Ruta muerta**: `app.routes.ts` tenía DOS entradas `path: 'asistencia'` - la segunda (un `redirectTo`) nunca podía
-  dispararse porque Angular usa el primer match. Eliminada (de paso, quedó absorbida por el rediseño de ruteo de
-  esta misma ronda).
-- **4 componentes huérfanos borrados** (nunca importados fuera de su propio `.spec.ts`): `carnet-qr` y
-  `directorio-operadores` (`asistencia/components/`), `tabla-historial` y `revision-lote`
-  (`horometros/components/`) - carpetas completas (`.ts`/`.html`/`.css`/`.spec.ts`).
-- **Bloques comentados eliminados** (código muerto, no documentación): la ruta vieja de `procesar-foto` completa en
-  `horometros.routees.ts` (con su import de `analizarfotoHorometro`, que ya no se usaba en ningún otro lado del
-  archivo - los controladores lo importan por su cuenta), un chequeo de duplicado comentado en
-  `actividades.controller.ts`, y un constructor `Sequelize(...)` viejo en `config/database.ts` superado por el
-  actual.
-- **Imports sin usar eliminados**: `Optional`, `Operador`, `Actividad`, `CreateAuthTokenConfig` (este último un
-  resto de autocompletado, sin relación con el archivo) en `models/asistencias.ts`; `toDefaultValue` en
-  `models/operador.ts`.
-- **Campo de modelo sin usar eliminado**: `asistencias.diesel_consumido` - ninguna llamada en ningún controlador ni
-  en el frontend lo lee o escribe. Se sacó del modelo Sequelize (la columna de la BD no se tocó, ver Tablas).
-- **Script de debug suelto borrado**: `backend-horometros/src/test.model.ts` (probaba la API de Gemini a mano, no
-  formaba parte de ningún flujo de la app ni de `package.json`).
-- `backend-horometros/src/config/database.migrations.js` (CommonJS, antes `database.js` - renombrado
-  2026-09-25, ver "Pruebas de integración") **no es** código muerto pese a parecer un duplicado de `database.ts`
-  - es el config que `sequelize-cli` lee para migraciones (`.sequelizerc`).
-
-## Deuda técnica heredada
-
-- ~~`finalizarDia` no filtra por `hacienda_id`~~ - arreglado 2026-09-27, ver "Cierre de jornada acotado por
-  hacienda" más abajo.
-- `SequelizeMeta` de este checkout tenía un hueco (migraciones aplicadas a mano sin registrar) - ya reconciliado
-  localmente, pero verificar en cualquier entorno nuevo con `sequelize-cli db:migrate:status`.
-
-## Checklist de seguridad/operación (auditoría, no repetir sin releer esto)
-
-Lista de chequeo que el usuario pidió evaluar (2026-09-24) para saber si la app cumple como para pasar a
-producción real. Estado resumido - el razonamiento completo de cada punto vive en la conversación donde se hizo
-la auditoría, esto es solo el veredicto para no tener que rehacerla de cero cada sesión. `✅` cumple, `⚠️`
-parcial/riesgo, `❌` no cumple, `➖` no aplica hoy.
-
-**Requisitos y diseño:** requerimientos funcionales ✅ (documentados arriba) · no funcionales ⚠️ (sin metas
-explícitas de tiempo de respuesta/uptime) · restricciones de integridad ✅ (FKs + UNIQUE reales en BD).
-
-**Seguridad de la app:** manejo de sesiones ✅ (arreglado 2026-09-25, revocación real al cambiar la clave, ver
-abajo) · almacenamiento seguro ✅ (arreglado 2026-09-25: bcrypt para claves + AES-256-GCM para cédula/teléfono/
-dirección del Operador, ver abajo) · cifrado de datos sensibles ✅ (mismo arreglo, ver abajo - requiere
-`CIFRADO_CLAVE` configurada en Render antes de desplegar) · SQL injection ✅ (Sequelize parametrizado, cero queries crudas) · XSS ✅ (Angular escapa por defecto, cero
-`innerHTML`/`bypassSecurityTrust`) · CSRF ✅ (JWT va en header, no en cookie) · rate limiting ✅ (arreglado
-2026-09-25, ver abajo) · helmet/cabeceras de seguridad ✅ (arreglado 2026-09-25) · CORS ✅ (arreglado 2026-09-25,
-dominio de producción de Vercel ya viene por defecto, `CORS_ORIGIN` solo hace falta si agregan otro dominio) ·
-certificados SSL ✅ (los da Render/Vercel automático).
-
-**Infraestructura:** balanceador de carga ❌ (pendiente de decisión de plan - con ~950 trabajadores de campo
-como usuarios reales de la app SÍ hay que resolverlo, ver Pendiente) · backups de BD ❌ (no verificado - urgente
-revisar plan de Render/Railway, el free tier expira solo) · firewall ➖ (lo maneja la plataforma) · redundancia
-❌ (una sola instancia) · recuperación ante desastres ❌ (sin plan) · escalabilidad horizontal/vertical ⚠️
-(diseño stateless ayuda + pool de conexiones de Sequelize ya explícito desde 2026-09-25 para poder escalar
-réplicas sin sorpresas, pero sin plan pago que dé las réplicas todavía) · cache ❌ · cola de procesamiento ❌
-(no hace falta todavía) · tareas en segundo plano ❌ (nada corre solo, "Cerrar Jornada" es 100% manual).
-
-**Ciclo de desarrollo:** ambientes dev/stage/prod ⚠️ (solo dev y prod, sin staging) · secretos ✅ (`.env`
-gitignored, `JWT_SECRET`/`CIFRADO_CLAVE` fallan duro si faltan) · CI/CD ✅ (arreglado 2026-09-25, GitHub Actions
-en cada push/PR a main, ver abajo) · pruebas unitarias ✅ (arreglado 2026-09-25: pruebas reales de lógica de
-negocio - validación de horas y vigencia del Token de Hacienda, backend y frontend - además de los specs por
-componente que ya traía Angular) · integración ✅ (arreglado 2026-09-25, ver abajo - contra Postgres real,
-corre en CI con un servicio de BD propio) · end-to-end ✅ (arreglado 2026-09-25, ver abajo - Playwright real
-contra el navegador, backend y BD reales, esta vez sí quedó en el repo y corre en CI) · carga ✅ (arreglado
-2026-09-25, ver abajo - `autocannon` contra volumen real de ~950 operadores, no corre en CI a propósito, un
-hallazgo real quedó pendiente de decisión de producto en "Pendiente").
-
-**Configuración y observabilidad:** login ✅ (arreglado 2026-09-25: rate limiting ya estaba de la ronda anterior,
-clave mínima subida de 6 a 8 caracteres) · monitoreo de métricas ❌ · alertas ❌ · trazabilidad ⚠️ (mejorado
-2026-09-25: ahora hay auditoría técnica de acciones sensibles - reseteo de claves, Token de Hacienda - además de
-la auditoría de negocio que ya existía (O/X, timestamps), ver abajo; sigue sin haber auditoría técnica de acceso
-genérico, ej. "quién vio el listado de usuarios") · análisis de errores ❌ (solo `console.error`, sin
-Sentry/similar) · observabilidad de caídas ❌ (existe `/api/health` pero nada lo monitorea).
-
-**App móvil:** ➖ no aplica en su totalidad todavía - sigue siendo 100% web, sin build nativa ni presencia en
-tiendas (certificados de firma, perfiles de aprovisionamiento, firmas, bill of materials de tienda, rendimiento
-nativo, compatibilidad entre dispositivos, analítica de app - todo esto se activa cuando se empaquete). Dos
-excepciones que sí aplican YA, como web, porque ya se maneja PII real de trabajadores en producción: política de
-privacidad ✅ (arreglado 2026-09-25, borrador redactado + gate de aceptación en el login + datos legales de
-FRUGALP AGRICOLA EXPORTADORA G-P CIA. LTDA. ya completados - RUC, correo de contacto, retención de 2 años) · términos y
-condiciones ✅ (mismo documento/mismo arreglo) · protección de datos personales ✅ (arreglado 2026-09-25, cifrado
-en reposo de cédula/teléfono/dirección, ver abajo) · actualización de dependencias ✅ (arreglado 2026-09-25, Dependabot semanal en los 2 proyectos
-+ Actions) · vulnerabilidades de terceros ✅ (arreglado 2026-09-25, `npm audit` corre en CI y quedó en 0 en
-ambos proyectos, ver abajo).
-
-**Veredicto:** la base de código está sólida donde más cuesta acertar (ORM parametrizado, Angular sin XSS,
-claves con bcrypt, JWT bien diseñado, integridad referencial real). Como operación de producción con cientos de
-usuarios reales, no cumple: sin pruebas, sin CI/CD, sin observabilidad de ningún tipo, backups sin verificar, y
-3 huecos de seguridad baratos de cerrar (CORS abierto, sin rate limiting, sin helmet) que son la prioridad
-inmediata. Balanceador de carga/redundancia pasaron de "no aplica" a "sí aplica" en cuanto se confirmó la escala
-real (~950 trabajadores de campo como usuarios de la app, ~150 de oficina que no la usan, de un total de ~1100).
-
-### Cierre de los 3 huecos baratos (2026-09-25)
-
-- **CORS**: `app.ts` ya no usa `cors()` sin argumentos. Ahora lee `process.env.CORS_ORIGIN` (lista separada por
-  comas, para agregar dominios sin tocar código) y solo acepta esos orígenes; sin la variable configurada, cae al
-  dominio real de producción en Vercel (`https://horometros-frugalp.vercel.app`, el "Domain" estable del
-  proyecto - no las URLs de preview con hash que cambian en cada deploy) + `http://localhost:4200` para
-  desarrollo, así que no hace falta configurar nada para que el frontend actual siga funcionando tal cual. Si
-  agregan un dominio propio o algún otro deploy de Vercel más adelante, ahí sí hay que setear `CORS_ORIGIN` en
-  las variables de entorno de Render con la lista completa (reemplaza el fallback, no se suma a él).
-- **Rate limiting**: `middlewares/rate-limit.middleware.ts` (nuevo) - `limitadorLogin` (10 intentos/15min) en
-  `POST /api/auth/login` y `POST /api/asistencia/marcar-codigo` (comparten el mismo balde por IP, ambos piden
-  clave); `limitadorMarcacion` (30/15min, más laxo) en `POST /api/asistencia/marcar-qr` (solo pide un
-  `operador_id`, no una clave). Guarda el conteo en memoria del proceso - si algún día corren 2+ réplicas del
-  backend detrás de un balanceador, cada réplica cuenta aparte (el límite real efectivo se multiplica por la
-  cantidad de réplicas); no hace falta resolverlo todavía, pero si se vuelve un problema real la solución es un
-  store compartido (Redis) en vez del de memoria por defecto.
-- **Helmet**: `app.use(helmet())` en `app.ts` - cabeceras de seguridad por defecto (CSP, X-Frame-Options,
-  X-Content-Type-Options, etc.), sin configuración especial.
-- **`trust proxy`**: `app.set('trust proxy', 1)` - necesario porque Render/Railway ponen la app detrás de su
-  propio proxy inverso; sin esto, Express ve la IP del proxy en vez de la del cliente real y el rate limiting de
-  arriba queda inútil (o directamente `express-rate-limit` v8+ tira error por no poder confiar en
-  `X-Forwarded-For` sin este ajuste explícito).
-- **Pool de conexiones de Sequelize** (`database.ts`): antes sin configurar (default de Sequelize, `max:5`).
-  Ahora explícito (`max:10` por instancia) para que escalar horizontalmente el backend sea un número conocido
-  (réplicas × 10 conexiones) en vez de una sorpresa contra el límite de conexiones del plan de Postgres
-  contratado - ajustar ese `max` si el plan de BD cambia.
-
-Verificado con curl local: `OPTIONS` con un origen no permitido no devuelve `Access-Control-Allow-Origin` (el
-navegador lo bloquea solo); 10 intentos seguidos de login con clave incorrecta devuelven 401, el 11º en adelante
-429; las cabeceras de Helmet aparecen en cualquier respuesta.
-
-### CI/CD, dependencias y clave mínima (2026-09-25)
-
-- **GitHub Actions** (`.github/workflows/ci.yml`, nuevo): corre en cada push y PR hacia `main`. Job `backend`:
-  `npm ci` + `npm run typecheck` (`tsc --noEmit`). Job `frontend`: `npm ci` + `npm run typecheck` + `npm test`
-  (Vitest vía el builder `@angular/build:unit-test` de Angular 22, no necesita browser/Chrome porque corre en
-  jsdom, a diferencia del Karma viejo) + `npm run build`. No reemplaza el despliegue automático de
-  Render/Vercel, lo complementa: si esto falla, el error queda visible en GitHub ANTES de que el push llegue a
-  producción.
-- **Specs rotos arreglados** (bloqueaban el `npm test` de arriba, 4 de 8 archivos fallaban con
-  `NG0201: No provider found for ActivatedRoute` porque sus componentes usan `RouterLink` en la plantilla y el
-  `TestBed` de cada spec no proveía ningún router): `app.spec.ts`, `dashboard.component.spec.ts`,
-  `asistencia-menu.spec.ts`, `supervisor-panel.spec.ts` (este último también necesitó `provideHttpClient()`,
-  sus servicios inyectados lo requieren). De paso, `app.spec.ts` tenía una aserción del boilerplate original de
-  `ng new` nunca actualizada (esperaba el texto `"Hello, frontend-horometros"`, que no existe en ningún lado de
-  la app real) - se corrigió para comprobar `"FRUGALP"` (el `<h1>` real de `app.html`).
-- **`marcacion-kiosco.spec.ts` excluido del test target** (`angular.json`, `test.options.exclude`): el
-  componente usa `ZXingScannerModule` (`@zxing/ngx-scanner`), que internamente importa `@zxing/library` - un
-  paquete CommonJS cuyos "named exports" (`BarcodeFormat`, etc.) Vitest no puede resolver en el entorno de
-  pruebas (`SyntaxError: Named export 'BarcodeFormat' not found`), aunque en el navegador real (`ng serve`/
-  `ng build`) funciona sin problema - es una incompatibilidad de bundler de pruebas con esa librería en
-  particular, no un bug de la app. Queda documentado en un comentario arriba del `describe()` del spec.
-- **`qcore` eliminado** (`frontend-horometros/package.json`): dependencia directa que nunca se usó en ningún
-  lado de `src/` (cero imports) - por el commit donde se agregó (junto a `@zxing/ngx-scanner`, en la integración
-  de QR) todo indica que fue una instalación accidental, no algo puesto a propósito. Era, ella sola, la fuente
-  de las 4 vulnerabilidades "high severity" que reportaba `npm audit` en el frontend (via su dependencia
-  `chalk-animation` → `meow` → `trim-newlines`, sin fix disponible). Al sacarla, `npm audit` del frontend quedó
-  en 0. En el backend, `npm audit fix` (sin `--force`) resolvió `qs`; queda una vulnerabilidad moderada
-  restante en `uuid` (vía `sequelize`) cuyo único fix downgradea `sequelize` a la v3 (breaking change real) - se
-  dejó como está a propósito, no se fuerza un downgrade de esa magnitud sin decisión explícita del usuario.
-- **Clave mínima subida de 6 a 8 caracteres**: las 4 validaciones del backend que la exigían
-  (`asistencia.controller.ts` x2, `usuario.controller.ts` x2) y los 5 lugares del frontend que la reflejaban
-  (`minlength`/texto de ayuda en `admin-panel.html` y `asistencia-panel.html`) - uno de esos 5 en el frontend no
-  tenía `minlength` en el `<input>`, solo el texto de ayuda, se le agregó de paso.
-- **`package.json` de ambos proyectos**: se agregó `typecheck` (antes solo existía como comando suelto de
-  `tsc`/`ng`) y se arregló `test` del backend, que literalmente fallaba siempre (`"echo Error: no test
-  specified && exit 1"`, el default de `npm init`) - ahora corre `typecheck` (no hay pruebas reales de backend
-  todavía, ver "Pendiente").
-- **`.github/dependabot.yml`** (nuevo): PRs semanales de actualización de dependencias para `backend-horometros`,
-  `frontend-horometros` y las propias GitHub Actions - máximo 5 PRs abiertos a la vez por ecosistema.
-
-### Política de Privacidad/Términos de Uso + gate de aceptación en el primer login (2026-09-25)
-
-Redactado un borrador (responsable del tratamiento, datos que recopila el Sistema, base legal LOPDP, derechos
-ARCO+, seguridad, objeto del servicio, propiedad intelectual, ley aplicable) con datos entre corchetes `[ ]`
-para que la empresa cliente los complete (razón social, RUC, correo de contacto) antes de ir a producción real
-con un cliente puntual. El mismo texto se embebió en `TerminosModal` (frontend) para que el trabajador lo pueda
-leer sin salir de la app - no es solo un documento aparte.
-
-- **`terminos_aceptados_en`** (`DATE`, nullable) agregado a `usuarios` Y `operadores` (migración
-  `20260925000000-agregar-terminos-aceptados.js`) - `null` = todavía no aceptó. Aplica a las 2 tablas porque
-  ambas tienen login propio (ver "Login único" en `auth.controller.ts`).
-- **Login** (`auth.controller.ts`): el `perfil` que devuelve ahora siempre incluye `terminos_aceptados: boolean`
-  (para las 2 ramas, Usuario y Operador) - el frontend decide con esto solo, sin pedir nada aparte.
-- **`POST /api/auth/aceptar-terminos`** (nuevo, `verificarAutenticacion` sin `requireRol` - cualquier cuenta
-  logueada puede aceptar): pone `terminos_aceptados_en = NOW()` en la tabla que corresponda según
-  `req.auth.tipo`. No hay endpoint para "desaceptar" - si algún día cambia el documento y hace falta pedir de
-  nuevo, la forma de resetear es un `UPDATE ... SET terminos_aceptados_en = NULL` manual (no se construyó UI para
-  esto, es un caso raro).
-- **`TerminosModal`** (`shared/terminos-modal/`, nuevo, montado una sola vez en `app.html` fuera del
-  `router-outlet` para poder bloquear cualquier pantalla) - un solo componente para 2 modos, decididos con 2
-  signals computados:
-  - **Bloqueante** (`modoBloqueante`): `authService.estaAutenticado() && perfil().terminos_aceptados === false`.
-    Sin botón "Cerrar" - el único botón habilitado es "Aceptar y continuar", deshabilitado hasta marcar el
-    checkbox. Aparece automáticamente apenas el login trae `terminos_aceptados: false`, sin importar en qué
-    pantalla caiga el rol (Dashboard, `mi-jornada`, `escaner`, etc.) porque vive en `app.html`.
-  - **Libre** (`TerminosService.mostrarLibre`, signal nuevo e independiente): lo abre el botón "Política de
-    Privacidad" del header global (`app.html`) o del pie del login (`login.html`, visible SIN loguearse). Solo
-    tiene botón "Cerrar", nunca toca `terminos_aceptados_en` - es 100% para releer, no para volver a aceptar.
-  - El checkbox usa una propiedad plana (`aceptado = false`) con `[(ngModel)]`, no un signal directo - mismo
-    patrón que el resto de los formularios de la app (los signals se reservan para toggles con `(click)`, como
-    `mostrarClave`).
-- Probado end-to-end con Playwright contra Postgres+backend locales: login con `terminos_aceptados:false` →
-  modal bloqueante aparece, botón deshabilitado hasta marcar el checkbox → aceptar → recargar la página → el
-  modal YA NO vuelve a aparecer (perfil persistido en `localStorage` + confirmado con un segundo login real
-  que trae `terminos_aceptados:true` desde la BD) → botón del header abre el modo libre (solo "Cerrar", sin
-  checkbox ni botón de aceptar).
-
-### Pruebas unitarias reales de lógica de negocio (2026-09-25)
-
-Hasta ahora "pruebas unitarias" solo cubría el boilerplate default de Angular (`ng generate` - "el componente se
-crea sin errores"). El usuario pidió pruebas reales de la lógica de negocio de la app: validación de horas y
-cálculo/vigencia del Token de Hacienda. Estrategia: extraer esa lógica a funciones puras (sin Sequelize, sin
-Express, sin Angular/TestBed) para poder probarla directo, en vez de mockear media base de datos.
-
-- **Backend, `vitest` nuevo** (no existía ningún test runner - `npm test` literalmente corría `typecheck`
-  antes de esto): `vitest.config.mts` (extensión `.mts`, no `.ts`, para que Vite lo cargue como ESM sin
-  necesidad de tocar `"type"` del `package.json` - si no, tira un warning de config en cada corrida),
-  `include: ['src/**/*.test.ts']`. `npm test` ahora corre `vitest run` de verdad; CI (`ci.yml`, job `backend`)
-  agrega el paso `npm test` después de `npm run typecheck`.
-  - `utils/validar-orden-horas.ts` (+ `.test.ts`, 6 casos): `horaEsAnteriorARegistrosPrevios` y
-    `calcularUltimaHoraRegistrada`, extraídas tal cual de `crearRegistroActividad`
-    (`registro_actividad.controller.ts`) sin cambiar el comportamiento - ese controller ahora solo llama a la
-    función. Cubre: primera labor del día (nunca rechaza), labor previa cerrada, labor previa todavía abierta
-    (compara contra `hora_inicio`, no `hora_fin`), varias labores cerradas fuera de orden (compara contra la
-    MÁS reciente, no la última creada), y el límite exacto (hora igual a la última = no es "anterior", se
-    acepta).
-  - `utils/token-hacienda.ts` (+ `.test.ts`, 7 casos): `tokenHaciendaVigente`, que reemplaza 3 copias
-    inline casi idénticas de la misma comparación de fechas que vivían sueltas en `auth.controller.ts` (login)
-    y `asistencia.controller.ts` (`marcarConCodigo`, `marcarConMiCodigo`). De paso corrige una inconsistencia
-    microscópica que ya existía entre esas 3 copias (una comparaba con `>` estricto y las otras con `>=` en el
-    instante exacto de vencimiento) - a efectos prácticos, imposible de notar (una diferencia de milisegundos),
-    pero ahora las 3 quedan exactamente iguales.
-- **Frontend, mismo patrón** (ya había `vitest` vía el builder de Angular 22, ver ronda de CI/CD):
-  `core/utils/token-hacienda.util.ts` (+ `.spec.ts`, 8 casos) - `tokenHaciendaVencido`/`formatearTiempoRestante`,
-  extraídas de `admin-panel.ts` (antes eran métodos del componente, ahora el componente solo los llama pasando
-  `this.ahora`). También se aprovechó para agregarle spec a `rutas-por-rol.ts` (+ `.spec.ts`, 4 casos) - ya era
-  una función pura sin pruebas, "a qué pantalla pertenece cada rol" es lógica de negocio real y no tenía
-  ningún costo de extracción (ya vivía sola en su propio archivo).
-- **Deliberadamente NO cubierto todavía**: los controllers/endpoints en sí (requieren mockear Sequelize +
-  Express, o levantar una base de datos de prueba - más cerca de "integración" que de "unitaria") y los
-  componentes Angular con lógica async/HTTP (`AdminPanel`, `SupervisorPanel`, etc. - los specs que ya traían
-  siguen siendo el boilerplate, ver arriba). Buen candidato para la próxima ronda si el usuario lo pide.
-
-### Revocación de sesiones JWT + historial de auditoría (2026-09-25)
-
-El usuario preguntó, con razón, por qué un JWT viejo seguía funcionando después de que ADMIN/ASISTENTE resetea
-la clave de alguien - hoy (JWT stateless de 8h) no había forma de invalidarlo antes de su vencimiento natural.
-Junto con eso pidió una pestaña de historial: qué USUARIO de oficina resetó una clave o generó/invalidó un
-Token de Hacienda.
-
-**Revocación de sesiones** (no requiere Redis ni nada externo - un campo en la BD alcanza a esta escala):
-- **`sesion_valida_desde`** (`DATE`, nullable) agregado a `usuarios` Y `operadores` (migración
-  `20260925010000-agregar-sesion-valida-desde.js`). `null` = ningún JWT invalidado nunca (default de todas las
-  cuentas existentes - no rompe sesiones activas al desplegar esto). Se pisa con `NOW()` cada vez que la cuenta
-  cambia de clave: `resetearClaveUsuario` (`usuario.controller.ts`), `resetearClaveOperador` y `actualizarOperador`
-  cuando la edición incluyó una clave nueva (`asistencia.controller.ts`).
-- **`verificarAutenticacion`** (`middlewares/auth.middleware.ts`) pasó de sincrónico a asíncrono: ya no confía
-  solo en la firma del JWT, también consulta `sesion_valida_desde` de la cuenta (un solo campo, `findByPk` con
-  `attributes` acotado) y compara contra el `iat` del token (que `jsonwebtoken` agrega solo al firmar). Esto
-  agrega una consulta a la BD en CADA request autenticado de la app entera - aceptado a propósito: es el mismo
-  costo que ya paga `verificarJornadaOperadorActiva` para el tipo `operador`, y a esta escala (~1100 cuentas) un
-  `findByPk` indexado no es un problema real.
-- **`utils/sesion-revocada.ts`** (+ `.test.ts`, 6 casos): `sesionFueInvalidada`, la comparación extraída como
-  función pura, mismo patrón que `token-hacienda.ts`. **Bug real encontrado probando a mano** (no en el código
-  final, se corrigió antes de entregar): la primera versión comparaba milisegundos (`sesion_valida_desde`)
-  contra segundos×1000 (`iat`) - un login hecho en el MISMO segundo que el reseteo (caso real: alguien resetea
-  su propia clave y se loguea de nuevo al toque) quedaba marcado como "sesión vieja" por error, porque `iat`
-  solo tiene resolución de 1 segundo. Fix: ambos lados se truncan a segundos antes de comparar. Contrapartida
-  aceptada: un JWT viejo emitido en el MISMO segundo que el reseteo (antes, por milisegundos) sigue colándose
-  hasta que expira solo - un margen de 1 segundo, no de 8 horas.
-- Probado con curl de punta a punta contra Postgres+backend locales: token de antes del reseteo → 401 "Tu
-  sesión fue invalidada..." · login inmediato después del reseteo (mismo segundo) → 200, funciona normal.
-
-**Historial de auditoría** (tabla `registros_auditoria`, migración `20260925020000-crear-tabla-registros-auditoria.js`,
-modelo `RegistroAuditoria`, helper `utils/registrar-auditoria.ts`):
-- Append-only, nunca se edita ni se borra una fila. `objetivo_nombre` queda "congelado" en el momento de la
-  acción (no es un JOIN en vivo) para que el historial siga teniendo sentido aunque después renombren/eliminen
-  al operador/usuario/hacienda; `actor` SÍ es JOIN en vivo contra `usuarios` (el nombre de quien ejecuta la
-  acción prácticamente nunca cambia, y evita una consulta extra en el camino de escritura).
-- Se registra desde 5 puntos: `resetearClaveUsuario`, `resetearClaveOperador`, `actualizarOperador` (solo si
-  cambió la clave), `generarTokenHacienda`, `invalidarToken`. Un fallo al escribir la auditoría NUNCA tumba la
-  acción principal que ya se ejecutó (`registrarAuditoria` atrapa su propio error y solo lo deja en el log del
-  servidor) - resetear una clave no debe fallar porque el historial tuvo un problema.
-- **`GET /api/auditoria`** (nuevo, `auditoria.controller.ts`/`.rutes.ts`), exclusivo ADMIN - es la única cuenta
-  con visibilidad sobre lo que hacen tanto ADMIN como ASISTENTE, que es el punto de tener esto. **Paginado**
-  (agregado 2026-09-25, mismo patrón que `obtenerHistorial`/`obtenerAsistenciaHoy` en `asistencia.controller.ts`:
-  `?pagina=N`, respuesta `{ data, total, pagina, totalPaginas }`) - a diferencia del Historial de Asistencia, el
-  límite va FIJO en 20 por página (`LIMITE_POR_PAGINA`, no se deja elegir por query) porque esta pestaña no
-  tiene ningún filtro que justifique páginas más grandes.
-- Frontend: pestaña nueva **"Historial"** en el Menú Admin (`admin-panel.ts`/`.html`), visible solo con
-  `*ngIf="esAdmin"` (mismo patrón que la pestaña Haciendas). Se carga recién al entrar a la pestaña, no en
-  `ngOnInit` - es la que menos tráfico tiene. Tabla simple: fecha, quién (nombre + cargo), acción (etiqueta
-  legible vía `ETIQUETAS_ACCION`), sobre quién/qué. Barra de paginación abajo (`.pagination-bar`, mismo
-  componente visual que ya usa el Historial de Asistencia) con "Página X de Y (N registros)" + botones ◀ ▶.
-- Probado con Playwright contra el backend local: ADMIN resetea la clave de una cuenta de prueba 25 veces
-  (para forzar 2 páginas) - página 1 muestra 20 filas con "◀" deshabilitado y "▶" habilitado, página 2 muestra
-  las 5 restantes con "▶" deshabilitado.
-
-### Cifrado en reposo de PII del Operador (2026-09-25)
-
-Cédula, teléfono y dirección de los Mecánicos/Operadores (~950 trabajadores) se guardaban en texto plano en la
-BD - el ítem que quedaba pendiente de la auditoría de seguridad original. Ahora se cifran a nivel de columna con
-AES-256-GCM (`utils/cifrado.ts`), transparente para el resto del código: el backend sigue leyendo/escribiendo
-texto plano en `req.body`/las respuestas JSON, solo lo que queda guardado en Postgres cambia.
-
-- **`CIFRADO_CLAVE`** (nueva variable de entorno OBLIGATORIA, 32 bytes en hex = 64 caracteres, generar con
-  `openssl rand -hex 32`) - mismo patrón que `JWT_SECRET`: si falta, el proceso no arranca en vez de correr sin
-  cifrado real. **Si esta clave se pierde, los datos cifrados quedan irrecuperables para siempre** - no hay
-  forma de "resetearla" sin perder todo lo que ya está cifrado con la anterior. Falta configurarla en Render
-  (además de en el `.env` local de quien desarrolle) antes de desplegar este cambio.
-- **`utils/cifrado.ts`** (+ `.test.ts`, 9 casos): `cifrar()` (AES-256-GCM, IV aleatorio - para `telefono`/
-  `direccion`, que nunca se buscan por igualdad) · `cifrarDeterministico()` (mismo texto de entrada → siempre el
-  mismo resultado, IV derivado del propio texto vía HMAC-SHA256 - SOLO para `cedula`, que tiene `UNIQUE` en la
-  BD y se busca por igualdad exacta) · `descifrar()` (sirve para los dos formatos, y devuelve tal cual un valor
-  legado sin el prefijo `enc1:` - o sea, texto plano de antes de activar el cifrado).
-- **`models/operador.ts`**: `cedula`/`telefono`/`direccion` ahora tienen `get()`/`set()` que cifran/descifran
-  automáticamente - `instance.cedula = 'x'`, `Operador.create({cedula:'x'})` y `Operador.update({cedula:'x'})`
-  pasan TODOS por el `set()` (Sequelize los intercepta), así que no hizo falta tocar `crearOperador`/
-  `actualizarOperador`. Columnas ensanchadas (`STRING(100)`/`STRING(100)`/`STRING(500)`, antes `20`/`20`/`255`)
-  porque el texto cifrado (base64 de iv+authTag+ciphertext, más el prefijo) es más largo que el original.
-- **Excepción real encontrada y corregida**: `verificarDuplicadosOperador` (`asistencia.controller.ts`) arma su
-  propio `where: { cedula: ... }` para chequear duplicados ANTES del insert/update - un `where` de Sequelize NO
-  pasa por el `set()` del modelo (eso solo aplica a asignaciones de instancia), así que sin arreglar esto la
-  búsqueda habría comparado texto plano contra cifrado y NUNCA habría encontrado coincidencias, dejando pasar
-  cédulas duplicadas en silencio. Se cifra el valor buscado a mano, con `cifrarDeterministico()`, antes de armar
-  el `where`. De paso, `mensajeDuplicadoGenerico` (el mensaje de respaldo ante una condición de carrera) dejó de
-  mostrar el valor crudo del error de Postgres para el campo `cedula` - ese valor ahora sería el texto CIFRADO,
-  no la cédula real, y mostrarlo confundiría en vez de ayudar.
-- **Migración `20260925030000-cifrar-pii-operadores.js`**: ensancha las 3 columnas y cifra (backfill) todo lo
-  que ya estaba en texto plano - reimplementa el mismo algoritmo en JS plano porque las migraciones corren
-  fuera de `tsx`/`ts-node`, sin acceso directo a los módulos TS del proyecto (si el algoritmo de `cifrado.ts`
-  cambia alguna vez, hay que replicar el cambio ahí también). Idempotente (un valor que ya empieza con `enc1:`
-  se salta - se puede interrumpir y correr de nuevo sin duplicar el cifrado ni perder datos) y sin `down()` real
-  (revertir cifrado ya aplicado en producción es una decisión manual, no un rollback de rutina).
-  **⚠️ Antes de correrla en producción: hacer un respaldo manual de la base de datos.** Reescribe PII real de
-  ~950 trabajadores - la migración en sí es segura e idempotente, pero un respaldo previo sigue siendo la única
-  forma real de deshacer un problema (ej. `CIFRADO_CLAVE` mal configurada).
-- Probado de punta a punta contra Postgres local: cédulas/teléfonos/direcciones que ya estaban en texto plano
-  (de sesiones de prueba anteriores) quedaron cifradas tras migrar (`SELECT` directo en `psql` confirma
-  `enc1:...`) · crear un Operador nuevo con esos 3 campos → la API devuelve texto plano, la BD guarda cifrado ·
-  crear otro Operador con la MISMA cédula → rechazado 409 con el nombre correcto (no el texto cifrado) · esa
-  misma verificación de duplicado TAMBIÉN funciona contra una cédula que fue migrada desde texto plano
-  (confirma que el cifrado determinístico de la migración y el del modelo producen el mismo resultado) · editar
-  teléfono/dirección de un Operador existente → responde en texto plano correctamente · listar operadores con
-  cédula/teléfono `null`/`''` (datos preexistentes) no revienta.
-- **No cubierto por este cambio** (fuera del alcance que se pidió - "cédula, teléfono y dirección"):
-  `nombre_completo` (se usa para ordenar/mostrar en toda la app; cifrarlo rompería esas listas) y `codigo_megued`
-  (código operativo interno, no dato personal en el sentido de la Política de Privacidad).
-
-### Pruebas de integración + 3 bugs reales de infraestructura encontrados al construirlas (2026-09-25)
-
-El usuario pidió seguir con lo que faltaba de la auditoría original. Se armaron pruebas de integración reales
-(HTTP de punta a punta contra Postgres real, con `supertest`, no mocks) para los 3 flujos más recientes y más
-complejos de la app: login + revocación de sesión, cifrado de PII del Operador, e historial de auditoría
-paginado. Construirlas destapó 3 problemas reales de infraestructura que nunca se habían notado porque nadie
-había intentado migrar una base de datos REALMENTE vacía hasta ahora - los tres ya están corregidos.
-
-**Infraestructura de pruebas:**
-- BD de test **separada** de development (`DB_NAME_TEST`, por defecto `<DB_NAME>_test` - no hace falta
-  configurar nada nuevo) - `config/database.ts` y `config/database.migrations.js` la usan cuando
-  `NODE_ENV=test`. Sin esto, correr las pruebas de integración locales habría truncado/insertado contra la
-  misma BD que se usa para probar a mano. Hay que crearla una vez a mano (`createdb horometros_db_test`) antes
-  de correr `npm run test:integration` local - en CI la crea sola el servicio de Postgres.
-- `vitest.integration.config.mts` (separado de `vitest.config.mts`, los unitarios) - filtra `*.itest.ts` (no
-  `*.integration.test.ts`, para no chocar con el glob `*.test.ts` de los unitarios), `globalSetup` corre las
-  migraciones reales contra la BD de test antes de la primera prueba, `fileParallelism:false` (las pruebas
-  comparten una sola BD real, en paralelo se pisarían entre sí).
-- `src/test-setup/helpers.ts`: `limpiarBaseDeDatosTest()` (trunca en el orden correcto por las FK) y
-  `crearUsuarioDePrueba()` (crea un Usuario directo por Sequelize, no por HTTP - no existe un endpoint público
-  para crear el primer Admin, mismo motivo que "Cuenta ADMIN de arranque").
-- `npm run test:integration` (nuevo script) - job nuevo en CI (`backend-integration`), **separado** del job
-  `backend` de siempre (que sigue sin BD, rápido) - con un servicio `postgres:16` real, migra y corre las
-  pruebas. Claves de prueba fijas y sin ningún valor real en el YAML (no son secretos de GitHub a propósito).
-- **3 archivos de pruebas** (`src/integration-tests/`): `auth.itest.ts` (login incorrecto, login exitoso,
-  y sobre todo la regresión completa de la revocación de sesión: token viejo se bloquea, login nuevo funciona)
-  · `operador.itest.ts` (la API devuelve PII en texto plano, la BD la guarda cifrada de verdad - `SELECT`
-  directo -, cédula duplicada rechazada sin exponer el texto cifrado, editar responde en texto plano) ·
-  `auditoria.itest.ts` (solo ADMIN puede verla, se registra un reseteo de clave, pagina con 25 registros).
-
-**Bug 1 - `config/database.js` renombrado a `config/database.migrations.js`.** Con dos archivos llamados igual
-(`database.js` para sequelize-cli, `database.ts` para la app), `import {sequelize} from "../config/database"`
-(sin extensión, usado en TODA la app) resolvía distinto según la herramienta: `tsx`/`ts-node` elegían el `.ts`
-correcto, pero Vite/Vitest elegían el `.js` de sequelize-cli por error - los modelos se inicializaban con
-`sequelize` `undefined` ("No Sequelize instance passed"), algo que nunca se notó porque nada había usado
-Vitest para importar el árbol de la app hasta estas pruebas. Sacarle la ambigüedad al nombre lo resuelve de
-raíz, sin tocar ningún `import` del resto del código - `.sequelizerc` es el único lugar que sabía el nombre
-real del archivo de config.
-
-**Bug 2 - las migraciones no podían reconstruir el esquema desde una base vacía.** `operadores`, `equipos` y
-`actividades` se crearon en producción ANTES de que existiera el sistema de migraciones (via un `sequelize.sync()`
-antiguo - el comentario de `20260916030830-reparar-primary-key-equipos.js` ya lo documentaba para `equipos`
-puntualmente). La primera migración tracked (`20260903054054`) las ALTERA asumiendo que ya existen - migrar una
-BD realmente vacía (la de CI, o una recuperación de desastre desde cero) fallaba ahí mismo. Esto era invisible
-hasta ahora porque nadie había migrado nunca desde cero: development/producción arrastran esas tablas desde
-antes de que hubiera migraciones. Nueva migración `20260101000000-esquema-base-legado-operadores-equipos-
-actividades.js` (fechada para correr PRIMERO) las crea con exactamente las columnas que ninguna migración
-tracked agrega después - todo lo demás lo siguen agregando las migraciones que ya existían, sin tocarlas.
-**Cada `createTable` chequea primero si la tabla ya existe y se salta si es así** (en vez de reventar) - crítico
-porque en una base real (donde las 3 tablas YA existen) esta migración de todos modos aparece como "pendiente"
-en el próximo `db:migrate` (por estar fechada antes que las que ya corrieron ahí); sin ese chequeo, ese
-`db:migrate` se habría cortado a la mitad con un error real. Verificado en los dos sentidos: contra la BD de
-desarrollo real (queda como no-op, ninguna columna se toca) y contra una BD vacía nueva (crea las 3 tablas y
-el resto de la cadena de migraciones corre normal encima).
-**De paso**, `20260916030830-reparar-primary-key-equipos.js` ganó un `.catch(() => {})` (mismo patrón ya usado
-en otras migraciones de esta ronda): en una BD nueva creada por la migración genesis, `equipos` ya nace con una
-primary key real, así que no hay nada que reparar ahí.
-
-**Bug 3 - índice UNIQUE duplicado en `cedula` (bug propio, introducido en la ronda de cifrado).**
-`20260925030000-cifrar-pii-operadores.js` le pasaba `unique:true` a un `changeColumn` sobre una columna que YA
-era única (por la migración original que la agregó) - Sequelize no reconoce el constraint existente y crea uno
-SEGUNDO, redundante (`operadores_cedula_key1`, visible en la BD local de pruebas). Corregido: el `changeColumn`
-ya no repite `unique:true`, solo ensancha el tipo - un `ALTER COLUMN TYPE` no toca constraints existentes.
-Verificado con una migración desde cero: un solo índice UNIQUE en `cedula`, como corresponde.
-
-### Pruebas end-to-end reales (Playwright, 2026-09-25)
-
-Las últimas rondas de Playwright fueron siempre manuales (yo probando a mano antes de entregar un patch) y
-nunca quedaron en el repo. Esta vez sí: `@playwright/test` corre contra el navegador de verdad, el backend real
-(`tsx watch`) y la BD de test real (la misma infraestructura que ya armaron las pruebas de integración) - no es
-otro nivel de mocks, es la UI completa haciendo clics reales.
-
-- **`frontend-horometros/playwright.config.ts`**: `testDir: './e2e'` (fuera de `src/`, para no chocar con el
-  glob `src/**/*.spec.ts` de `ng test`/Vitest). `webServer` (un array: Playwright levanta y apaga los DOS
-  servidores solo, antes/después de toda la corrida) - backend vía `npm run e2e:server` (nuevo script del
-  backend: migra la BD de test + siembra una cuenta ADMIN fija + levanta el server, los tres con
-  `NODE_ENV=test`) y frontend vía `ng serve --configuration=e2e`. `fullyParallel:false`/`workers:1`: todos los
-  specs comparten el mismo backend y la misma BD real, en paralelo se pisarían entre sí.
-- **`environment.e2e.ts`** (nuevo, + configuración `e2e` en `angular.json` para `build`/`serve`): apunta a
-  `http://localhost:3000/api` (el backend de test) - separado de `environment.development.ts` a propósito, que
-  sigue apuntando a Render como siempre (nunca se toca para esto).
-- **`backend-horometros/src/test-setup/sembrar-e2e.ts`** (nuevo): limpia la BD de test y crea una cuenta
-  `e2e_admin` fija con `terminos_aceptados_en` ya seteado (para no interferir con specs que no son sobre ese
-  gate) - a diferencia de las pruebas de integración (que limpian entre cada test), e2e parte de un estado
-  inicial fijo una sola vez, porque navegar la UI real es mucho más lento.
-- **2 specs** (`frontend-horometros/e2e/`): `login.spec.ts` (clave incorrecta muestra error, login correcto
-  lleva al Dashboard, y el flujo completo del gate de Términos: `e2e_admin` crea una cuenta nueva vía la UI
-  real del Menú Admin, esa cuenta ve el modal bloqueante en su primer login, lo acepta, y no lo vuelve a ver
-  después de un refresh) · `admin-historial.spec.ts` (crear un usuario, resetear su clave, y confirmar que la
-  pestaña Historial muestra la fila correcta - quién, qué acción, sobre quién).
-- **Bug real encontrado en mis propios specs** (no en la app): el helper que confirma "el usuario ya aparece en
-  la tabla" buscaba por texto plano (`text=usuario123`) - el toast de éxito ("Usuario 'X' creado
-  correctamente") también contiene ese mismo texto, así que el locator matcheaba 2 elementos y Playwright lo
-  rechaza en "strict mode". Corregido apuntando a `.code-badge` (la celda real de la tabla), no a un texto
-  suelto.
-- CI: job nuevo `e2e` (`.github/workflows/ci.yml`), con su propio servicio de Postgres (mismo patrón que
-  `backend-integration`) - hace `npm ci` en las dos carpetas, `npx playwright install --with-deps chromium`, y
-  corre `npm run test:e2e` desde `frontend-horometros` (que levanta los dos servidores solo). Si algo falla,
-  sube el reporte de Playwright como artefacto para poder revisarlo sin tener que reproducirlo a mano.
-- Corrido 2 veces seguidas en local para confirmar que es repetible (usuarios de prueba con nombres únicos por
-  timestamp, no fijos) - 4/4 en ambas corridas.
-
-### Pruebas de carga (autocannon, 2026-09-25)
-
-Primera vez que se mide, con números reales, cómo responde el backend al volumen que va a tener la empresa
-cliente (~950 trabajadores de campo). No corren en CI a propósito (son pesadas/lentas y miden capacidad, no
-corrección) - se corren a mano antes de un release grande, contra la BD de test real.
-
-- **`backend-horometros/src/test-setup/sembrar-carga.ts`** (nuevo, `npm run carga:preparar`): siembra 950
-  Operadores con su Asistencia de hoy YA cerrada (para medir lectura del Panel/Historial con volumen real), 950
-  Operadores APARTE sin marcar hoy (para la ráfaga de escritura - un Operador solo puede marcar una vez al día,
-  reusar el mismo pool para las dos cosas habría hecho que la ráfaga fallara por regla de negocio, no por
-  capacidad) y 3000 registros de auditoría repartidos en 180 días.
-- **`backend-horometros/src/test-setup/prueba-carga.ts`** (nuevo, `npm run test:carga`): levanta el backend real
-  en el mismo proceso, mide 3 endpoints de lectura con `autocannon` (20 conexiones concurrentes ~ oficina real) y
-  una ráfaga de escritura propia (`fetch` con concurrencia manual, no autocannon - necesitaba un body de login
-  DISTINTO por petición, uno por trabajador) simulando 950 marcaciones de entrada distintas al arranque del
-  turno, 50 a la vez.
-- **`limitadorLogin`/`limitadorMarcacion`** (`rate-limit.middleware.ts`): `skip` nuevo cuando
-  `NODE_ENV==='test'` - la ráfaga manda cientos de marcaciones desde una sola IP a propósito (simula 950
-  trabajadores, no 1); en producción real cada uno pega desde su propio celular, así que el límite por IP nunca
-  los junta. `NODE_ENV` solo vale `'test'` en pruebas corridas a mano o en CI, nunca en producción.
-
-**Resultados de la corrida local** (máquina de desarrollo, no el plan real de Render - sirven para comparar
-entre sí y para encontrar problemas de diseño, no como SLA absoluto de producción):
-
-| Endpoint | Escenario | p50 | p97.5 | p99 | Resultado |
-|---|---|---|---|---|---|
-| `GET /asistencia/operadores` | 1900 operadores, **sin paginar**, 20 conc. | 1433ms | 2874ms | 3237ms | ⚠️ lento |
-| `GET /auditoria?pagina=1` | 3000 registros, paginado, 20 conc. | 38ms | 61ms | 76ms | ✅ |
-| `GET /asistencia/hoy?pagina=1` | 950 asistencias hoy, paginado, 20 conc. | 109ms | 137ms | 161ms | ✅ |
-| `POST /asistencia/marcar-codigo` | 950 marcaciones distintas, 50 conc. | 3886ms | 6308ms | 9629ms | ✅ (0 errores, ver nota) |
-
-**Hallazgo resuelto (2026-09-25):** `GET /asistencia/operadores` era el único de los 4 sin paginación - traía
-los 950+ Operadores de un solo golpe en cada carga del Directorio de Operadores (Panel de Asistente), y por eso
-salía el más lento por lejos. Arreglado con el mismo patrón que `ObtenerActividades` (`actividades.controller.ts`):
-sin `pagina`/`limite` en la query sigue devolviendo el arreglo completo (compatibilidad hacia atrás, nadie más
-lo llamaba así pero se deja por si acaso), con `pagina`/`limite` responde paginado, y con `q` opcional filtra
-por `nombre_completo`/`codigo_megued` (`LIKE`) y por `cedula` (IGUALDAD EXACTA, no `LIKE` - la cédula está
-cifrada en la BD con cifrado determinístico, que preserva igualdad pero no permite buscar por un fragmento del
-texto plano; ver `models/operador.ts`). El frontend (`asistencia-panel.ts`) pasó de filtrar/paginar en el
-navegador sobre el arreglo completo a pedirle la página+búsqueda al backend, con debounce de 300ms en la
-cajita de búsqueda - mismo patrón ya usado en las pestañas Equipo/Actividad de este mismo componente.
-Probado con `curl` contra Postgres local: búsqueda parcial por nombre (2/2 coincidencias), por código
-(1/1), cédula exacta (1/1) y cédula parcial (0/0, la limitación documentada arriba, funciona como se espera).
-No se pudo probar en navegador real esta ronda - la versión de Node del entorno de esta sesión quedó por debajo
-del mínimo que exige Angular CLI 22 (bloquea `ng serve`/`ng build`/`ng test` por igual), así que la parte de
-Angular solo se verificó con `tsc --noEmit` + revisión manual del diff completo (no detecta errores de binding
-en el template, a diferencia de una build real - conviene una prueba visual rápida en el navegador tras aplicar
-este patch, antes de darlo por 100% verificado).
-
-**Nota sobre la ráfaga de `marcar-codigo`:** los 950/950 salieron exitosos, pero la latencia crece harto bajo
-50 conexiones a la vez (hasta 9.6s en el peor caso, ~74s en total). La causa no es el pool de Postgres (`max:10`,
-ver `database.ts`) ni una query lenta - es `bcrypt.compare` en cada login: es CPU-bound y deliberadamente lento
-(así está diseñado, para resistir fuerza bruta), así que 50 requests a la vez compitiendo por el mismo hilo de
-Node se van encolando. En producción real esto no es un problema: 950 trabajadores no marcan en el mismo
-segundo literal, llegan repartidos en 15-30 minutos al inicio del turno - pero si alguna vez se ve lento en la
-práctica, esta es la causa conocida, no un misterio a investigar de cero.
-
-### Empaquetado con Capacitor (2026-09-26)
-
-Plan acordado: **Android** se distribuye como `.apk` instalable directo (sin Play Store, sin costo) - **iPhone**
-se queda como web normal (Safari), sin app nativa, para evitar el Apple Developer Enterprise Program ($299/año,
-necesario para distribuir sin pasar por el App Store a los empleados de una empresa). Decisión de negocio del
-usuario, no técnica - ver "Pendiente" para lo que falta confirmar.
-
-- **`frontend-horometros/capacitor.config.ts`** (nuevo): `appId: 'com.frugalp.horometros'` (placeholder
-  razonable, cambiarlo despues de publicado no es trivial - reinstala como app distinta, no actualiza la
-  existente), `appName: 'FRUGALP'`, `webDir: 'dist/frontend-horometros/browser'`.
-- **`frontend-horometros/android/`** (nuevo, generado por `npx cap add android`): proyecto nativo completo
-  (Gradle, `AndroidManifest.xml`, `MainActivity.java`). Iconos/splash son los genéricos de Capacitor todavía -
-  falta correr `@capacitor/assets` con el logo real de la empresa antes de distribuir de verdad (ver Pendiente).
-- **CORS: `https://localhost` agregado al default de `app.ts`** - la app empaquetada de Android sirve su
-  contenido desde ese origen fijo (el WebView de Capacitor), no desde el dominio de Vercel. Si `CORS_ORIGIN` SI
-  esta configurada en Render (como ahora), hay que agregar `https://localhost` a esa lista a mano tambien - el
-  default del código no aplica cuando la variable de entorno está seteada.
-- **No se pudo compilar el `.apk` en este sandbox**: Java 21 y Gradle sí están disponibles, pero
-  `dl.google.com` (repositorio Maven de Android, de donde Gradle baja el Android Gradle Plugin) está bloqueado
-  por la política de red del entorno - confirmado con el error exacto de Gradle (403 Forbidden). Compilar el
-  `.apk` real necesita Android Studio en una máquina con internet normal (abre la carpeta `android/`, Android
-  Studio maneja el SDK solo) - o ampliar el acceso de red de este entorno (agregar `dl.google.com`) para
-  terminarlo aquí mismo.
-- **PWA-lite gratis para iPhone** (`manifest.json`, `apple-touch-icon.png`, meta tags en `index.html`): permite
-  "Agregar a pantalla de inicio" en Safari - ícono propio, abre a pantalla completa, sin ninguna cuenta ni
-  costo. No es una app nativa de verdad, pero cubre el caso de iPhone sin pagar el Enterprise Program.
-- **Auditoría con Lighthouse** (local, contra el build de producción): antes de tocar nada - Rendimiento 76,
-  Accesibilidad 94, Buenas prácticas 100, SEO 90. Dos hallazgos reales corregidos: contraste insuficiente del
-  link "Política de Privacidad" en el login (`text-gray-400` sobre blanco, 2.53:1 - `text-gray-600`, ahora pasa
-  WCAG AA) y faltaba `<meta name="description">`. Después de los arreglos: Accesibilidad 100, SEO 100,
-  Rendimiento 80, Buenas prácticas 100.
-
-### Logo real de FRUGALP en todos los íconos (2026-09-26)
-
-El usuario pasó el logo real de la empresa (imagen PNG con fondo ya transparente, "piña/corona + sol +
-franjas verdes" + el texto "FRUGALP Agrícola Exportadora" al lado). Se recortó solo el ícono (sin el texto,
-sin el que no cabe/no se lee en un ícono chico), se limpió y se generaron TODOS los tamaños que hoy usa el
-proyecto - reemplaza los placeholders genéricos (mi "F" verde de patch 0046, y el "X" azul default de
-Capacitor) en un solo lugar:
-
-- `public/logo-source.png`: el recorte limpio a 1024x1024 con margen, transparente - fuente de verdad para
-  regenerar cualquier ícono futuro (no hace falta volver a pedirle la imagen original al usuario).
-- `public/favicon.ico`, `public/icon-192.png`, `public/icon-512.png`, `public/apple-touch-icon.png`: ícono de
-  pestaña del navegador + PWA-lite de iPhone (ver arriba).
-- `android/app/src/main/res/mipmap-*/ic_launcher*.png` (las 5 densidades): ícono de la app instalada en
-  Android. Generados a mano con `sharp` con el logo sobre fondo blanco (`ic_launcher`/`ic_launcher_round`) y
-  una copia transparente más chica, dentro de la "safe zone" (~62% del lienzo) para `ic_launcher_foreground`
-  (ícono adaptativo, evita que el logo se recorte con la máscara circular/squircle del launcher).
-- `android/app/src/main/res/drawable*/splash.png` (las 11 variantes de densidad/orientación): pantalla de
-  carga de la app, logo centrado sobre blanco.
-
-**Por qué a mano con `sharp` y no con `@capacitor/assets`** (la herramienta "oficial" para esto): al
-instalarla trajo una vulnerabilidad CRÍTICA real (`tar`, path traversal via hardlinks, sin arreglo en esa
-rama de versión, ver GHSA-34x7-hfp2-rc4v y relacionadas) en una dependencia anidada de su copia interna de
-`@capacitor/cli`. Se desinstaló de inmediato - los tamaños de ícono de Android son un estándar público
-conocido (48/72/96/144/192px por densidad), así que se generaron directo con `sharp` (que ya estaba en uso
-para los íconos del navegador) sin necesidad de esa herramienta ni su cadena de dependencias.
-
-### .apk compilado y probado - 2 hallazgos más de Lighthouse contra producción real (2026-09-26)
-
-El usuario compiló el `.apk` el mismo en su máquina (Android Studio, Fedora) siguiendo la guía de arriba, lo
-instaló en su celular, y el login funcionó - confirma que el arreglo de `https://localhost` en `CORS_ORIGIN`
-está bien. Corrió Lighthouse contra `horometros-frugalp.vercel.app/dashboard` (producción real, no el build
-local) y encontró 2 hallazgos más, no cubiertos por la auditoría anterior (esa fue solo sobre `/login`):
-
-- **Contraste insuficiente en el header global** (`app.html`/`app.css`, compartido por TODAS las pantallas
-  autenticadas, a diferencia del hallazgo anterior que solo tocaba el login): `.btn-menu` ("Cerrar sesión" y
-  el botón de menú dinámico) usaba `text-gray-500` sobre fondo `bg-gray-100` (no blanco puro, así que el
-  contraste real es peor que el nominal) - corregido a `text-gray-700`. `.link-politica` (el mismo link,
-  ahora en el header en vez del login) tenía el mismo `text-gray-400` de antes - mismo arreglo,
-  `text-gray-600`.
-- **`robots.txt` no existía** - Vercel, al no encontrar ese archivo, cae al fallback de SPA (le sirve
-  `index.html` a cualquier ruta no reconocida) - Lighthouse literalmente veía HTML donde esperaba
-  reglas de robots ("Syntax not understood" en las 26 líneas). Se agregó `public/robots.txt` con
-  `Disallow: /` - a propósito: esta es una app privada con PII real de trabajadores detrás de un login, NO
-  se busca que Google la indexe. Esto hace que el audit "is-crawlable" de Lighthouse marque "blocked from
-  indexing" como fallo - es el comportamiento correcto para esta app, no perseguir ese punto de SEO.
-
-### Auditoría MobSF del .apk (2026-09-26)
-
-El usuario corrió MobSF (Docker, `opensecurity/mobile-security-framework-mobsf`) contra el `app-debug.apk`.
-Security Score 41/100 en el dashboard, pero la mayoría de los hallazgos "HIGH" son artefactos de ser un build
-de DEBUG (firmado con el certificado debug de Android, `debuggable=true`) - se resuelven solos el día que se
-compile un build de **release** firmado con clave propia, antes de distribuir de verdad. Dato importante:
-**todos** los hallazgos de "Code Analysis" caen en `com/getcapacitor/*` (framework de Capacitor) - cero
-hallazgos en `com/frugalp/horometros/*` (el código propio de la app).
-
-- **Arreglado:** `android:allowBackup="true"` → `"false"` en `AndroidManifest.xml` (WARNING real, independiente
-  de debug/release - sin esto, cualquiera con acceso USB + depuración activada en el celular podía extraer los
-  datos de la app vía `adb backup`).
-- **Ruido esperado, no se toca:** receptor `androidx.profileinstaller.ProfileInstallReceiver` exportado
-  (protegido por permiso de sistema `DUMP`, estándar en cualquier app AndroidX moderna) - los 4 hallazgos de
-  "Code Analysis" (logging, lectura de almacenamiento externo, posibles credenciales hardcodeadas, archivo
-  temporal), todos en código de Capacitor, no propio - detecciones "Anti-Debug"/"Anti-VM" de APKiD (falso
-  positivo común contra librerías estándar) - permiso `INTERNET` listado entre "permisos abusados por malware"
-  (necesario para cualquier app que hable con un servidor).
-- **Decidido 2026-09-26:** `minSdk` bajado de 24 a **28** (Android 9) - punto intermedio entre lo que
-  recomienda MobSF (Android 10/API 29) y no arriesgar excluir a nadie sin poder mapear a mano el parque real
-  de celulares de los ~950 trabajadores. Sigue cortando el rango realmente viejo (Android 7-8) que MobSF
-  señaló. Si algún celular no cumple, Android se lo avisa claro al intentar instalar (no falla en silencio).
-
-### Registro automático de versión de Android/iOS (2026-09-26)
-
-En vez de intentar mapear a mano qué celulares tiene cada uno de los ~950 trabajadores (inviable, ver arriba),
-se agregó un registro liviano y automático: cada vez que alguien inicia sesión DESDE LA APP EMPAQUETADA (no
-desde el navegador, donde este dato no aporta nada a la decisión de `minSdk`), se manda la versión de su
-sistema operativo al backend. Después de una semana de uso real, se puede consultar `registros_dispositivo`
-para tener el dato real del parque de celulares y ajustar `minSdk` con información en vez de estimar.
-
-- **`backend-horometros/src/migrations/20260926000000-...`** (nueva tabla `registros_dispositivo`) +
-  **`models/registro_dispositivo.ts`**: mismo patrón append-only y polimórfico (`actor_tipo`/`actor_id`, puede
-  ser `'usuario'` u `'operador'`) que `registros_auditoria` - ninguna de las dos cuentas tiene una sola tabla
-  en común para un FK normal.
-- **`auth.controller.ts` → `registrarDispositivo`** (nuevo, `POST /auth/registrar-dispositivo`, protegido por
-  `verificarAutenticacion`, acepta JWT de cualquier tipo): inserta `{ so_plataforma, so_version,
-  modelo_dispositivo }` tomando el actor del propio token.
-- **`frontend-horometros`: `@capacitor/device`** (nuevo) + `AuthService.reportarDispositivoSiAplica()`: se
-  llama sola después de cada login exitoso, pero solo hace algo si `Capacitor.isNativePlatform()` es true.
-  Dispara-y-olvida (no bloquea el login si falla, es telemetría secundaria) - probado con `curl` contra
-  Postgres local: caso feliz (201), sin token (401), sin `so_plataforma` (400), y confirmada la fila real en
-  la base de datos.
-
-### 5 bugs de UI/UX encontrados probando el .apk real en el celular (2026-09-26)
-
-El usuario instaló el .apk recién compilado (con `minSdk`=28 + registro de dispositivo) en su celular real y
-reportó 5 problemas concretos - todos con causa raíz en cómo el WebView de Capacitor se comporta distinto a un
-navegador de escritorio, no bugs de lógica:
-
-- **Pestañas del Panel de Asistente no se podían desplazar** (había que rotar el celular a horizontal para ver
-  "Actividad"): `.tabs-bar` no tenía `overflow-x`, así que en pantallas angostas el navegador achicaba/apilaba
-  las 4 pestañas en vez de dejarlas desplazables. Arreglado con `overflow-x:auto` + `white-space:nowrap` en los
-  botones (`asistencia-panel.css`) - ahora se desliza con el dedo, igual que cualquier tab-bar de app móvil.
-- **Filtros Desde/Hasta del Historial se veían amontonados/superpuestos, saliéndose de la tarjeta blanca**:
-  `.filter-group` no envolvía (sin `flex-wrap`) y el `min-width:18rem` de los inputs de texto no dejaba lugar
-  para los 4 campos (Desde/Hasta/Hacienda/Supervisor) en una fila angosta. Arreglado con `flex-wrap` +
-  `@media (max-width:640px)` que apila todo en una sola columna a ancho completo en celular.
-- **"Imprimir Carnet" (QR) dejaba atrapado al usuario en un selector de navegador externo, sin poder volver**
-  (tuvo que forzar el cierre de la app): `imprimirQR()` usaba `window.open('','_blank')` - el WebView de
-  Capacitor no implementa multi-ventana, así que Android lo interpreta como "abrir afuera de la app". Arreglado:
-  en nativo (`Capacitor.isNativePlatform()`) ya no se abre ninguna ventana - se escribe el PNG del QR a
-  `Directory.Cache` (`@capacitor/filesystem`, nuevo) y se comparte con el selector nativo de Android
-  (`@capacitor/share`, nuevo) para guardar/enviar por WhatsApp/correo o abrir en un visor con opción de
-  imprimir. El flujo de escritorio (`window.open`+`window.print()`) se mantiene sin cambios para el navegador.
-- **Los botones "Imprimir" de los reportes de labores no hacían nada al tocarlos**: `imprimirHoja()` llamaba
-  `window.print()` a secas, que el WebView de Android simplemente ignora (no trae integrado el diálogo de
-  impresión como sí lo hace un navegador de escritorio). Arreglado con el mismo patrón: en nativo se genera un
-  resumen en texto plano de la hoja (operador, fecha, filas, observaciones) y se comparte vía `Share.share`
-  en vez de intentar imprimir silenciosamente; la vista previa en el modal (que sí funciona igual en ambos)
-  sigue siendo la forma real de "ver" la hoja desde el celular. Imprimir de verdad (papel) sigue siendo una
-  tarea de escritorio, donde `window.print()` sí funciona - razonable, dado que este panel es una herramienta
-  de oficina/supervisor.
-- **El nombre de usuario aparecía debajo del logo en vez de al lado, y pedían un menú compacto para Cerrar
-  sesión/Menú (no un modal centrado)**: `.header-content` con `flex-wrap` hacía que toda la fila de acciones
-  (nombre + Política + Cerrar sesión + Menú) se cayera debajo del `brand-box` en pantallas angostas. Se
-  reemplazó por un dropdown ancorado (`.cuenta-trigger`/`.cuenta-dropdown` en `app.html`/`app.css`, estado en
-  `App.menuCuentaAbierto`) - un solo botón compacto con el nombre que despliega Política/Menú/Cerrar sesión
-  debajo, se cierra tocando afuera (overlay transparente, sin oscurecer la pantalla) o al navegar. De paso se
-  reemplazó el ícono SVG genérico de placeholder del logo por el logo real (`public/icon-192.png`), que el
-  usuario también pidió integrar en esa esquina.
-
-No se pudo probar en un dispositivo Android real desde este entorno (sigue sin acceso a Android
-Studio/compilación real ni a un WebView de verdad, ver limitaciones de red de siempre) - verificado con
-`ng build`/`ng test` (20/20 tests, build de producción limpio) y revisión de código contra la documentación
-oficial de `@capacitor/share`/`@capacitor/filesystem`. Falta confirmación del usuario compilando e instalando
-el .apk de nuevo.
-
-### 2 hallazgos más tras probar patch anterior + botón/gesto Atrás del WebView (2026-09-26)
-
-El usuario probó el patch de los 5 bugs y encontró 2 cosas más, la segunda mucho más importante que un ajuste
-visual:
-
-- **Panel de Supervisor: la fila de controles (Escanear/Supervisor/Fecha/Cerrar Jornada) se salía de la
-  pantalla en celular**, mismo patrón que los otros 2 hallazgos de layout del patch anterior (una fila `flex`
-  sin `flex-wrap`) - esta vez en `supervisor-panel.html`, no en `asistencia-panel` (que ya se había arreglado).
-  Arreglado agregando `flex-wrap` a esa fila.
-- **El gesto nativo de "Atrás" de Android (deslizar desde el borde, o el botón físico/virtual) cerraba la app
-  en vez de navegar hacia atrás dentro de ella.** Causa: el WebView de Capacitor no tiene páginas/historial real
-  (todo es una SPA de Angular) - por defecto, Android interpreta que "no hay a dónde volver" y sale de la app
-  directamente. Se agregó **`@capacitor/app`** (nuevo) con un listener de `backButton` en `app.ts`
-  (`registrarBotonAtrasSiAplica`): si hay historial de navegación dentro de la app (`canGoBack`), navega ahí
-  (`Location.back()`); si no, deja salir de la app (`App.exitApp()`). **Excepción a propósito**, pedida
-  explícitamente por el usuario: para MECANICO/OPERADOR (Panel de Actividades, pantalla cautiva) el gesto se
-  bloquea del todo - ni navega ni sale - para que no puedan volver por accidente a la pantalla de login en
-  medio de una jornada. El resto de roles sí pueden usar el gesto normalmente ahora.
-
-No se pudo probar en un dispositivo real (mismas limitaciones de siempre) - verificado con `ng build`/`ng test`
-(20/20) y revisión de código contra la documentación oficial de `@capacitor/app` (el evento `backButton` cubre
-tanto el botón como el gesto de deslizar, ambos pasan por el mismo despachador nativo de Android).
-
-### Offline-first del Panel de Actividades (2026-09-26)
-
-Diseño acordado (ver conversación 2026-09-25/26): manual/periódico, sin background sync automático (iOS no lo
-permite de forma confiable). Solo el **Panel de Actividades** (crear/finalizar una labor dentro de una jornada
-ya abierta) es offline-capaz - la ENTRADA/SALIDA (código o QR) sigue necesitando señal sí o sí, porque el
-código lo valida el backend contra el Token de Hacienda vigente y el QR lo tiene que generar el servidor; no
-tiene sentido (ni se intentó) hacer eso offline.
-
-- **`OfflineSyncService`** (nuevo, `core/services/offline-sync.service.ts`): cola de operaciones pendientes
-  (`crear_labor`/`finalizar_labor`), persistida con **`@capacitor/preferences`** (nuevo - sobrevive cierres de
-  la app, a diferencia de `localStorage` en Android) y sincronizada sola al detectar conexión vía
-  **`@capacitor/network`** (nuevo), o manualmente con el botón "Sincronizar ahora". Al recorrer la cola: un
-  fallo de RED (`status 0` - la request nunca llegó al servidor) corta todo el recorrido, deja el resto tal
-  cual para el próximo intento; un error REAL del servidor (validación, etc - sí hubo señal) marca ese ítem
-  con su error y sigue con el resto, en vez de bloquear toda la cola por uno solo que nunca va a poder
-  sincronizar tal cual está. Cubierto con pruebas unitarias reales (`offline-sync.service.spec.ts`, 7 casos:
-  encolar, sincronizar OK, corte por falla de red, marcar+continuar por error de servidor, descartar,
-  filtrado por jornada) - las implementaciones "web" de `@capacitor/network`/`@capacitor/preferences`
-  (`navigator.onLine`/`localStorage`) corren tal cual en el entorno de pruebas, no hicieron falta mocks.
-- **`mi-jornada.ts`/`.html`**: `guardarNuevoRegistro()`/`confirmarFinalizarRegistro()` intentan el servidor
-  primero como siempre; si la respuesta es `status 0` (sin señal), la operación se encola en vez de perderse
-  y se le avisa al trabajador con un toast ("Sin señal: la labor quedó guardada en el celular..."). La lista
-  de labores (`registros`) es una vista combinada: lo que ya confirmó el servidor + lo que sigue pendiente de
-  sincronizar de ESA jornada (`recalcularVistaRegistros`), armada con lo que el celular ya tenía cargado
-  (catálogos de equipo/actividad) para no depender del servidor para poder mostrarla. Una labor recién creada
-  sin señal usa un **id NEGATIVO inventado en el celular** (nunca choca con un id real de la base, que siempre
-  es positivo) - mientras tenga ese id, el botón "Finalizar" queda bloqueado (no se puede cerrar algo que
-  todavía no existe en el servidor); se habilita solo cuando le llega su id real tras sincronizar. Banner
-  arriba del panel: "Sin conexión" cuando no hay señal, o "N labores pendientes de sincronizar" + botón
-  "Sincronizar ahora" cuando sí hay señal pero quedó algo en cola de un momento sin ella.
-
-No se pudo probar en un dispositivo real con señal cortada de verdad (mismas limitaciones de sandbox de
-siempre) - verificado con `ng build`/`ng test` (27/27, incluye los 7 casos nuevos) y revisión de código contra
-la documentación oficial de `@capacitor/network`/`@capacitor/preferences`. Falta que el usuario lo pruebe en
-el celular real, apagando datos/wifi a mitad de una jornada.
-
-### Auditoría OWASP ZAP (Active Scan) contra backend local - 2 hallazgos reales, 1 falso positivo (2026-09-26)
-
-El usuario corrió ZAP (Flatpak - necesitó forzar X11 con `flatpak override --socket=x11 --nosocket=wayland`,
-la GUI no arranca sobre Wayland puro) con Active Scan contra su backend LOCAL (nunca contra Render - ver más
-abajo por qué importaba). Resultado: 10 tipos de alerta, la mayoría ruido esperado (headers informativos,
-"Modern Web Application", etc.), pero 2 reales y 1 falso positivo interesante de explicar:
-
-- **Bug real: `GET /api/asistencia/historial` y `/hoy` tiraban 500 en una base recién migrada desde cero**
-  (`SequelizeDatabaseError`, code `42703 undefined_column`, columna `operador.nombre_hoja`). Causa: la
-  migración GENESIS (`20260101000000-...`) SÍ declara `nombre_hoja` al crear `operadores`, pero ese
-  `createTable` se salta con un guard ("si la tabla YA existe, no la toques") pensado para no romper
-  producción/desarrollo (que ya tenían la tabla de antes del sistema de migraciones) - y en al menos un
-  entorno migrado desde cero (el local del usuario), la columna terminó faltando. Reproducido y confirmado acá
-  mismo (Postgres local del sandbox, quitando la columna a mano y viendo el mismo 500) antes de arreglarlo.
-  **Arreglo:** nueva migración `20260926010000-reparar-nombre-hoja-operadores.js`, protegida igual que la
-  GENESIS (revisa si la columna ya existe antes de agregarla) - segura de correr sin importar el estado real
-  de cada entorno. Probado en el sandbox: quitar la columna a mano + `db:migrate:undo`/`db:migrate` la
-  restaura y los 500 desaparecen.
-- **Bug real (el que de verdad importaba de todo el scan): 38 lugares en los 8 controllers devolvían el
-  objeto de error de Sequelize CRUDO en el `res.status(500).json({..., err})`** - eso filtraba el texto
-  completo de la consulta SQL, nombres de tablas/columnas, y detalles internos a cualquiera que provocara un
-  500 (bastaba con un parámetro inválido). Ninguno de esos catch loggeaba el error server-side aparte - era la
-  ÚNICA forma de verlo. **Arreglo:** en los 8 controllers, cada uno pasa a `console.error(mensaje, err)`
-  (server-side, para no perder capacidad de debug) + `res.status(500).json({ message })` (sin el objeto de
-  error) - verificado con `tsc --noEmit` limpio y los 27 tests unitarios en verde.
-- **Falso positivo: "SQL Injection (3)" (severidad alta en ZAP).** ZAP prueba mandar una expresión aritmética
-  equivalente al valor original (ej. `limite=22-2` en vez de `limite=20`) y si la respuesta es idéntica, lo
-  interpreta como que la base de datos evaluó la resta - señal clásica de inyección. Pero en este código
-  `Number("22-2")` en JavaScript NO es 20, es `NaN` (JS no evalúa expresiones, solo parsea números literales)
-  - cae al valor por defecto (`Number(valor) || 20`), y por eso coincide con el original: es el fallback del
-  propio código, no la base de datos calculando nada. Confirmado con `Number("abc") || 20` dando el mismo
-  resultado que `Number("22-2") || 20` - cualquier basura cae igual, no hay aritmética real de por medio.
-  Sequelize además usa siempre consultas parametrizadas (bind parameters), la inyección clásica por
-  concatenación no es posible por diseño del ORM. **No requiere ningún arreglo.**
-
-Nota aparte, no un bug: para esta auditoría fue necesario levantar el backend contra un Postgres LOCAL (no
-Render) - la sesión anterior confirmó con el usuario que su `.env` local apuntaba sin querer a la base de
-producción real, y armar un Active Scan (manda payloads de ataque de verdad) contra eso hubiera sido
-arriesgado. Ver flujo completo: Docker Postgres local + `db:migrate` + `CIFRADO_CLAVE`/admin insertado a mano,
-documentado en la conversación del 2026-09-26.
-
-### Cierre de jornada acotado por hacienda - bug real de alcance (2026-09-27)
-
-**Bug real, confirmado por el usuario:** `finalizarDia` (botón "Cerrar Jornada" del Panel de Supervisor) no
-filtraba por hacienda en ningún punto del código - un SUPERVISOR con permiso para la acción (eso sí lo exigía
-`requireRol`) terminaba cerrando la jornada de TODAS las haciendas del sistema con un solo clic, no solo la
-suya, aunque los demás supervisores no hubieran terminado de confirmar O/X a su propia gente.
-
-**Arreglo** (`asistencia.controller.ts`, `finalizarDia`):
-- Se calcula `supervisorIdAlcance`: para un SUPERVISOR real, siempre es su propio `req.auth.id` (no se puede
-  mandar por body, no hay forma de que "elija" otra hacienda); para ADMIN, es opcional vía `supervisor_id` en
-  el body (mismo patrón/criterio que el filtro `supervisor_id` que ya usa `obtenerAsistenciaHoy` para el panel
-  de ADMIN: filtra por `operador.supervisor_id`, no por `hacienda_prestamo_id`); sin ese parámetro, ADMIN sigue
-  cerrando todas las haciendas de una vez, a propósito - es el único rol que de verdad supervisa el sistema
-  completo.
-- La consulta `registroDelDia` (que decide qué falta confirmar y si el día ya está cerrado) ahora aplica ese
-  alcance como filtro sobre el include de `Operador`.
-- Los 2 `Asistencia.update()` que de verdad escriben en la BD (PENDIENTE_REVISION→FINALIZADO,
-  EN_JORNADA→SALIDA_OLVIDADA) **también** se acotaron, de `{fecha, estado}` a `{id: {[Op.in]: idsDelAlcance},
-  estado}` - filtrar solo la consulta de arriba y dejar estos 2 UPDATE tal cual habría sido un arreglo a
-  medias: seguirían tocando TODAS las haciendas sin importar que `registroDelDia` ya viniera acotado.
-- Frontend: `asistencia.service.ts` (`finalizarDia`) y `supervisor-panel.ts` (`ejecutarCierreDiario`) mandan
-  `supervisorIdFiltro` (el mismo que ya usa la vista de ADMIN) como `supervisor_id` en el POST - para un
-  Supervisor real este campo siempre es `null` (no tiene el selector, ver `*ngIf="esAdmin"`), así que en la
-  práctica el backend lo ignora y usa su propio `req.auth.id` de todas formas; el parámetro solo tiene efecto
-  real cuando quien cierra es ADMIN.
-- Verificado con `tsc --noEmit` limpio en ambos proyectos y los 27 tests unitarios del backend en verde. No se
-  agregó un test de integración nuevo para este endpoint puntual (no había ninguno antes tampoco - la cobertura
-  de `finalizarDia` sigue siendo manual/local).
-
-**Pregunta del usuario, resuelta acá (cruce de medianoche / cierre tardío):** ¿si la jornada arranca miércoles
-6am y se cierra jueves 5am, alguien que se loguea de nuevo el jueves ya está en "otro día"? ¿Y si el Supervisor
-cierra recién el jueves 10am pero el personal ya entró antes de eso ese mismo jueves, se les permite marcar o
-no?
-- `Asistencia.fecha` se fija **una sola vez**, en el momento exacto de la ENTRADA (`getFetchLocalEcuador()`,
-  fecha calendario real de Ecuador en ese instante) - queda fija para siempre, totalmente desacoplada de si el
-  día anterior ya se cerró formalmente o no. Un check-in nuevo NUNCA queda bloqueado por un día anterior sin
-  cerrar.
-- Por eso: si alguien entra el jueves a las 5:30am (antes de que el Supervisor cierre), su fila ya nace con
-  `fecha = jueves` sin importar que la jornada del miércoles siga técnicamente abierta - se le permite marcar
-  con normalidad, no hay choque.
-- `fechaSeleccionada` en el Panel de Supervisor es un date picker real que el Supervisor puede cambiar a mano
-  (por defecto queda vacío = hoy, y así se lo indica el diálogo de confirmación, `etiquetaFEcha`) - un cierre
-  "tardío" (jueves 10am) cierra la fecha que esté seleccionada en ese momento, no necesariamente "hoy". Si el
-  Supervisor entra sin tocar el selector, cierra el jueves (la fecha real de hoy), no el miércoles.
-- **Único caso borde real que sí vale la pena tener presente:** si un trabajador de turno nocturno seguía
-  `EN_JORNADA` (sin marcar salida) cuando el Supervisor cierra el día anterior, el Paso 2 de `finalizarDia` lo
-  fuerza a `SALIDA_OLVIDADA` automáticamente. Si ese mismo trabajador vuelve a escanear después, `procesarMarcacion`
-  (Paso 1) solo busca una fila en estado `EN_JORNADA` de HOY para tratar el escaneo como salida - como la suya
-  ya quedó en `SALIDA_OLVIDADA` (no `EN_JORNADA`), el sistema no la encuentra y trata el nuevo escaneo como una
-  ENTRADA nueva, no como su salida real. No es un bug nuevo introducido por este arreglo (ya existía así antes),
-  pero queda documentado acá porque es la única situación real donde "cerrar temprano" sí tiene una consecuencia
-  visible para un trabajador de turno cruzado - fuera de alcance de este fix, se deja para cuando el usuario
-  decida si hace falta un flujo de turnos nocturnos de verdad.
-
-### Botón "Copiar" junto al Token de Hacienda (2026-09-27)
-
-Pedido directo del usuario: los Supervisores son gente de más edad y seleccionar/copiar a mano el texto del
-Token (una cadena hexadecimal larga, `.token-valor`) les complica. Se agregó un botón "📋 Copiar" al lado del
-badge del token (`supervisor-panel.html`), junto a los ya existentes "Generar"/"Invalidar". Usa
-`@capacitor/clipboard` (`Clipboard.write({ string: token })`) en vez de `navigator.clipboard` directo - mismo
-motivo que `@capacitor/share`/`filesystem` (ver "5 bugs de UI/UX..." arriba): las APIs web del navegador no
-siempre se comportan igual dentro del WebView empaquetado, y el plugin nativo trae su propio fallback web
-integrado, así que no hace falta ramificar por `Capacitor.isNativePlatform()` como en otros casos - funciona
-igual en ambos entornos sin condicional.
-
-### 3 hallazgos probando el offline real en el .apk (2026-09-27)
-
-El usuario hizo la prueba más exigente hasta ahora: cerró la app de multitareas, la reabrió con el internet
-apagado del todo, y fue anotando lo que salía mal. 3 hallazgos reales, todos en la misma familia (mensajes/UX
-alrededor de fallos de red, no el offline-first en sí, que sigue funcionando bien):
-
-- **"FAILED TO FETCH" crudo en la pantalla de "Marcar con código"** (`mi-jornada.ts`, `confirmarCodigo`).
-  Marcar con código es la ENTRADA - necesita conexión real por diseño (ver "offline first solo cubre Panel de
-  Actividades" arriba), así que fallar sin señal es lo esperado. El problema era el MENSAJE: `err.error?.message`
-  se mostraba tal cual, y dentro del WebView empaquetado ese campo viene con el texto crudo del error de red
-  (`"Failed to fetch"`), no algo pensado para un usuario final. **Arreglo:** si `err.status === 0` (fallo de
-  red real, mismo criterio que ya usa `OfflineSyncService`), se muestra un mensaje fijo en español ("Sin
-  conexión a internet. Conéctate e intenta de nuevo.") en vez de confiar en `err.error?.message`.
-- **Autocompletar de Equipo ("Cargar más") no hacía nada sin señal, sin avisar.** `RegistroActividadService.
-  obtenerEquipos` no tenía `catchError`, así que la petición fallaba y el único efecto visible era que el
-  spinner se apagaba - nada le decía al trabajador por qué.
-- **Autocompletar de Actividad devolvía "Sin resultados" sin señal, como si esa actividad no existiera.**
-  `obtenerActividadesPaginado` (`asistencia.service.ts`) tenía un `catchError` que absorbe CUALQUIER error
-  (pensado para errores reales del servidor, con señal) y responde como si hubiera sido una búsqueda exitosa
-  con 0 resultados (`{ data: [], total: 0, ... }`) - un fallo de red terminaba indistinguible de "no existe".
-  **Arreglo doble:** (1) `obtenerActividadesPaginado` ahora relanza el error cuando `status === 0` en vez de
-  absorberlo (sigue absorbiendo un error real del servidor, sin tocar ese caso); (2) tanto
-  `cargarPaginaEquipos` como `cargarPaginaActividadesPanel` (`mi-jornada.ts`) ahora ni intentan la petición si
-  `OfflineSyncService.conectado()` es `false` - el catálogo de Equipo/Actividad no es parte del offline-first
-  (a diferencia de crear/finalizar labor), así que buscar sin señal no tiene con qué responder de todas
-  formas. El banner "📴 Sin conexión..." que ya existe arriba de la pantalla es el único aviso necesario, no
-  hacía falta agregar otro.
-
-### Catálogo de Equipo/Actividad cacheado en el celular - offline-first real (2026-09-27)
-
-El arreglo anterior (bloquear la búsqueda sin señal) tapaba el síntoma pero el usuario tenía razón al
-reclamarlo: el "offline-first" del Panel de Actividades debía dejar buscar equipo/actividad CON NORMALIDAD sin
-señal, no solo bloquear con elegancia. El hueco real era que el offline-first solo guardaba la LABOR que el
-trabajador arma (eso sí era 100% offline), pero nunca guardaba una copia local del CATÁLOGO para buscar sobre
-él sin conexión - por eso cualquier búsqueda en vivo fallaba.
-
-**Arreglo (reemplaza por completo el de arriba, "cargarPaginaEquipos"/"cargarPaginaActividadesPanel" ya no
-existen):**
-- Backend: `obtenerEquipos` (`equipo.controller.ts`) ahora soporta el mismo modo "sin pagina/limite = catálogo
-  completo" que ya tenía `ObtenerActividades` (`actividades.controller.ts`) - antes `obtenerEquipos` SIEMPRE
-  paginaba, sin ese modo no había forma de bajar el catálogo entero de una sola pedida.
-  `AsistenciaService.obtenerTodasLasActividades()` es un método NUEVO y separado de `obtenerActividades()` -
-  reutilizar ese último habría sido un error: tiene un `catchError` que absorbe cualquier fallo de red y
-  devuelve `[]` como si fuera una respuesta válida (pensado para no romper el checklist de salida), y usarlo acá
-  habría hecho que un corte de señal a mitad del refresco BORRARA el caché bueno con una lista vacía. El nuevo
-  método no absorbe nada, así un fallo de red dispara el `catch` de `refrescarCatalogos()` (ver abajo) en vez de
-  pisar el caché.
-- `OfflineSyncService` (frontend) gana dos signals nuevos, `catalogoEquipos`/`catalogoActividades`, persistidos
-  en `Preferences` igual que la cola offline (`frugalp_cache_equipos`/`frugalp_cache_actividades`). Se cargan
-  al arrancar (lo que haya quedado de la última vez que hubo señal) y se refrescan solos cada vez que
-  `iniciarDeteccionDeRed` detecta conexión - más una vez extra al entrar al Panel de Actividades
-  (`cargarDatosActividades`), por si el catálogo cambió mientras la app seguía abierta desde hace días. Si el
-  refresco falla (sin señal, o se cae a mitad de camino) se deja tal cual el caché anterior - nunca lo pisa con
-  algo vacío.
-- `mi-jornada.ts`: los selectores de Equipo/Actividad dejaron de pedir nada por red. `equiposFiltrados`/
-  `actividadesFiltradas` son getters que filtran en el momento sobre esos dos signals cacheados
-  (`codigo_megued`/`nombre_equipo`/`description`, sin distinguir mayúsculas), acotados a
-  `MAX_RESULTADOS_AUTOCOMPLETAR = 30` para no pintar de una vez un catálogo entero de cientos de filas - escribir
-  más texto acota sola la búsqueda, como cualquier autocompletar real. Ya no existe "Cargar más" (ni el CSS
-  `.btn-link-cargar-mas`, que quedó sin uso): la lista completa ya está toda cargada de entrada. `onBuscarEquipo`/
-  `onBuscarActividad` ya no tienen debounce (300ms) porque ya no hay petición de red que evitar disparar de más.
-- Son catálogos chicos (equipos del negocio, no una fila por trabajador) - cachearlos enteros es liviano, y la
-  búsqueda queda instantánea siempre, con o sin señal, sin depender de un viaje a red por cada letra escrita.
-
-### 2 bugs reales en el camino Código, encontrados probando "Cerrar sesión" a mitad de jornada (2026-09-27/28)
-
-El usuario cerró sesión (menú de cuenta) mientras seguía EN_JORNADA (mitad del día, con labores ya cargadas en
-el Panel de Actividades), volvió a entrar, y en vez de caer directo al Panel de Actividades le volvió a pedir el
-código - y al ingresarlo, le salió el viejo checklist "selecciona en qué trabajaste hoy" que se suponía ya
-estaba eliminado. Dos bugs reales y compuestos, no uno:
-
-- **Bug 1 (por qué volvió a pedir el código):** `mi-jornada.ts`, `ngOnInit` - si la consulta inicial
-  `obtenerMiEstado()` fallaba (aunque sea una vez, por cualquier corte de red pasajero), el código ANTES caía
-  directo a mostrar la pantalla de 'codigo'/'qr' (asumiendo "no está en jornada") sin haber confirmado nada -
-  ignoraba por completo el estado real. El comentario decía "el polling ya corrige después", pero eso era falso
-  para el camino Código: `consultarEstado()` (el poll de 5s) solo se auto-corregía hacia Panel de Actividades
-  si `fase === 'qr'`, nunca si `fase === 'codigo'`. **Arreglo:** si la consulta inicial falla, ahora se queda en
-  `fase: 'cargando'` (vista neutral ya existente) en vez de adivinar, y el poll de 5s ahora también corrige
-  desde `'cargando'` (además de `'qr'`) apenas la consulta funcione - nunca desde `'codigo'` a propósito, para
-  no sacar al trabajador de la pantalla si llegó ahí a propósito (con "Marcar salida").
-- **Bug 2 (el que el usuario recordaba haber eliminado "para siempre"):** el checklist de salida por código
-  (`pidiendoActividadSalida`, `require_actividad`) nunca debió volver a aparecer - hace unas rondas se arregló
-  esto mismo para el Camino B (QR de sesión, ver "La salida por QR de sesión NO vuelve a pedir actividades"
-  arriba), derivando la lista de actividades directo de los `RegistroActividad` que el trabajador ya cargó en el
-  Panel de Actividades. Pero ese arreglo se acotó EXPLÍCITAMENTE solo al Camino B ("el kiosco físico y el Camino
-  A (código) siguen exigiendo elegir actividad... porque esos caminos no tienen Panel de Actividades detrás") -
-  una nota que quedó **obsoleta** apenas Código también se conectó al Panel de Actividades (ronda posterior) y
-  nunca se corrigió. Por eso el checklist seguía vivo y disparándose cada vez que una marcación por código
-  resultaba ser una salida. **Arreglo:** `marcarConMiCodigo` (backend) ahora recibe el mismo tratamiento que
-  `marcarConQrSesion` - `omitirActividadRequerida: true` + deriva `actividadesIdsFinal` de los
-  `RegistroActividad` de la jornada abierta. Se eliminó por completo el código muerto que quedaba en el
-  frontend (`pidiendoActividadSalida`, `actividadesCatalogo`, `actividadesSeleccionadasSalida`,
-  `toggleActividadSalida`, `confirmarSalidaConActividad`, `cargarCatalogoActividades`, el checklist en el HTML y
-  su CSS `.actividades-lista`/`.actividad-item`) - ya no hay forma de que el backend pida esto, así que
-  mantenerlo vivo en el frontend era solo ruido.
-
-**Por qué importaba arreglar los dos juntos:** con el Bug 2 arreglado solo, si el Bug 1 seguía vivo, un
-trabajador que cae por accidente en la pantalla de código (por el fallo de red) y vuelve a escribirlo - pensando
-que es "volver a entrar" - ahora terminaría su jornada EN SILENCIO (sin el checklist de por medio que al menos
-antes obligaba a confirmar algo) en vez de solo mostrar una pantalla confusa. Por eso el Bug 1 se trató como
-igual de urgente, no como algo aparte.
-
-### Bug de seguridad real: un SUPERVISOR veía y podía editar operadores de OTRO Supervisor (2026-09-28)
-
-El usuario probó con 2 cuentas reales de Supervisor (uno con Token, otro con QR) y lo encontró: logueado como
-"SUPERVISOR 3" en su propio panel (sin ningún filtro, esta es su propia pantalla, no la de ADMIN), veía
-también un operador que en realidad pertenece a "SUPERVISOR 1". Confirmado además que el filtro por Supervisor
-del panel de ADMIN sí clasifica bien (cada uno por separado) - el problema era específicamente la vista propia
-de un Supervisor real, sin filtro de por medio. Esto no era una confusión de la prueba: era el mismo hueco de
-alcance que ya se había encontrado y corregido HOY MISMO en `finalizarDia`, pero en un endpoint distinto que
-nunca se tocó.
-
-**Causa raíz:** `obtenerAsistenciaHoy` (el endpoint detrás de la tabla del Panel de Supervisor) solo filtraba
-por `supervisor_id` cuando ese parámetro venía en el query - y **solo el selector de ADMIN lo manda**. La
-pantalla de un Supervisor real nunca lo manda (no tiene ningún selector, ve "su" pantalla directo), así que
-`filtrarPorSupervisor` daba `false` y el endpoint devolvía TODOS los operadores de TODAS las haciendas
-mezclados, sin importar quién lo pidiera.
-
-**Arreglo (mismo patrón que `finalizarDia`, ver arriba):** se calcula `supervisorIdAlcance` a partir de
-`req.auth` - si quien pide es un SUPERVISOR real, SIEMPRE es su propio id (ignora cualquier `supervisor_id`
-que llegue, no hay forma de que lo controle); si es ADMIN, sigue siendo opcional vía query (mismo
-comportamiento de antes). `calcularDiaCerrado` queda **fuera** de este arreglo a propósito (sigue siendo
-sobre el día completo, decisión ya documentada arriba).
-
-**Se encontraron 3 hallazgos más al revisar el resto de endpoints por el mismo patrón** (una vez confirmado
-que el hueco existía, valía la pena revisar los que actúan sobre UN registro puntual por `id`, no solo listas)
-- estos eran más graves que el de visibilidad, porque permitían **escribir**, no solo leer:
-
-- `revisarAsistencia` (`PUT /revisar/:id`): cualquier Supervisor podía editar la observación/hora_salida/estado
-  de CUALQUIER operador del sistema con solo conocer el id - sin ningún chequeo de pertenencia.
-- `confirmarAsistencia` (`PUT /:id/confirmar`): mismo hueco para el O/X.
-- `obtenerFotoAsistencia` (`GET /:id/foto`): mismo hueco para la foto de evidencia (dato sensible - PII).
-
-**Arreglo:** nueva función compartida `tienePermisoSupervisorSobreAsistencia(asistencia, auth)` - un SUPERVISOR
-real tiene permiso si es su propio operador (`operador.supervisor_id`) **o** si es un trabajador prestado que
-él mismo admitió hoy bajo su hacienda (`hacienda_prestamo_id`, ver "Trabajador prestado entre haciendas" -
-un Supervisor receptor SÍ tiene autoridad real sobre esa jornada puntual aunque el operador sea
-permanentemente de otro Supervisor; sin este segundo caso, admitir un trabajador prestado se habría quedado a
-medias - lo admite pero no lo puede confirmar/revisar después). ADMIN/ASISTENTE nunca quedan restringidos.
-Los 3 endpoints ahora hacen `include` del operador (para tener `supervisor_id` disponible) antes de decidir, y
-devuelven 403 si no corresponde. Verificado con `tsc --noEmit` limpio y los 27 tests unitarios en verde.
-
-~~Nota para la próxima ronda: no se revisaron TODOS los endpoints...~~ - hecho más abajo, ver "Auditoría
-completa de alcance por Supervisor (2026-09-28)": `equipo.controller.ts`/`actividades.controller.ts` son
-catálogos globales sin dimensión de hacienda (no aplica este patrón); `usuario.controller.ts` es
-ADMIN/ASISTENTE exclusivamente, sin acceso de SUPERVISOR en absoluto, así que tampoco aplicaba.
-
-### 2 hallazgos más probando el flujo real end-to-end (2026-09-28)
-
-El usuario siguió probando el bug de arriba en carne propia (cerró la jornada de su propia hacienda, con un
-operador marcado X → OBSERVANDO) y encontró 2 consecuencias reales que aún faltaban:
-
-- **"Cerrar Jornada" seguía habilitado y las observaciones seguían editables** después de que su propia
-  hacienda ya estaba 100% resuelta. Causa: `calcularDiaCerrado` (la función que calcula el flag `diaCerrado`,
-  usada tanto para habilitar/deshabilitar el botón como para congelar `revisarAsistencia`) **siempre** calculaba
-  sobre TODAS las haciendas mezcladas, sin aceptar ningún alcance - a diferencia de `finalizarDia`, que sí
-  quedó acotado por hacienda en el arreglo de ayer. Resultado: aunque la hacienda del usuario ya estaba resuelta,
-  el flag seguía en `false` porque OTRA hacienda, de otro Supervisor, todavía tenía algo pendiente.
-  **Arreglo:** `calcularDiaCerrado` ahora acepta un `supervisorId` opcional (mismo patrón que el resto) -
-  `obtenerAsistenciaHoy` le pasa el mismo `supervisorIdAlcance` que ya usa para la visibilidad, y
-  `revisarAsistencia` calcula el suyo propio a partir de `req.auth`. `null` (ADMIN sin filtro) sigue
-  calculando sobre el día completo, sin cambios.
-- **El Panel de Asistente no mostraba el reporte del día ya cerrado.** Causa: `obtenerHistorial` filtraba
-  `estado IN ('FINALIZADO', 'SALIDA_OLVIDADA')` - dejaba afuera `OBSERVANDO` (el estado que deja la X del
-  Supervisor) por lo que parece un descuido simple, ya que el propio criterio del filtro ("el Supervisor ya lo
-  revisó") aplica igual a OBSERVANDO. Como el operador de la prueba terminó en OBSERVANDO (le marcaron X), su
-  jornada nunca aparecía en el Historial - y es justo el caso más importante de auditar, porque señala una
-  posible marcación fraudulenta. **Arreglo:** se agregó `'OBSERVANDO'` a la lista.
-
-Verificado con `tsc --noEmit` limpio y los 27 tests unitarios en verde.
-
-### Auditoría completa de alcance por Supervisor (2026-09-28)
-
-Tras encontrar 6 hallazgos reales del mismo patrón en la misma sesión, el usuario pidió cerrar el tema de una
-vez con una pasada sistemática por TODO el backend (no otro endpoint a la vez, encontrado por casualidad al
-probar), en vez de una solución de base de datos tipo Row-Level Security de Postgres - se descartó esa opción
-por el riesgo de fugas de contexto entre requests en un pool de conexiones reutilizadas (Sequelize + pg-pool)
-y porque un futuro desarrollador/comprador de este sistema tendría que aprender RLS para tocar cualquier
-cosa relacionada con permisos, un costo que no se justifica para el tamaño de este proyecto. Se hizo la pasada
-completa por cada ruta accesible a SUPERVISOR (`grep -rn "SUPERVISOR" src/routes/*.ts`) y sus controllers.
-
-**Reglas de negocio confirmadas con el usuario antes de auditar (referencia para cualquier cambio futuro):**
-el flujo completo es Supervisor genera/no-genera Token → trabajador entra con Token o QR → agrega actividades →
-termina jornada → el Supervisor ve solo lo de su propia hacienda, confirma O/X, pone observaciones y cierra
-jornada (todo acotado a su hacienda) → al cerrar, ese reporte se congela y pasa al Panel de Asistente. Los
-Supervisores NO cierran todos a la vez - cada uno en su momento, y le va llegando al Asistente uno por uno. Hoy
-1 Supervisor = 1 hacienda (ya no hay plan de soportar más de una por ahora, decisión explícita de una ronda
-anterior).
-
-**Ya estaba bien resuelto, sin necesidad de tocar nada** (el usuario preguntó específicamente por esto):
-- La restricción "1 Supervisor por hacienda" ya existe a nivel de base de datos: índice único parcial
-  `usuarios_hacienda_id_supervisor_unico` (`WHERE cargo = 'SUPERVISOR'`, migración
-  `20260921060000-cargo-escaner-y-unique-parcial-hacienda.js`) - crear un segundo Supervisor con la misma
-  hacienda choca contra ese índice y `crearUsuario` ya responde 409 con un mensaje claro.
-- `generarTokenHacienda`/`invalidarToken` (`hacienda.controller.ts`) ya comparaban `req.auth.hacienda_id` contra
-  la hacienda del parámetro - de los pocos endpoints que sí quedaron bien acotados desde el principio.
-- `marcarConQrSesion`/`admitirTrabajadorExterno` (Camino B, trabajador prestado) - correctos por diseño: el
-  escaneo físico o la admisión manual SON la prueba de presencia, no necesitan chequear "pertenencia" de la
-  misma forma que un dato que se edita después.
-
-**2 hallazgos nuevos, arreglados en esta ronda:**
-- **`registro_actividad.controller.ts`** (crear/finalizar/ver labores del Panel de Actividades): tenía su
-  propio chequeo centralizado (`puedeOperarSobre`, buen patrón) pero trataba a SUPERVISOR igual que
-  ADMIN/ASISTENTE - sin ningún filtro de hacienda. Un Supervisor podía ver, crear y finalizar labores de
-  operadores de OTRO Supervisor con solo conocer un `asistencia_id`. **Arreglo:** se separó en 2 funciones -
-  `puedeOperarSobreAsistencia` (para los 3 endpoints que operan sobre UNA jornada puntual: valida
-  `operador.supervisor_id` O `hacienda_prestamo_id` de esa asistencia, mismo criterio que
-  `tienePermisoSupervisorSobreAsistencia` en `asistencia.controller.ts`) y `puedeVerHistorialDeOperador` (para
-  `obtenerRegistrosPorOperador`, el historial completo del reporte imprimible - a propósito NO cuenta
-  `hacienda_prestamo_id`: prestar a alguien un día no debería dar acceso a su historial laboral completo en
-  otras haciendas).
-- **`obtenerHaciendas`** (`hacienda.controller.ts`, lista usada por los 3 selectores del frontend): devolvía
-  `token_actual`/`token_expira_en` de TODAS las haciendas a cualquiera con acceso a la ruta (ADMIN, SUPERVISOR,
-  ASISTENTE), aunque el frontend solo mostrara la propia - el Token de Hacienda es una credencial real
-  (permite marcar presencia sin QR), así que esto era una fuga real de un dato sensible entre haciendas.
-  **Arreglo:** ADMIN sigue viendo todo; un SUPERVISOR ve el token completo solo de su propia hacienda (lo
-  necesita para su panel) y el resto de la lista le llega sin esos 2 campos; ASISTENTE nunca los ve (no los
-  necesita, solo usa la lista como selector de nombre/id).
-
-**Fuera de alcance de esta ronda, anotado para la próxima si hace falta:** `usuario.controller.ts` permite a
-ASISTENTE resetear la clave de CUALQUIER usuario, incluido ADMIN - es una preocupación real pero de una
-categoría distinta (jerarquía de roles, no alcance por hacienda), no se tocó porque no era lo que el usuario
-pidió auditar esta vez.
-
-Verificado con `tsc --noEmit` limpio y los 27 tests unitarios en verde.
-
-### "Cerrar Jornada" ahora congela también el O/X (2026-09-28)
-
-Decisión del usuario, revirtiendo una decisión explícita de una ronda anterior. Antes, `confirmarAsistencia`
-(el O/X) se dejó DELIBERADAMENTE sin congelar ni siquiera con el día ya cerrado - la razón original: el Token
-de Hacienda puede circular entre trabajadores sin que el Supervisor lo note al momento, así que necesitaba
-poder marcar X (fraude detectado tarde) incluso después de cerrado. Probando el flujo real, el usuario
-encontró que eso generaba un problema peor: como el reporte ya pasa al Panel de Asistente apenas se cierra el
-día, cambiar el O/X después dejaba al Asistente con datos que ya cambiaron sin ningún aviso - confirmado en
-pruebas reales, donde las notas automáticas de cada X se iban acumulando sin límite en el mismo campo de
-observaciones cada vez que se volvía a tocar.
-
-**Arreglo:** `confirmarAsistencia` ahora aplica el mismo chequeo `calcularDiaCerrado` (acotado por hacienda)
-que ya usaba `revisarAsistencia` - una vez que "Cerrar Jornada" cerró el día completo de esa hacienda, el O/X
-queda 100% de solo lectura, sin excepción. El botón ya se deshabilita en el frontend
-(`[disabled]="diaCerrado"`, faltaba en `supervisor-panel.html`) y `confirmarPresencia` tiene la misma guarda
-defensiva que ya usaba `ejecutarCierreDiario`. **Decisión explícita:** si se detecta un fraude después de
-cerrado, hoy no hay forma de corregirlo desde este endpoint - queda fuera de alcance, se maneja aparte si
-llega a pasar (el usuario prefirió esto a la alternativa de dejarlo editable con un aviso visible del cambio).
-
-Verificado con `tsc --noEmit` limpio en ambos proyectos y los 27 tests unitarios en verde.
-
-### Jornada ambigua de ayer: cierre por fecha calendario, ya no por horas fijas (2026-09-28)
-
-El usuario planteó el caso: un trabajador entra el lunes 6am y sale a la 1:30am (turno nocturno legítimo de
-19.5h) pero el Supervisor no cierra jornada esa noche; más tarde ese mismo trabajador (ya "martes" en
-calendario) vuelve a marcar para su turno nuevo - ¿el sistema lo confunde con la salida del turno de ayer? Y el
-caso inverso: alguien marca entrada a mediodía, se le olvida marcar salida, e intenta volver a marcar recién a
-las 6am del día siguiente (18h después) - ¿eso se trata como su salida real o como una entrada nueva?
-
-**Se probó primero un límite fijo de horas (22h) y se descartó con los números del propio usuario:** el turno
-nocturno legítimo (19.5h) y el reintento de entrada olvidada (18h) se traslapan en el mismo rango - no existe
-un número de horas que acierte en los dos casos sin fallar en alguno. Ningún threshold fijo puede distinguir
-"turno largo real" de "se le olvidó marcar salida e intentó de nuevo al día siguiente" cuando ambos casos caen
-en rangos de horas parecidos.
-
-**Solución adoptada (comparación por fecha calendario, no por horas):** al encontrar una jornada `EN_JORNADA`
-sin cerrar, `procesarMarcacion` (`asistencia.controller.ts`) calcula la diferencia en DÍAS CALENDARIO
-(`diferenciaEnDiasCalendario`, nueva función) entre la fecha de esa jornada y hoy:
-- **0 días (hoy mismo):** sigue de largo como SALIDA normal, sin cambios - cubre el turno nocturno que cruza
-  la medianoche sin ningún problema, porque el trabajador nunca volvió a marcar por segunda vez.
-- **2+ días:** ningún turno real dura tanto - se cierra sola como `SALIDA_OLVIDADA` sin preguntar nada, y el
-  escaneo actual sigue de largo como si no hubiera nada abierto (entrada nueva).
-- **Exactamente 1 día (ayer):** el caso genuinamente ambiguo del planteamiento del usuario - puede ser el
-  turno nocturno que sigue en curso (el trabajador viene a marcar SU salida real) o una entrada olvidada de
-  ayer con reintento hoy. Acá el sistema YA NO ADIVINA: si el camino que llama tiene pantalla propia para
-  preguntar (solo código autenticado, `marcarConMiCodigo` vía `mi-jornada.ts`), responde 409 con
-  `jornada_ambigua:true` y el trabajador elige entre "Cerrar esa jornada (es real, vengo a marcar mi salida)" o
-  "Empezar un día nuevo (se me olvidó marcar salida)"; la elección se reenvía como
-  `accion_jornada_anterior: 'cerrar' | 'iniciar_nuevo'` en la misma petición. Los caminos SIN pantalla propia
-  para preguntar (kiosco físico, código público sin sesión, QR escaneado por Supervisor/Escáner) no pueden
-  mostrar esa pregunta a mitad del escaneo, así que se auto-resuelven como `'iniciar_nuevo'`
-  (`ContextoMarcacion.permiteAutoDecidirJornadaAnterior`) - en la práctica, alguien escaneando HOY casi siempre
-  está lidiando con la entrada de HOY, no viene a cerrar algo de ayer a mano.
-
-**Verificación explícita de que esto no rompe el caso original (turno nocturno normal):** se confirmó
-recorriendo el ruteo del frontend (`mi-jornada.ts`, `ngOnInit`/`obtenerMiEstado`) que un trabajador con
-CUALQUIER jornada `EN_JORNADA` abierta (sin importar su fecha) SIEMPRE es llevado directo al Panel de
-Actividades, nunca al formulario de código en blanco - o sea, la nueva pregunta de desambiguación solo puede
-aparecer después de que el trabajador YA tocó explícitamente "Marcar salida" desde dentro del Panel de
-Actividades. Nunca aparece de sorpresa ni le agrega fricción a nadie que no esté, de hecho, tratando de cerrar
-una jornada vieja.
-
-**Petición explícita del usuario verificada:** el modal viejo de checklist de actividades (removido en una
-ronda anterior) NO vuelve a aparecer en ningún punto de este flujo - confirmado por búsqueda directa en
-`mi-jornada.ts`/`.html`/`.css`, cero referencias restantes.
-
-Verificado con `tsc --noEmit` limpio en ambos proyectos y los 27 tests unitarios en verde.
+| GET /api/asistencia/:id/foto | ADMIN, ASISTENTE, SUPERVISOR | Foto de evidencia (VisorFoto). |
+| POST /api/asistencia/admitir-externo | SUPERVISOR, ADMIN | Reclama un trabajador prestado. |
+| GET /api/actividad(/:id) | público | Catálogo de actividades. Sin pagina/limite: completo; con: paginado+`q`. |
+| POST/PUT/DELETE /api/actividad | ADMIN, ASISTENTE | CRUD del catálogo (soft-delete). |
+| GET /api/equipos | cualquier cuenta logueada | Catálogo de Equipos, mismo patrón paginado/completo que Actividad. |
+| POST/PUT/DELETE /api/equipos | ADMIN, ASISTENTE | CRUD del catálogo (soft-delete). |
+| POST /api/*/importar | ADMIN, ASISTENTE | Importa Equipo/Actividad desde Excel (parseado en el navegador, backend recibe JSON). |
+| GET /api/haciendas | ADMIN, SUPERVISOR, ASISTENTE | Lista haciendas (Supervisor ve el token solo de la suya). |
+| POST /api/haciendas | ADMIN | Crea hacienda. |
+| POST/DELETE /api/haciendas/:id/token | ADMIN, SUPERVISOR (solo la suya) | Genera/invalida el Token. |
+| GET /api/registro-actividades | autenticado | Labores de una jornada, acotado por alcance de Supervisor. |
+| POST /api/registro-actividades | autenticado | Crea una labor. |
+| PUT /api/registro-actividades/:id/finalizar | autenticado | Cierra una labor. |
+| GET /api/registro-actividades/por-operador | autenticado | Historial de labores de un operador (reporte imprimible). |
+| GET /api/auditoria | ADMIN | Historial de auditoría técnica, paginado. |
+| POST /api/auth/registrar-dispositivo | autenticado | Registra SO/versión del dispositivo (solo app nativa). |
+| POST /api/auth/aceptar-terminos | autenticado | Acepta Política de Privacidad/Términos. |
+
+Todas las rutas de negocio requieren `verificarAutenticacion`/`requireRol` explícito, salvo las marcadas
+"público" a propósito (el kiosco/código público las usa sin login).
+
+## Seguridad, auditoría y calidad (estado actual)
+
+**Seguridad de la app:** sesiones ✅ (revocación real al cambiar clave, ver abajo) · claves con bcrypt +
+cifrado AES-256-GCM de PII (cédula/teléfono/dirección) ✅ · SQL injection ✅ (Sequelize parametrizado) · XSS ✅
+(Angular escapa por defecto) · CSRF ✅ (JWT en header, no cookie) · rate limiting ✅ (`limitadorLogin` 10/15min en
+login y marcar-codigo, `limitadorMarcacion` 30/15min en marcar-qr) · Helmet ✅ (cabeceras por defecto) · CORS ✅
+(`CORS_ORIGIN`, lista separada por comas; sin configurar cae al dominio de Vercel + `localhost:4200` +
+`https://localhost` para el WebView de Capacitor) · `trust proxy` habilitado (necesario detrás del proxy inverso
+de Railway).
+
+**Revocación de sesiones JWT**: `sesion_valida_desde` (`usuarios`/`operadores`, nullable) se pisa con `NOW()` en
+cada reseteo de clave. `verificarAutenticacion` compara contra el `iat` del token (ambos truncados a segundos,
+para no invalidar un login hecho en el mismo segundo que el reseteo) - un JWT emitido antes del reseteo queda
+401 aunque no haya expirado por tiempo.
+
+**Auditoría técnica** (`registros_auditoria`, append-only): registra reseteo de clave (Usuario/Operador),
+edición de clave de Operador, generar/invalidar Token de Hacienda. `objetivo_nombre` queda congelado al momento
+de la acción; `actor` es JOIN en vivo. Un fallo al auditar nunca tumba la acción principal. `GET /api/auditoria`
+(ADMIN), paginado fijo en 20.
+
+**Registro de dispositivo** (`registros_dispositivo`, append-only, polimórfico): cada login DESDE LA APP
+EMPAQUETADA reporta SO/versión/modelo - sirve para ajustar `minSdk` con datos reales del parque de celulares en
+vez de estimar.
+
+**Cifrado en reposo** (`utils/cifrado.ts`, AES-256-GCM): `cedula` (determinístico - mismo texto → mismo
+resultado, porque tiene UNIQUE y se busca por igualdad) y `telefono`/`direccion` (aleatorio) del Operador.
+Transparente vía `get()`/`set()` del modelo. **`CIFRADO_CLAVE`** (32 bytes hex, `openssl rand -hex 32`) es
+obligatoria - el proceso no arranca sin ella, y **si se pierde, los datos cifrados quedan irrecuperables para
+siempre**. Cualquier `where` de Sequelize que busque por un campo cifrado (ej. chequeo de duplicados) necesita
+cifrar el valor buscado A MANO con `cifrarDeterministico()` antes de armar el query - un `where` no pasa por el
+`set()` del modelo.
+
+**Pruebas**: unitarias (Vitest, backend y frontend - lógica de negocio extraída a funciones puras: validación de
+horas, vigencia de Token, revocación de sesión, cifrado, offline sync, rutas por rol) · integración (`*.itest.ts`,
+`supertest` contra Postgres real, BD separada `DB_NAME_TEST`) · end-to-end (Playwright, backend+BD+navegador
+reales) · carga (`autocannon`, no corre en CI, contra volumen real de ~950 operadores - hallazgo resuelto:
+`GET /asistencia/operadores` sin paginar era el cuello de botella, ya paginado). CI (`GitHub Actions`,
+`.github/workflows/ci.yml`): typecheck + unitarias en cada push/PR a `main`, jobs separados para integración y
+e2e (cada uno con su propio Postgres de servicio). `Dependabot` semanal en ambos proyectos + Actions.
+
+**Checklist de producción (resumen, ✅ cumple / ⚠️ parcial / ❌ no cumple):** requisitos funcionales ✅ ·
+integridad referencial ✅ (FKs + UNIQUE reales) · balanceador de carga ❌ (una sola instancia) · backups de BD
+❌ (no configurados - urgente antes de escalar el piloto) · staging ❌ (solo dev y prod) · Sentry/observabilidad
+de errores ❌ (solo `console.error`) · uptime monitoring ❌ (existe `/api/health`, nada lo llama) · CI/CD ✅ ·
+pruebas (unitarias/integración/e2e/carga) ✅ · Política de Privacidad + gate de aceptación ✅ (datos legales de
+FRUGALP AGRICOLA EXPORTADORA G-P CIA. LTDA. completos) · protección de PII ✅ · `npm audit` en 0 en ambos
+proyectos (CI) ✅.
+
+## Fotos de evidencia en Cloudflare R2
+
+`foto_r2_key` (`asistencias`, nullable) guarda la key del objeto en R2 en vez del base64 completo en la BD -
+reduce el tamaño de la base de datos con cada foto. Solo se sube en la ENTRADA (`procesarMarcacion`,
+`prepararFotoParaGuardar`): sube a `asistencias/{operador_id}/{timestamp}.jpg` vía `r2.service.ts` (SDK S3,
+compatible con R2); si R2 no está configurado o la subida falla, cae de vuelta a guardar el base64 en
+`foto_ingreso` como antes - la marcación nunca falla por un problema de almacenamiento. Lectura
+(`obtenerFotoAsistencia`) prioriza `foto_r2_key` (descarga y reconvierte a base64, mismo contrato de API que
+antes) y cae a `foto_ingreso` si no hay key - así los registros viejos (pre-R2) siguen funcionando sin migrarlos.
+Variables de entorno requeridas en el backend: `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+`R2_BUCKET_NAME`. El tier gratis de R2 (10GB/mes, sin costo de egress) se renueva cada mes indefinidamente, no
+es una prueba con fecha de vencimiento.
+
+## Infraestructura y despliegue
+
+- **Frontend**: Vercel, autodetección de Angular, dominio estable `https://horometros-frugalp.vercel.app`.
+  `environment.ts` (`apiUrl`) apunta al backend de Railway - no hay variable de entorno de Vercel para esto, es
+  el archivo el que se edita y se hace push.
+- **Backend + Postgres**: Railway, mismo proyecto, comunicados por red privada (`${{Postgres.PGHOST}}`, etc. -
+  no exponer Postgres al público salvo tarea puntual, y desactivarlo después). Variables del backend: `NODE_ENV`,
+  `JWT_SECRET`, `CIFRADO_CLAVE`, `CORS_ORIGIN`, `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME`
+  (referenciando el servicio Postgres), `R2_*` (ver arriba). **Pre-deploy Command**: `npm run db:migrate` (corre
+  las migraciones pendientes antes de arrancar) - **Custom Start Command**: `npm start`. Con esto, cualquier
+  migración nueva se aplica sola en cada deploy, sin pasos manuales.
+- **Fotos**: Cloudflare R2 (ver arriba).
+- **Empaquetado Android**: Capacitor, `appId: com.frugalp.horometros`, `minSdk 28` (decidido tras auditoría
+  MobSF, se ajustará con datos reales de `registros_dispositivo`). Build de **release** firmado (no debug) ya
+  compilado y publicado en `frontend-horometros/public/frugalp.apk` (botón de descarga en el login) - repetir
+  ese paso (compilar release en Android Studio → reemplazar el archivo → push) en cada versión nueva.
+  `android:allowBackup="false"` en el manifest. `capacitor.config.ts` sigue sin `server.url` (webDir empaquetado
+  local) - ver "Service Worker" abajo para la decisión pendiente sobre actualizar sin reinstalar.
+- **iPhone**: PWA-lite (`manifest.json`, meta tags, "Agregar a pantalla de inicio" en Safari) - sin app nativa,
+  evita el Apple Developer Enterprise Program ($299/año).
+- **Service Worker** (`@angular/service-worker`, ya instalado y cacheando el shell completo vía
+  `ngsw-config.json`): construido como red de seguridad offline ANTES de decidir si `capacitor.config.ts` carga
+  el link de Vercel en vivo (para que un redeploy le llegue a todos los celulares sin recompilar el `.apk`).
+  **Decisión pendiente del usuario**: `server.url` de Capacitor trae advertencia textual oficial ("not intended
+  for use in production") aunque probablemente funcione bien para un piloto chico - alternativa es una
+  herramienta de actualización OTA dedicada (Capgo, open source, o Ionic Live Updates), el camino que Capacitor
+  sí soporta oficialmente.
+- **Offline-first**: solo el Panel de Actividades (crear/finalizar labor) - la ENTRADA/SALIDA siempre necesita
+  señal (el código lo valida el backend contra el Token vigente, el QR lo genera el servidor). Cola en
+  `@capacitor/preferences`, sincroniza sola al detectar conexión (`@capacitor/network`) o manual. Un fallo de
+  red (`status 0`) corta el recorrido de la cola sin perder lo pendiente; un error real del servidor marca ese
+  ítem y sigue con el resto.
 
 ## Pendiente
 
-**Empaquetado con Capacitor (ver arriba) - pasos que faltan**
-- ~~Compilar el `.apk` real~~ - hecho 2026-09-26, el usuario lo compiló en Android Studio en su propia máquina
-  (Fedora), lo instaló en su celular real, y el login funcionó (confirma el arreglo de `https://localhost` en
-  `CORS_ORIGIN`).
-- ~~Decidir `minSdk`~~ - hecho 2026-09-26, bajado a 28 (Android 9), ver "Registro automático de versión de
-  Android/iOS" abajo - se va a poder ajustar con datos reales después de una semana de uso.
-- Compilar un build de **release** (firmado con clave propia, no la de debug) antes de distribuir de verdad -
-  resuelve automáticamente los hallazgos HIGH de certificado/debuggable que MobSF marcó.
-- ~~Reemplazar los íconos/splash genéricos de Capacitor por el logo real de la empresa~~ - hecho 2026-09-26 (ver
-  "Logo real de FRUGALP" abajo), pero con un logo fuente de baja resolución (~109x116px) - si la empresa tiene
-  el logo en alta resolución o vectorial (AI/SVG/EPS/PDF), vale la pena regenerar los íconos desde ahí antes de
-  distribuir de verdad, se van a ver mejor sobre todo en las pantallas de splash grandes.
-- Probar en un iPhone real y 2-3 marcas de Android distintas antes de distribuir a los 950 trabajadores
-  (cámara/QR son el punto de riesgo real entre fabricantes, ver auditoría de dispositivos).
-- ~~Offline-first (guardar marcación localmente sin señal, sincronizar después)~~ - hecho 2026-09-26 (ver
-  "Offline-first del Panel de Actividades" arriba), alcance: solo el Panel de Actividades (crear/finalizar
-  labor), la ENTRADA/SALIDA sigue necesitando señal por diseño. Falta que el usuario lo pruebe en el celular
-  real con la señal cortada de verdad.
-- Pendiente de confirmación del usuario: ¿de verdad hay iPhones entre los 950 trabajadores? Si es casi todo
-  Android, no hace falta ni pensar en el costo de Apple.
-
-**Migración/transferencia de cuentas a la empresa cliente (recordatorio, no urgente todavía)**
-- Antes de entregar/vender el sistema, todas las cuentas de infraestructura (Render, Vercel, dominio, BD,
-  Sentry/uptime cuando existan) deben quedar a nombre de la empresa cliente, no del desarrollador - por
-  responsabilidad sobre los datos de los ~950 trabajadores (PII) y para que el soporte a futuro no dependa de
-  una cuenta personal. Revisar esto después de cerrar el resto de la checklist, antes de la entrega final.
-
-**Bug resuelto (causa raíz confirmada) - "Failed to fetch" en producción por CORS (2026-09-25)**
-- Causa raíz CONFIRMADA (consola del navegador, no solo sospecha): `Access to fetch at
-  'https://horometros-frugalp.onrender.com/api/auth/login' from origin
-  'https://horometros-frugalp-pmn1p4vdo-ronald-acurio-s-projects.vercel.app' has been blocked by CORS policy:
-  ... No 'Access-Control-Allow-Origin' header is present`. `CORS_ORIGIN` nunca estuvo seteada en Render, así que
-  `app.ts` cae al default hardcodeado (`https://horometros-frugalp.vercel.app` + `localhost:4200`) - la URL real
-  de Vercel del usuario (con sufijo de hash/proyecto) no matchea ninguno de los dos, el backend no la autoriza,
-  el navegador bloquea la respuesta. Nada del código estaba mal, era una variable de entorno sin configurar.
-- Descartado en el camino: spin-down del free tier de Render (esperado, no es esto - reintentar tras 50s seguía
-  fallando), `CIFRADO_CLAVE` faltante (confirmada seteada y con formato correcto).
-- **Arreglo:** agregar `CORS_ORIGIN` en Render → Environment con el dominio real de Vercel del usuario. Pendiente
-  de que el usuario lo aplique y confirme - no requiere ningún cambio de código ni patch, es 100% configuración.
-
-**Backend**
-- ~~Filtrar `finalizarDia` por `hacienda_id` del Supervisor que ejecuta el cierre~~ - hecho 2026-09-27, ver
-  "Cierre de jornada acotado por hacienda" más abajo.
-- ~~Paginar `GET /asistencia/operadores`~~ - hecho 2026-09-25, ver "Hallazgo resuelto (2026-09-25)" arriba
-  (sección "Resultados de la corrida local").
-
-**Frontend** (sobre lo ya construido, ver sección de arriba)
-- ~~Offline/sync~~ - hecho 2026-09-26 (ver "Offline-first del Panel de Actividades" arriba).
-- **Diseños de Figma confirmados, pendientes de construir** (el usuario los compartió, existen en su Figma):
-  - "Descargar" (exporta a Excel, formato pendiente de que el usuario lo proporcione) e "Imprimir" general en el
-    Directorio de Operadores - este último solo se habilita cuando el Historial está filtrado a **un solo día**
-    (imprime todas las hojas físicas de ese día de una vez, de todos los operadores); con varios días combinados
-    no se habilita, para no tener que resolver "cuántas hojas de cuántos días imprimo". El "Ver/Imprimir" **por
-    operador individual** (Directorio) y **por fila individual** (Historial, un solo día) ya se construyeron, ver
-    abajo.
-  - ~~Nueva pestaña de ADMIN para crear/editar/eliminar Equipos y Secciones~~ - Equipo y Actividad ya se
-    construyeron esta ronda como pestañas del Panel de Asistente (ver abajo, "Gestión de Equipo/Actividad +
-    soft-delete"). Secciones sigue sin CRUD ni pantalla (fase 2, hoy no se usa - ver modelo `registro_actividad.ts`).
-
-### Ver/Imprimir hoja de actividades (Historial de Asistencia)
-
-`asistencia-panel.ts`, `abrirHojaActividades(grupos, opciones)` abre una **ventana flotante dentro de la misma
-pantalla** (`mostrarModalHoja`, mismo patrón que "Ver Evidencia" en `visor-foto.ts`: `.modal-backdrop` +
-`.modal-card`) con el mismo diseño que la hoja física "REPORTES DE LABORES DIARIOS" que el usuario compartió
-como foto - **no** una pestaña/ventana nueva del navegador (`window.open`), a diferencia de `imprimirQR()`: la
-app va empaquetada, así que un link separado no tiene sentido ahí, todo tiene que vivir en la misma pantalla.
-Imprimir llama a `window.print()` sobre la propia página: `styles.css` (`@media print`) oculta con
-`visibility: hidden` todo lo que no sea el nodo `.imprimible` (el propio `.modal-card`) y lo reposiciona a
-`position: absolute` para que ocupe toda la hoja - los botones de Cerrar/Imprimir llevan `.no-imprimir` para no
-salir en el papel. Esta técnica de impresión (clase `.imprimible` + `.no-imprimir` en el global `styles.css`) es
-reutilizable para cualquier otro modal que a futuro necesite "imprimir solo esto".
-
-`grupos: { operador: Operador; registros: RegistroActividad[] }[]` - un grupo por operador. Cada uno se pinta en
-su propio bloque (`.hoja-actividades-grupo`) con el Mecánico en un subtítulo en negrita y letra más grande
-(`.hoja-actividades-mecanico`: `Mecánico: <nombre> · <código>`), no como columna de la tabla - igual que la hoja
-física, que solo repite Fecha por fila y escribe el mecánico una sola vez. Cuando hay más de un grupo (impresión
-por rango, ver abajo), se separa con una línea punteada en pantalla; al imprimir el contenido fluye normal en
-vez de forzar una página nueva por operador (ver "Empaquetado de páginas al imprimir" más abajo). Columnas de la
-tabla para MECANICO: EQUIPO / OT / OBSERVACIONES / TIEMPO ESTIMADO / TALLER-CAMPO (para OPERADOR es distinta, ver
-"Ronda de mejoras..." más abajo). OBSERVACIONES = `RegistroActividad.observaciones` (el campo de texto libre que
-anota el trabajador - esta columna se llamó "Daño" hasta una ronda posterior, ver esa misma sección, donde se
-renombró para que coincida con lo que el usuario esperaba ver ahí). TIEMPO ESTIMADO = duración real calculada
-(`hora_fin - hora_inicio`, o "—" si la labor sigue abierta), TALLER-CAMPO = `Actividad.categoria`. **OT** =
-`RegistroActividad.area` (decisión del usuario de una ronda anterior: la columna sigue llamándose `area` en la
-base de datos, pero "área" como concepto ya no se usa - lo que guarda es el número/código de Orden de Trabajo
-del mecánico).
-
-Dos puntos de entrada, mismo método interno (`abrirHojaActividades`) - **ya no existe** un botón en la Ficha del
-Directorio que imprima el historial COMPLETO de un operador sin acotar fecha (el usuario lo pidió quitar: "para
-imprimir la hoja tiene que tener la fecha, no imprimir todo de una sola vez" - ver más abajo qué lo reemplazó):
-- **Fila del Historial** (`verHojaFilaHistorial`/`imprimirHojaFilaHistorial`): UN SOLO grupo, scoped a **ese día
-  puntual** (`fecha_inicio=fecha_fin=reg.fecha`). "Ver" abre la vista previa sin imprimir, "Imprimir" además
-  dispara la impresión. Al ser un solo día: la Fecha se muestra junto al nombre del operador en el encabezado en
-  vez de repetirse por fila (se oculta la columna Fecha de la tabla), y se agrega un pie "Observaciones del
-  Supervisor" con `Asistencia.observaciones` de esa jornada (el mismo campo que ya se edita en el Panel de
-  Supervisor, `revisarAsistencia`) - "Sin observaciones." si viene vacío.
-- **"🖨️ Imprimir Hojas del rango"** (`imprimirHojasRangoHistorial`, botón al final de la tabla del Historial,
-  junto a la paginación): solo se habilita cuando el filtro Desde/Hasta del Historial está completo. Junta a
-  **todos los operadores distintos que aparecen en la página actual de la tabla ya filtrada** (no todo el rango
-  si hay más páginas - es deliberado, ver Pendiente si algún día hace falta cubrir todas las páginas) y les
-  arma un grupo a cada uno con `forkJoin` (`registroActividadService.obtenerPorOperador(id, fechaInicioFiltro,
-  fechaFinFiltro)`), todos en la misma ventana (ver "Empaquetado de páginas al imprimir" más abajo para cómo se
-  reparten entre hojas). Como es un rango (puede haber varios días por persona), la Fecha se mantiene por fila y
-  no hay pie de observaciones (no hay una sola jornada a la que asociarlas cuando son varios operadores/días a
-  la vez).
-
-Fuente de datos: `GET /api/registro-actividades/por-operador?operador_id=X&fecha_inicio=Y&fecha_fin=Z` - trae
-las labores de ESE operador a través de **varias** jornadas (join a `Asistencia` por `operador_id`);
-`fecha_inicio`/`fecha_fin` opcionales. Mismo control de acceso que el resto del módulo (`puedeOperarSobre`):
-ADMIN/ASISTENTE/SUPERVISOR ven cualquiera, el propio Operador solo el suyo.
-
-### Historial de Asistencia de UN operador (modal desde la Ficha)
-
-Reemplaza al viejo botón de la Ficha. Botón "📅 Ver Historial de Asistencia" (junto a "🖨️ Imprimir Carnet", que
-se queda igual - sigue siendo la única forma de generar un carnet físico nuevo, necesario para el kiosco) abre
-un modal (`.historial-operador-card`, `abrirModalHistorialOperador`) con la **misma tabla que la pestaña
-Historial general** (Fecha/Ingreso/Salida/Horas/Ver-Imprimir/Evidencia/Observación, reutilizando
-`verHojaFilaHistorial`/`imprimirHojaFilaHistorial`/`<app-visor-foto>` tal cual), menos la columna Operador (ya
-va en el título del modal) - con su propio filtro Desde/Hasta y paginación (`limite=10`), ya acotado a ese
-operador. No hay backend nuevo: `AsistenciaService.obtenerHistorial()` ganó un parámetro `operadorId` opcional
-que solo agrega `?operador_id=` a la query - el filtro por `operador_id` ya existía en `obtenerHistorial`
-(`asistencia.controller.ts`) desde antes, no tenía UI que lo aprovechara.
-
-Es honestamente decorativo en cuanto a "escanear" el QR - el botón abre el modal directo con el `operador_id`
-que ya se tiene a mano (el operador seleccionado en la Ficha), sin cámara ni lector real. Decisión explícita del
-usuario: le da una función real al carnet QR dentro del panel de la Asistente (hoy no tenía ninguna más allá de
-imprimirse), sin la complejidad/riesgo de intentar que el QR físico sirva para saltarse el login (ver discusión
-de por qué esa idea no encajaba con la arquitectura: el login es la puerta obligatoria de la app).
-
-**Dos bugs reales encontrados y corregidos al construir este modal** (no specific a él, aplican a cualquier
-modal futuro que reuse estos patrones):
-1. `cerrarModalHistorialOperador()` no llamaba a `this.cdr.detectChanges()` - el modal "se cerraba" en el
-   estado del componente pero seguía visible en pantalla hasta el próximo evento async. Mismo quirk de siempre:
-   *toda* mutación de estado en un handler síncrono necesita su `detectChanges()` explícito en esta app.
-2. `.modal-card` (global, `styles.css`) nunca tuvo `position: relative`, a diferencia del `.visor-foto-card`
-   original del que se copió el patrón del botón "✕" (`position: absolute; top: -0.75rem; right: -0.75rem`).
-   Sin un ancestro posicionado más cercano, ese botón se anclaba contra `.modal-backdrop` (que es
-   `position: fixed; inset: 0`, o sea el viewport completo) en vez de la esquina de la tarjeta - quedaba
-   flotando en la esquina de la PANTALLA, no de la tarjeta. Afectaba a cualquier modal que reusara ese botón
-   (`.hoja-actividades-card` incluido) y se notó recién con dos modales abiertos a la vez (el de Historial +
-   la hoja abierta encima), porque ahí sí se superponían/bloqueaban. Se agregó `position: relative` a
-   `.modal-card` en el global `styles.css` - corrige ambos casos con un solo cambio.
-   De paso, cuando dos `.modal-backdrop` conviven a la vez (la hoja se puede abrir ENCIMA del modal de
-   Historial), el de más arriba en el HTML pintaba encima sin importar cuál se abrió después (mismo z-index
-   para todos, 50) - se agregó una clase `.modal-backdrop-anidado` (z-index: 60) al backdrop de la hoja para
-   que siempre quede arriba, que es el único caso real de anidamiento que existe hoy en este panel.
-
-**Barra superior pegada (sticky) en vez de botón flotante, y dos bugs de impresión más** (ronda siguiente, tras
-feedback visual del usuario): el botón "✕" con `position: absolute` quedaba recortado a la mitad por el propio
-`overflow-y: auto` de la tarjeta apenas había contenido para hacer scroll (un elemento posicionado fuera del
-padding-box de un contenedor con overflow no-visible se recorta con él). Se reemplazó por
-`.hoja-actividades-barra-superior`/misma clase en `.historial-operador-card`: una barra `position: sticky;
-top: -1.5rem` con margen negativo que "cancela" el padding de `.modal-card` y queda a ras de los bordes,
-fondo opaco y borde inferior - Imprimir/Cerrar (o Título/Cerrar en el de Historial) quedan siempre visibles
-sin importar cuánto se baje, en vez de flotar fuera de la tarjeta.
-
-De paso, dos bugs de impresión reales, mismo origen: la **encapsulación de estilos de Angular** le agrega a
-cada selector de un archivo de componente un atributo `[_ngcontent-xxx]`, lo que sube su especificidad al
-nivel de un selector de dos clases del global `styles.css` (ej. `.imprimible .no-imprimir`) - y como el CSS del
-componente carga después en el bundle, gana él aunque el global esté pensado para imprimir. Por eso:
-1. `.hoja-actividades-card` (con `max-height: 90vh; overflow-y: auto` fuera de cualquier media query) le ganaba
-   al `max-height: none` que `styles.css` ya ponía en `@media print .imprimible` - la vista previa de impresión
-   mostraba el contenido con SU PROPIA barra de desplazamiento en vez de dejarlo fluir en varias páginas
-   (se veía como "una captura de cada hoja").
-2. `.hoja-actividades-barra-superior` (con clase `.no-imprimir`) no se ocultaba al imprimir pese a que
-   `styles.css` ya la apunta con `.imprimible .no-imprimir { display: none; }`.
-Ambos se resolvieron agregando el override directamente en el propio `@media print` de `asistencia-panel.css`
-(`max-height: none !important; overflow: visible !important;` y `display: none !important;` respectivamente) -
-mismo archivo, especificidad ya no importa porque `!important` fuerza la prioridad.
-
-**El mecanismo de impresión global (`.imprimible`, `styles.css`) se reescribió por completo** al probar
-"Imprimir Hojas del rango" con varios operadores de verdad: el contenido salía con varios "REPORTES DE LABORES
-DIARIOS" superpuestos/duplicados en vez de uno por página. Dos vueltas hasta llegar al diseño final (las dos
-fallaron de formas distintas y vale la pena no repetirlas):
-1. **Original**: `visibility: hidden` en `body *` + `.imprimible` forzado a `position: absolute; top: 0;
-   left: 0` para "escapar" del espacio que sus hermanos ocultos seguían reservando (`visibility: hidden` NO
-   libera el espacio en el layout, solo lo hace invisible). Bug real: un elemento fuera de flujo (`absolute`)
-   no pagina bien a varias hojas - el motor de impresión no sabe cómo partirlo entre página y página con varios
-   operadores, y termina superponiendo/duplicando el contenido en vez de repartirlo.
-2. **Primer intento de arreglo**: cambiar a `display: none`/`revert` (SÍ libera el espacio) para que
-   `.imprimible` pudiera quedarse en flujo normal (`position: static`) y paginar bien. Bug real, distinto:
-   `.imprimible, .imprimible *` solo restaura el propio nodo y sus DESCENDIENTES, nunca sus ANCESTROS - y
-   `body *` ya les había puesto `display: none` a esos ancestros también (son parte de `body *`). Con un
-   ancestro en `display: none`, toda esa rama deja de renderizar sin importar que el hijo diga
-   `display: revert` - la página quedaba completamente en blanco.
-3. **Solución final**: agregar `body *:has(.imprimible) { display: revert !important; }` - restaura también
-   la cadena de ANCESTROS de `.imprimible` a cualquier profundidad de anidamiento, sin tener que listar cada
-   nivel del árbol a mano (`:has()`: Chrome 105+/Firefox 121+/Safari 15.4+, cubre los navegadores donde se usa
-   esta app). `.modal-backdrop` (normalmente `position: fixed; inset: 0` con fondo oscuro semitransparente)
-   también se fuerza a `position: static; background: none` en print - "fixed" tampoco pagina bien a varias
-   hojas, y el fondo oscuro se hubiera impreso como un rectángulo gris de pared a pared detrás del contenido.
-4. **Efecto secundario de `display: revert` que hubo que corregir aparte**: `revert` restaura el display POR
-   DEFECTO del navegador (div→block, table→table, etc.), lo que de paso borra cualquier `display: flex/grid`
-   que un elemento necesite - `.hoja-actividades-encabezado` (Mecánico + Fecha lado a lado con
-   `justify-content: space-between`) se imprimía con el texto pegado sin espacio entre los dos, por perder su
-   `display: flex`. Se reafirma explícitamente en el propio `@media print` de `asistencia-panel.css` (mismo
-   patrón que los otros overrides `!important` de esta sección) - cualquier otro `display: flex/grid` que se
-   agregue después DENTRO de `.imprimible` en este componente va a necesitar el mismo tipo de reafirmación.
-
-**Empaquetado de páginas al imprimir (no desperdiciar papel)**: "Imprimir Hojas del rango" imprime N operadores
-en la misma ventana, cada uno en su propio `.hoja-actividades-grupo`. La primera versión forzaba
-`page-break-before: always` en cada grupo salvo el primero (`.hoja-actividades-salto-pagina`) - una hoja física
-por operador sin excepción, aunque el operador no tuviera labores registradas ese día (tabla de una sola fila
-"Sin labores registradas"). El usuario lo pidió cambiar: quería que operadores cortos compartan hoja para no
-desperdiciar papel, pero que un operador con muchas actividades (tabla alta) nunca se parta a la mitad entre una
-hoja y la siguiente. Se reemplazó por `break-inside: avoid` (+ `page-break-inside: avoid`, alias viejo por si el
-motor de impresión no reconoce el nombre moderno) en `.hoja-actividades-grupo`, dejando que el contenido fluya
-normal entre páginas: el motor de impresión va llenando cada hoja con los grupos que alcancen completos, y si un
-grupo no cabe entero en lo que queda de la página actual, lo manda entero a la siguiente en vez de cortarlo.
-Verificado con Playwright: 6 operadores cortos (1 fila, "Sin labores registradas") + 1 operador con 12 filas
-generaron un PDF de 2 páginas (antes hubieran sido 7, una por operador) - los cortos se agruparon varios por
-hoja y el largo no se partió.
-
-**Pendiente, fuera del control de la app**: el navegador (Chrome) agrega su propio encabezado/pie de página al
-imprimir (fecha, título de la pestaña, URL, número de página) - es la casilla "Headers and footers" del propio
-diálogo de impresión del navegador, NO algo que CSS/JS de la página pueda desactivar (es una protección
-deliberada del navegador para que una página no pueda ocultarle al usuario qué URL está imprimiendo). Quien
-imprima tiene que desmarcar esa casilla manualmente en "Más ajustes" del diálogo de impresión si no quiere que
-la URL salga en el papel - no hay forma de forzarlo desde el código.
-
-**Filtro por hacienda en el Historial**: nuevo `<select>` junto a los filtros de fecha, manda `hacienda_id` a
-`GET /api/asistencia/historial`. El Operador no tiene `hacienda_id` propio (vive del Supervisor al que pertenece
-de forma permanente, ver tabla de roles), así que el backend filtra vía include anidado
-`operador -> supervisor -> hacienda_id` con `required: true` en el include de `operador` cuando hay filtro (si
-no, Sequelize deja el include como LEFT JOIN y el `where` anidado del supervisor no filtra nada).
-
-### Gestión de Equipo/Actividad + soft-delete (Panel de Asistente)
-
-Dos pestañas nuevas junto a Directorio/Historial: **Equipo** (🚜) y **Actividad** (🛠️), mismo patrón de
-lista+buscador+paginación+modal que ya usaba el Directorio de Operadores, con `+Nuevo`, `Editar` y `Eliminar`
-por fila. Ambas comparten roles con Operador (`requireRol('ADMIN','ASISTENTE')`) - Actividad ya tenía sus 3
-endpoints de mutación protegidos solo para ADMIN desde antes (sin UI), se amplió a incluir ASISTENTE ya que ahí
-es donde vive esta pantalla.
-
-**Buscador en tiempo real, sin botón "Buscar"** (`onBuscarEquiposTab`/`onBuscarActividadesTab`, debounce de
-300ms con `setTimeout`+`clearTimeout` - mismo valor y patrón que ya usaba el autocompletar de Equipo/Actividad
-del Panel de Actividades, ver `mi-jornada.ts`): cada tecla reinicia el temporizador y solo dispara UNA petición
-al backend cuando el usuario deja de escribir, en vez de pedir que aprieten un botón o Enter. Se revisó **todo**
-el resto de la app buscando el mismo problema (un buscador que solo funciona con clic/Enter): el Directorio de
-Operadores y el autocompletar de Equipo/Actividad del Panel de Actividades YA eran en tiempo real desde antes (el
-primero filtra en memoria sobre la lista ya cargada, sin ni siquiera necesitar debounce; el segundo ya tenía este
-mismo patrón de debounce). El único filtro que se dejó con botón explícito es el del Historial (fechas +
-hacienda) - no es una caja de texto que se escribe letra por letra, es un formulario compuesto (2 fechas + un
-select), así que no aplica la misma solución.
-
-**"Eliminar" es siempre soft-delete (`paranoid`), nunca borra la fila.** Se extendió el mismo patrón que ya
-tenía `Actividad`/`Seccion` a `Equipo` y `Operador` (migración `20260924010000-agregar-softdelete-equipos-operadores`,
-agrega `createdAt`/`updatedAt`/`deletedAt` a ambas tablas). Con `paranoid:true`, Sequelize excluye automáticamente
-las filas eliminadas de cualquier `findAll`/`findAndCountAll` por defecto - así que los catálogos
-(`obtenerEquipos`, `ObtenerActividades`, `obtenerOperadores`) y los selectores del Panel de Actividades quedan
-filtrados gratis, sin tocarles el código. El Directorio de Operadores ganó su botón "🗑️ Eliminar Operador" en la
-Ficha (antes no existía ninguna forma de dar de baja a un operador).
-
-**Cuidado real que esto exige** (y que ya se aplicó en esta ronda): por defecto Sequelize también aplica el
-filtro `paranoid` a los **includes** - así que un `Operador`/`Actividad`/`Equipo` eliminado DESPUÉS de generar
-una Asistencia/RegistroActividad iba a desaparecer silenciosamente de esos registros ya existentes (nombre en
-blanco en el Historial, en "Ver/Imprimir Hoja de Actividades", etc.) en cualquier include que no diga lo
-contrario. Se agregó `paranoid: false` explícito a cada include de Operador/Actividad/Equipo/Seccion que sirve
-para mostrar datos YA REGISTRADOS (`obtenerAsistenciaHoy`, `finalizarDia`, `obtenerHistorial` en
-`asistencia.controller.ts`; `obtenerRegistrosPorAsistencia` y `obtenerRegistrosPorOperador` en
-`registro_actividad.controller.ts`) - un catálogo dado de baja no debe borrar el rastro de lo que ya se hizo con
-él. Los includes de validación al CREAR un registro nuevo (`Operador.findByPk`/`Actividad.findByPk`/
-`Equipo.findByPk` al marcar asistencia o registrar una labor) se dejaron con el comportamiento paranoid por
-defecto a propósito: un catálogo eliminado SÍ debe rechazarse para uso nuevo.
-
-**`numero_hoja` de `Equipo` pasó a admitir NULL** (antes era `NOT NULL`, exclusivo de Horómetros - "número de
-hoja física" de la libreta de lecturas): con el Panel de Asistente creando Equipos también, ya no puede seguir
-siendo obligatorio, porque ese concepto no existe fuera de Horómetros. El formulario de "Nuevo Equipo" del Panel
-de Asistente solo pide código y nombre.
-
-### Ronda de mejoras: validación de horas, Observaciones, impresión por rol, filtro por Supervisor y Token
-
-Siete pedidos puntuales del usuario tras revisar la app ya en uso, todos independientes entre sí:
-
-**1. La hora de una labor NUEVA no puede quedar antes de la última labor ya registrada ese día**
-(`registro_actividad.controller.ts`, `crearRegistroActividad`): antes de crear el registro, se trae TODA la
-jornada (`RegistroActividad.findAll({ where: { asistencia_id }})`) y se calcula en memoria el máximo de
-`hora_fin ?? hora_inicio` de cada una (Postgres no tiene un "max de coalesce" directo sin SQL crudo, y la
-cantidad de labores por jornada es chica). Si la nueva `hora_inicio` queda antes de ese máximo, 400. No valida
-solapamiento entre labores, solo que no retroceda en el tiempo - no se pidió más que eso.
-
-**2. Columna "Observaciones" en "Labores de hoy"** (`mi-jornada.html`): el campo ya se capturaba en el
-formulario (`nuevoRegistro.observaciones`) pero no se mostraba en la tabla de labores del día - se agregó la
-columna (visible para MECANICO y OPERADOR por igual, el campo es común a ambos) y se ajustó el `colspan` de la
-fila "Todavía no registras ninguna labor" (`esMecanico ? 6 : 7`, antes 5/6).
-
-**3 y 4. Título e diseño de tabla al imprimir, según el rol del operador** (`asistencia-panel.html`, dentro del
-`*ngFor="let grupo of hojaGrupos"`): antes el título y la tabla eran siempre los mismos para cualquier trabajador
-("Reportes de Labores Diarios", columnas Equipo/OT/Daño/Tiempo estimado/Taller-Campo - pensadas para MECANICO).
-Ahora `grupo.operador.rol` decide todo:
-- Título: `REPORTE DE LABORES DIARIOS` (no-OPERADOR, o sea MECANICO) vs `REPORTE DE LABORES MAQUINARIAS`
-  (OPERADOR). Mismo cambio en la etiqueta del encabezado: "Mecánico:" vs "Operador:".
-- Tabla: son DOS `<table class="hoja-actividades-tabla">` con `*ngIf="grupo.operador.rol !== 'OPERADOR'"` /
-  `*ngIf="grupo.operador.rol === 'OPERADOR'"` (nunca las dos a la vez). La de MECANICO quedó igual salvo un
-  cambio (ver abajo). La de OPERADOR reemplaza OT/Daño/Taller-Campo (no aplican - un Operador no tiene Orden de
-  Trabajo ni "daño" de taller) por **Horómetro inicio** / **Horómetro fin** (`reg.horometro_inicio`/
-  `reg.horometro_final`) y **Observaciones** (`reg.observaciones`) - mantiene Tiempo estimado igual que la otra.
-  `grupo.operador.rol` ya venía disponible en los datos (el include de `Operador` en `obtenerHistorial` no
-  restringe `attributes`, trae la fila completa) - no hizo falta tocar el backend para esto.
-- **Corrección de la misma ronda**: la columna "Daño" de la tabla de MECANICO se RENOMBRÓ a "Observaciones" (el
-  dato detrás sigue siendo el mismo `reg.observaciones`, nunca cambió - "Daño" era la etiqueta original de una
-  ronda mucho más antigua, pensada para reportar daños de taller). El usuario probó en producción, vio una hoja
-  de un MECÁNICO con esa columna en "—" (sin dato en esos registros puntuales) y preguntó por qué no salía
-  "Observaciones" ahí - la respuesta correcta no era "falta el dato", era que el pedido original ("agregar la
-  columna de observaciones... en la tabla que se va a imprimir") se leyó como exclusivo de OPERADOR cuando en
-  realidad pedía la etiqueta pareja en las dos tablas. Ver el bloque de abajo para el resto de lo que reveló esa
-  misma prueba en producción.
-
-**5. El Historial ya no muestra una jornada antes de que el Supervisor la revise** (`asistencia.controller.ts`,
-`obtenerHistorial`): bug real encontrado al investigar el reporte del usuario ("se actualiza en tiempo real
-aunque el Supervisor no haya Cerrado Jornada"). El filtro de estados (`FINALIZADO`/`SALIDA_OLVIDADA`) ya excluía
-`EN_JORNADA`/`PENDIENTE_REVISION`, pero el autoservicio "no podré marcar salida hoy" (`marcarSalidaOlvidada`,
-Panel de Actividades del propio trabajador) pone `estado: 'SALIDA_OLVIDADA'` DIRECTO, sin pasar por
-`finalizarDia` - y `finalizarDia` es quien normalmente exige que el Supervisor ya haya hecho su O/X
-(`confirmado_por_supervisor !== null`, ver la validación al inicio de esa función) antes de dejar cerrar el día.
-Resultado: un trabajador que se autocerraba aparecía en el Historial al instante, sin que nadie del lado del
-Supervisor lo hubiera tocado - exactamente el hueco de fraude que el O/X existe para atrapar (alguien pasó su
-código/QR a un compañero). Se agregó `whereCondition.confirmado_por_supervisor = { [Op.ne]: null }` al
-`obtenerHistorial` - la misma condición que `finalizarDia` ya exige, aplicada también aquí para el caso
-`SALIDA_OLVIDADA` que se autocierra sin pasar por ahí. No cambia nada para el flujo normal (todo lo que llega a
-`FINALIZADO` vía `finalizarDia` ya tiene `confirmado_por_supervisor` garantizado por esa misma función).
-
-**6. Cuenta regresiva del Token de Hacienda** (`admin-panel.ts`/`.html`/`.css`, pestaña Haciendas): el backend
-YA rechazaba un Token vencido (`marcarConCodigo`/`marcarConMiCodigo` comparan `token_expira_en` contra la hora
-actual desde el principio) - el hueco era 100% visual: la columna solo mostraba la fecha/hora de vencimiento en
-texto plano, un token vencido se veía idéntico a uno vigente. Se agregó un intervalo de 1s (`ngOnInit`, limpiado
-en `ngOnDestroy`) que fuerza a recalcular `tiempoRestanteToken(hacienda)` (formato `HH:MM:SS`, o "Expirado" en
-rojo/negrita una vez que `token_expira_en - ahora <= 0`, clase `.token-vencido`). No se tocó el backend - ya
-hacía lo correcto, era la UI la que nunca lo comunicaba.
-
-**7. Filtro "Supervisor" en el Historial (para ADMIN)** (`asistencia.controller.ts`/`asistencia-panel.ts`/`.html`):
-nuevo `<select>` junto al de Hacienda en la pestaña **Historial** del Panel de Asistente, mismo patrón
-(`supervisor_id` opcional en `GET /historial`, filtra `operador.supervisor_id` directo vía include). Reusa
-`supervisores: Usuario[]` (ya cargado en el componente para el selector de "a qué hacienda pertenece" al
-crear/editar un Operador) - no hizo falta un fetch nuevo.
-
-**Corrección de la misma ronda - filtro incompleto, faltaba la pantalla que el usuario realmente probó**: "en
-el panel del ADMIN" resultó ser ambiguo - lo implementé en el Historial (auditoría de jornadas ya cerradas), pero
-el usuario lo probó en `/asistencia/supervisor` (**Panel de Control de Supervisor** - el "hoy" en vivo,
-`obtenerAsistenciaHoy`/`supervisor-panel.ts`, accesible también a ADMIN vía `roleGuard('ADMIN','SUPERVISOR')`) y
-ahí no hay filtro de ningún tipo, todo el mundo confirmó por captura de pantalla. Se agregó el mismo patrón
-también ahí:
-- Backend (`obtenerAsistenciaHoy`): mismo filtro `supervisor_id` opcional, mismo include condicional sobre
-  `Operador`. Deliberadamente NO toca `calcularDiaCerrado` (sigue calculado sobre el día completo sin filtrar) -
-  ese indicador es solo para pintar el botón, no para decidir el alcance real del cierre.
-- Frontend (`supervisor-panel.ts`/`.html`): el selector solo se muestra con `*ngIf="esAdmin"` (mismo getter que
-  ya usa `admin-panel.ts`) - un Supervisor real no tiene sentido de negocio filtrando por "otro Supervisor".
-  Este mismo `supervisorIdFiltro` ahora también viaja a `finalizarDia` (ver "Cierre de jornada acotado por
-  hacienda" más abajo) - arreglado 2026-09-27, ya no es un tema aparte.
-
-### 4 hallazgos más probando el flujo real (2026-09-28)
-
-**1. Hoja imprimible: hacienda en vez de código del operador** (`asistencia-panel.ts`/`.html`): el encabezado de
-"Ver/Imprimir" mostraba `codigo_megued` junto al nombre (ej. "prueba1.1OF · OF12345") - dato redundante, ya vive
-en el carnet/QR del trabajador. El usuario pidió mostrar en su lugar la hacienda donde se hizo esa jornada.
-Se agregó `resolverHaciendaJornada(operador, asistencia?)`: prioriza `asistencia.haciendaPrestamo.nombre` (si
-esa jornada puntual fue de un trabajador PRESTADO, ver `hacienda_prestamo_id`) sobre
-`operador.supervisor.hacienda.nombre` (su hacienda PERMANENTE). El backend (`obtenerHistorial`) ahora anida
-`Hacienda` tanto en `operador.supervisor` (antes `attributes:[]`, sin datos reales) como en la propia
-`Asistencia` (`as: 'haciendaPrestamo'`, ya existía la asociación, nunca se usaba aquí). Corregido en los 2
-lugares que arman el texto de la hoja: el modal HTML y `generarTextoHoja()` (el resumen que se comparte nativo
-en el .apk, ver "window.print() no hace nada en WebView" más abajo) - se encontró la segunda copia al revisar,
-no la reportó el usuario todavía.
-
-**2. Dashboard: la única tarjeta de un SUPERVISOR quedaba pegada a la izquierda** (`dashboard.component.ts`/
-`.html`/`.css`): el grid de `Módulos del Sistema` es `md:grid-cols-2`, pensado para ADMIN/ASISTENTE (2
-tarjetas: Asistencia + Administración). Un SUPERVISOR/ESCANER solo ve "Asistencia" (la otra es
-`*ngIf="tieneRol('ADMIN','ASISTENTE')"`), y esa única tarjeta ocupaba solo la primera columna del grid, sin
-centrar. Se agregó la clase `cards-grid-unico` (activa con `!tieneRol('ADMIN','ASISTENTE')`) que cambia el
-layout a `flex justify-center` con la tarjeta a `max-w-sm`, solo para ese caso - el grid de 2 columnas sigue
-intacto para quien sí ve las 2 opciones.
-
-**3. Marcar salida por código ya NO vuelve a pedir el token** (`mi-jornada.ts`/`.html`, decisión explícita del
-usuario revirtiendo el diseño anterior): antes, terminar la jornada por el camino Código obligaba a volver a
-escribir el Token de Hacienda desde cero (mismo criterio documentado como "prueba presencia física" - ver
-sección "Camino A" más arriba). En la práctica el token es el mismo string compartido de toda la hacienda (ya
-tiene hasta botón de Copiar para el Supervisor, ver "Botón Copiar" más abajo), así que reescribirlo dos veces
-por jornada es puro trámite - el usuario lo reportó como pérdida de tiempo, agravado porque además tenía que
-tocar "Cerrar Jornada"/"Marcar salida" dos veces (una para llegar al formulario, otra para enviarlo). Ahora
-`tokenHaciendaUsado` guarda el token que funcionó en la entrada, y `marcarSalida()` lo reenvía SOLO
-(`intentandoSalidaAutomatica = true`, sin mostrarle el formulario, solo un "Cerrando tu jornada...") en vez de
-pedírselo de nuevo. Si el backend lo rechaza (el Supervisor generó uno nuevo, venció, o no hay conexión),
-`confirmarCodigo()` revela el formulario normal con el error puesto - ahí sí se le pide escribirlo, una sola
-vez, nunca a ciegas. El backend no cambió: sigue validando `token_hacienda` igual que siempre
-(`marcarConMiCodigo`), solo cambió QUIÉN lo escribe la segunda vez (el código, reusando el valor ya guardado,
-en vez del trabajador a mano).
-
-**4. Bug real: `marcarSalidaOlvidada` perdía las actividades ya cargadas** (`asistencia.controller.ts`): el
-usuario probó el autoservicio "Marcar salida" (cuando el cierre normal por código falló, aparentemente por
-señal, mientras hacía una demo) con actividades YA registradas en el Panel de Actividades - y en el Panel de
-Supervisor esa jornada apareció con "Sin registrar" en Actividades, como si no hubiera hecho nada. Causa real:
-a diferencia de la SALIDA normal (`procesarMarcacion`, que hace `AsistenciaActividad.bulkCreate` con las
-actividades) y de `marcarConQrSesion`/`marcarConMiCodigo` (que las derivan solas de `RegistroActividad` para no
-volver a preguntar), `marcarSalidaOlvidada` SOLO actualizaba `estado`/`hora_salida` - nunca tocaba
-`AsistenciaActividad`, sin importar cuántas labores tuviera cargadas. Se agregó el mismo patrón de derivar
-`actividadesIds` desde `RegistroActividad` de esa jornada y poblar el pivote, igual que los otros 2 caminos.
-Verificado con un script contra Postgres local (no hay test unitario para este endpoint todavía): antes del fix
-la tabla `asistencia_actividades` quedaba en 0 filas pese a tener una labor cargada, después queda en 1.
-
-Verificado con `tsc --noEmit` limpio en ambos proyectos, 27/27 tests unitarios en verde, y los puntos 1 y 4
-confirmados contra Postgres local con datos reales (no solo en el aire).
-
-### Hoja imprimible del MECÁNICO: columna "Hora" en vez de "Taller/Campo" (2026-09-29)
-
-El usuario pensaba que "Taller"/"Campo" era algo que el propio Mecánico escribía como parte de sus
-Observaciones - en realidad `actividad.categoria` es un dato FIJO del catálogo (lo define el Asistente/Admin al
-crear esa Actividad en "Gestión de Equipo/Actividad", con `TALLER` como valor por defecto del formulario), no
-algo que varíe labor por labor. Como nadie había estado cambiando ese valor al crear actividades, la columna
-mostraba siempre "TALLER" y parecía un bug. Además, el usuario notó que "Tiempo estimado" ya muestra CUÁNTO
-duró la labor, pero nunca A QUÉ HORA empezó/terminó. Se reemplazó la columna "Taller/Campo" por "Hora"
-(`rangoHorasLabor(reg)`, nuevo método - formatea `hora_inicio`/`hora_fin` como `HH:MM - HH:MM` en zona horaria
-de Ecuador, mismo criterio que el resto de horas mostradas al usuario) - "Tiempo estimado" se queda igual, así
-que ahora se ve tanto la duración como el rango real. Solo afecta la tabla del MECÁNICO (la del OPERADOR ya
-tiene sus propias columnas de Horómetro, sin Taller/Campo). Se corrigió también en el resumen que se comparte
-nativo en el .apk (`generarTextoHoja`), agregando el mismo rango de horas ahí.
-
-### Hueco real en el préstamo de trabajador por Código, y su arreglo: "¿Hoy trabajas en otra hacienda?" (2026-09-29)
-
-**El hallazgo, investigado a pedido del usuario antes de una reunión con el gerente de finanzas:** el préstamo
-de trabajador (`hacienda_prestamo_id`) hoy solo funciona de verdad por UN camino - el QR escaneado por un
-Supervisor/Escáner (`marcarConQrSesion`), que calcula el préstamo comparando la hacienda de quien escanea
-contra la hacienda propia del trabajador, sin depender de nada que el trabajador haya elegido él mismo.
-
-El camino Código autenticado (`marcarConMiCodigo`, la pantalla real "mi jornada" que usan los trabajadores) NO
-tiene ninguna detección de préstamo - valida el token escrito contra `hacienda.token_actual` de
-`req.auth.hacienda_id`, que es la hacienda PROPIA del trabajador, fija desde el login, sin importar en qué
-hacienda esté físicamente ese día. Si su hacienda propia usa Token, su pantalla SIEMPRE muestra el formulario
-de código (nunca QR) - así que si ese día está prestado en otra hacienda (use o no Token esa otra hacienda), no
-hay forma de que se registre ahí correctamente: si escribe el token de su propia hacienda, se registra bajo
-ESA hacienda (nunca bajo donde de verdad está); si escribe el token de la hacienda destino, el backend lo
-rechaza como inválido (compara contra la hacienda equivocada). Existe un endpoint público
-`marcarConCodigo` que SÍ detecta préstamo (busca la hacienda dueña del token en vez de asumir una fija), pero
-no tiene ninguna pantalla en el frontend que lo use - queda muerto del lado de la app.
-
-**Opciones descartadas explícitamente (decisión del usuario):**
-- Que `marcarConMiCodigo` acepte el token de CUALQUIER hacienda (como el endpoint público) - el usuario lo
-  rechazó de entrada por ser una vulnerabilidad: cualquiera que supiera el token de otra hacienda podría
-  autoadmitirse ahí sin ninguna verificación real.
-- Un botón "MIGRAR" que el propio trabajador use para reasignarse a otra hacienda desde un selector - también
-  rechazado: sería el propio trabajador reclamando "hoy trabajo aquí" sin que nadie de esa hacienda lo
-  confirme (mismo problema de fondo), y la idea de que fuera "temporal" no aplica en la práctica -
-  `operador.supervisor_id` es un campo PERMANENTE, cambiarlo ahí dejaría al trabajador mal-asignado hasta que
-  alguien lo revirtiera a mano, corrompiendo justo el campo que toda la auditoría de alcance por Supervisor de
-  esta sesión protege.
-
-**Solución implementada:** en la pantalla de código (solo para ENTRADA, `!asistenciaId`), nuevo botón
-"¿Hoy trabajas en otra hacienda? Muestra tu QR" (`marcarOtraHacienda()`) - en vez de pedirle un token, le
-muestra SU MISMO QR de siempre (mismo `generarMiQr`/fase `qr` que ya usa el Camino B normal). Quien lo recibe
-ese día (Supervisor o Escáner de la hacienda destino, con su propia cuenta) lo escanea con el mecanismo YA
-existente y YA probado (`marcarConQrSesion`) - la prueba de presencia la sigue dando quien escanea, nunca el
-trabajador solo, así que no se repite ninguno de los 2 huecos de seguridad de las ideas descartadas. No hace
-falta pantalla nueva ni endpoint nuevo para el escaneo en sí - solo se le da al trabajador con hacienda-código
-una forma de LLEGAR a esa pantalla de QR que antes no tenía.
-
-**Bug real que había que cerrar para que esto funcione en la SALIDA, no solo en la entrada:** una vez que la
-jornada de hoy quedó abierta por préstamo, `marcarSalida()` tiene que volver a mostrar el QR (para que lo
-vuelvan a escanear en la hacienda prestada), NUNCA el código de su hacienda propia - aunque su hacienda propia
-siga usando Token. El frontend no puede confiar solo en un flag en memoria (`enOtraHacienda` se perdería si
-recarga la página a mitad de la jornada), así que `obtenerMiEstado` (`GET /api/asistencia/mi-estado`) ahora
-también devuelve `es_prestamo: boolean` (derivado de `asistencia.hacienda_prestamo_id` de la jornada abierta de
-hoy) - el frontend lo guarda (`esPrestamoHoy`) tanto en la consulta inicial como en cada poll de 5s, y
-`marcarSalida()` decide el camino con `if (requiereCodigo && !esPrestamoHoy)` en vez de solo `if (requiereCodigo)`.
-
-Verificado con `tsc --noEmit` limpio en ambos proyectos, 27/27 tests unitarios en verde, y `es_prestamo` (los 2
-casos, con y sin `hacienda_prestamo_id`) confirmado con un script contra Postgres local con datos reales.
-
-### Importar Equipo/Actividad desde Excel (2026-09-29)
-
-Pedido del usuario: tienen 300+ equipos por cargar y agregarlos uno por uno "se van a comer la camisa". Nuevo
-botón "📥 Importar" en las pestañas Equipo y Actividad del Panel de Asistente (mismo patrón para las dos).
-
-**Dónde vive el parseo del .xlsx:** en el navegador, nunca en el backend - `excel-importar.util.ts`
-(`leerFilasExcel`/`descargarPlantillaExcel`) usa `@e965/xlsx` (SheetJS). El paquete `xlsx` de npm quedó
-congelado en una versión con 2 CVEs sin parche disponible ahí (Prototype Pollution + ReDoS, ambos solo
-explotables parseando un archivo malicioso - SheetJS movió las versiones parchadas a su propio CDN, que este
-entorno no puede alcanzar); `@e965/xlsx` es el mismo código, republicado sin cambios en el registro de npm con
-esas correcciones, por eso se usó en su lugar. El backend solo recibe el JSON ya mapeado (`{items: [...]}`),
-nunca el archivo crudo - no hay upload de archivos en ningún lado.
-
-**`leerFilasExcel`** matchea encabezados sin importar mayúsculas/tildes (compara contra una lista de variantes
-aceptadas por columna) y descarta filas completamente vacías (Excel suele dejar filas en blanco al final) -
-la validación real de campos faltantes queda del lado del backend. Cada modal ofrece "⬇️ Descargar plantilla"
-(headers únicamente, sin filas de ejemplo a propósito - una fila de ejemplo sin borrar se importaría como un
-registro real).
-
-**Backend (`importarEquipos`/`importarActividades`, mismo patrón en los 2 controllers):** recibe el arreglo ya
-parseado y reporta fila por fila qué se creó y qué se rechazó (y por qué) en vez de fallar todo-o-nada - con
-cientos de filas pegadas a mano, algún dato sucio es casi seguro, y el usuario necesita saber EXACTAMENTE
-cuáles para corregirlas en el Excel y reintentar solo esas. Rechaza (sin tocar la BD) filas con: campo
-requerido faltante, código/nombre que ya existe en la BD, código/nombre repetido DENTRO del mismo archivo (sin
-esto, 2 filas con el mismo código se mandarían juntas al `bulkCreate` y chocarían contra el `UNIQUE` de
-Postgres, tumbando la importación COMPLETA en vez de solo esas 2 filas), o texto que excede el largo de columna
-de la BD. Límite de 2000 filas por importación. Mismos roles que ya gestionan el catálogo (ADMIN/ASISTENTE).
-
-Verificado con `tsc --noEmit` limpio en ambos proyectos, 27/27 tests unitarios en verde, un smoke test manual
-de `@e965/xlsx` (escritura + lectura de vuelta, con acentos/mayúsculas/espacios/fila vacía) y la lógica de
-`importarEquipos` (válidos + los 5 tipos de rechazo) confirmada contra Postgres local con datos reales. No se
-pudo correr `ng build` en este entorno (Node instalado un patch por debajo del mínimo que exige esta versión de
-Angular CLI, preexistente a este cambio) - falta probar el bundle real, dejarlo para cuando el usuario lo pruebe
-localmente.
-
-### Service Worker de Angular - base para actualizar sin reinstalar el .apk (2026-09-29, EN CURSO)
-
-**Motivo:** el usuario preguntó cómo hacen las apps para actualizarse sin tener que volver a descargar el
-`.apk` cada vez - hoy `capacitor.config.ts` no tiene `server.url`, así que el WebView carga el HTML/JS/CSS
-empaquetado DENTRO del `.apk` (`webDir`), y cada cambio de frontend exige `ng build` → `cap sync` → recompilar →
-reinstalar en cada celular. La idea acordada: que el WebView cargue el link de Vercel en vivo en su lugar, para
-que cualquier redeploy le llegue a todos los celulares ya instalados sin tocar el `.apk`.
-
-**Riesgo real identificado (por eso esto está en 2 pasos, no 1):** el Panel de Actividades es offline-first (ya
-probado por el usuario con la señal cortada) - si el WebView pasara a cargar SIEMPRE desde una URL remota sin
-ningún cacheo local, la app ni siquiera arrancaría sin señal (fallaría al cargar el propio `index.html`), rompiendo
-justo la funcionalidad de la que el usuario está más orgulloso. Se agregó primero la pieza que lo previene:
-
-- `@angular/service-worker` instalado (versión exacta `22.1.4`, pareja del `@angular/core` ya instalado - el
-  peer dependency de Angular exige coincidencia exacta de versión, no solo compatible).
-- `ngsw-config.json` (nuevo, raíz de `frontend-horometros`): cachea el shell completo (`index.html`, JS, CSS,
-  manifest, ícono) en modo `prefetch` (se descarga y guarda apenas carga la app), y `assets/**` en modo `lazy`.
-- `angular.json`: `"serviceWorker": "ngsw-config.json"` en la configuración `production` (sintaxis del builder
-  nuevo `@angular/build:application` - la app usa Angular 22, NO es la sintaxis vieja `"serviceWorker": true` +
-  `"ngswConfigPath"` de builders anteriores).
-- `app.config.ts`: `provideServiceWorker('ngsw-worker.js', { enabled: !isDevMode(), registrationStrategy:
-  'registerWhenStable:30000' })` - mismos valores por defecto que genera el schematic oficial de Angular
-  (`ng add @angular/pwa`, que no se pudo correr en este entorno por el mismo tema de versión de Node que ya
-  bloqueaba `ng build` - se replicó a mano el mismo resultado, verificando cada pieza contra el schema real de
-  los paquetes instalados en vez de adivinar).
-
-**Deliberadamente SIN TOCAR todavía:** `capacitor.config.ts` sigue sin `server.url` - la app empaquetada sigue
-funcionando EXACTAMENTE igual que hoy, cero cambio de comportamiento, hasta que se resuelva el punto siguiente.
-
-**Punto pendiente de decisión del usuario, encontrado al revisar la documentación real de Capacitor:**
-`server.url` (la opción que se iba a usar para apuntar al link de Vercel) tiene esta advertencia textual en su
-propia definición de tipos: *"This is intended for use with live-reload servers. **This is not intended for use
-in production.**"* - es decir, Capacitor mismo no la diseñó ni la soporta oficialmente para este uso, aunque en
-la práctica muy probablemente funcione bien para un piloto chico y controlado. Se le presentaron 2 opciones al
-usuario: (1) usar `server.url` de todas formas, más simple y sin dependencias nuevas, con el Service Worker ya
-construido como red de seguridad offline; o (2) una herramienta hecha específicamente para actualizaciones OTA
-de apps Capacitor sin pasar por la tienda (Capgo, de código abierto, o Ionic Live Updates) - el camino que
-Capacitor sí soporta oficialmente, con mejor manejo de fallas a medio-descargar. Queda pendiente la respuesta
-del usuario para decidir el siguiente paso.
-
-Verificado con `tsc --noEmit` limpio - no se pudo correr `ng build` en este entorno (misma limitación de Node ya
-documentada arriba), así que falta la confirmación del usuario con el build real antes de dar esto por cerrado.
-
-### Bug real de IMPORTAR: chocaba con equipos/actividades eliminados antes (paranoid + UNIQUE), 500 genérico (2026-09-30)
-
-El usuario reportó "reconoció los equipos pero al importar salió un error" - reproducido y confirmado contra
-Postgres local, causa raíz encontrada con certeza (no es una suposición, se replicó el error exacto y se
-verificó el arreglo).
-
-**Causa raíz:** `importarEquipos`/`importarActividades` chequeaban duplicados contra
-`Equipo.findAll()`/`Actividad.findAll()` SIN `paranoid:false` - un equipo/actividad que ya fue ELIMINADO antes
-(soft-delete, botón 🗑️, pone `deletedAt` pero no borra la fila) no aparece en un `findAll()` normal, así que el
-chequeo de "¿ya existe?" lo daba como libre. Pero el `UNIQUE` de Postgres sobre `codigo_megued`/`nombre_equipo`
-sigue viendo esa fila eliminada como ocupada (el soft-delete no libera el código/nombre para que otro lo use).
-Resultado real: la fila pasaba el chequeo, llegaba al `bulkCreate`, chocaba ahí contra el `UNIQUE`, y
-`SequelizeUniqueConstraintError` caía en el `catch` genérico → 500 "Error al importar equipos." - **y como
-`bulkCreate` es UN SOLO `INSERT` con todas las filas, si una sola choca, NINGUNA se crea**, así que un archivo
-de 300 equipos con un solo código repetido de uno eliminado antes perdía los 300, no solo el problemático.
-
-**Cómo se reprodujo (no se adivinó):** un script contra Postgres local creó un Equipo, lo eliminó (soft-delete,
-mismo método que usa el botón real), y volvió a correr la lógica exacta de `importarEquipos` con el mismo
-código/nombre - el chequeo lo dejó pasar como "válido" y el `bulkCreate` lanzó
-`SequelizeUniqueConstraintError`, replicando el error real del usuario ("CHAPUL-01" / "N/A / Aguilones /
-CHAPUL-01" en su captura) paso por paso.
-
-**Arreglo (mismo patrón en los 2 controllers):**
-- El `findAll()` de existentes ahora usa `paranoid:false` (incluye eliminados) y también trae `deletedAt`, para
-  poder distinguir "ya existe activo" de "existió y lo eliminaron".
-- Mensaje de rechazo diferenciado: si el código/nombre perteneció a un registro eliminado, el mensaje se lo
-  dice explícito (`"...perteneció a un equipo eliminado antes - pide a un Admin que lo recupere si hace
-  falta..."`) en vez del genérico "ya existe" - más claro para que el Asistente entienda que no es un typo
-  suyo, es un registro viejo que hay que recuperar aparte (no se construyó un botón de "restaurar" todavía,
-  fuera de alcance de este arreglo puntual).
-- Red de seguridad adicional: el `catch` ahora distingue `SequelizeUniqueConstraintError` (409, mensaje
-  específico) del resto de errores (500 genérico) - por si dos Asistentes importan el mismo código al mismo
-  tiempo, caso que el chequeo de arriba no puede prevenir por diseño (race condition).
-- `models/equipo.ts`/`models/actividad.ts`: `deletedAt` pasó a declararse explícitamente (antes el comentario
-  decía a propósito que no hacía falta, porque nada lo leía) - Sequelize ya lo manejaba solo vía
-  `paranoid:true`, esto solo lo expone al tipado de TypeScript para poder leerlo en el controller.
-
-Verificado con `tsc --noEmit` limpio, 27/27 tests unitarios en verde, y el arreglo confirmado contra Postgres
-local reproduciendo el escenario exacto del reporte (crear → eliminar → reimportar) antes y después del cambio.
-
-### Botón "Descargar app" en Login + pestaña "Términos" en Panel de Asistente (2026-09-30)
-
-Dos pedidos del usuario, ambos 100% frontend (no hicieron falta cambios de backend - los dos reusan datos que
-ya venían en respuestas existentes, solo faltaba tiparlos/mostrarlos).
-
-**Botón "⬇️ Descargar app para Android"** (`login.html`/`.ts`): vive en la pantalla de Login, gateado con
-`*ngIf="esNavegador"` (`!Capacitor.isNativePlatform()`, mismo patrón ya usado en el resto del proyecto) - solo
-se ve visitando la página desde un navegador normal, nunca dentro de la app ya empaquetada (no tendría sentido
-"descargar el apk" desde adentro del apk). Apunta a `/frugalp.apk` - **el usuario tiene que subir el archivo
-real** a `frontend-horometros/public/frugalp.apk` (mismo lugar que `favicon.ico`/`manifest.json`, se sirve tal
-cual por Vercel) - no se generó ningún archivo placeholder, hacerlo hubiera sido publicar un .apk falso. Cada
-vez que compile una versión nueva desde Android Studio, el flujo es: generar el `.apk` firmado como siempre →
-reemplazar ese mismo archivo en `public/` → `git push` (Vercel redespliega solo) - no cambia en nada cómo se
-compila desde Android Studio, solo agrega ese paso de copiar el resultado a un lugar descargable.
-
-**Pestaña "✅ Términos"** (`asistencia-panel.ts`/`.html`, Panel de Asistente, al lado de "🛠️ Actividad" como
-pidió el usuario): lista quién ya aceptó la Política de Privacidad/Términos de Uso (gate del primer login,
-`terminos_aceptados_en`) y quién no, separado en "Trabajadores" (reusa `obtenerOperadoresPaginado`, mismo
-patrón de búsqueda+paginación que el Directorio - con los ~950 operadores reales no era opción traer todos de
-una) y "Usuarios de oficina" (reusa `usuarioService.obtenerUsuarios()`, lista corta, sin paginar). Los 2
-endpoints YA devolvían `terminos_aceptados_en` desde antes (solo excluyen `clave_hash`) - la única razón de que
-no se viera en ningún lado es que ni el modelo `Operador`/`Usuario` del frontend lo tenían tipado, ni había una
-pantalla que lo mostrara. Confirmado con una llamada real a los 2 endpoints contra Postgres local: el campo
-llega como `null` (pendiente) o como fecha ISO (aceptado), ambos casos ya cubiertos por el `*ngIf`/`date` pipe
-del template.
-
-Verificado con `tsc --noEmit` limpio, 27/27 tests unitarios en verde (sin cambios de backend), y la forma real
-de `terminos_aceptados_en` confirmada contra Postgres local vía HTTP en los 2 endpoints reusados.
-
-## Flujo de trabajo de esta sesión
-
-Backend: todo cambio se prueba primero contra Postgres local (`service postgresql start`, rol `postgre`/`1234`,
-BD `horometros_db`) antes de darse por terminado. Migraciones nuevas van numeradas después de la última existente.
-
-Frontend: mientras no esté empaquetado nativo, se prueba en el navegador contra el link de Vercel (o `ng serve` local
-apuntando al backend real de Render) - no hace falta empaquetar para cada prueba.
+- Backups automáticos de la base de datos - no configurados, urgente antes de escalar el piloto.
+- Staging, Sentry (o similar) y monitoreo de uptime de `/api/health` - ninguno de los 3 existe todavía.
+- Balanceador de carga / redundancia - una sola instancia, aplica en cuanto el piloto crezca a la escala real
+  (~950 trabajadores de campo).
+- Migrar todas las cuentas de infraestructura (Vercel, Railway, dominio, R2, Sentry/uptime cuando existan) a
+  nombre de la empresa cliente antes de la entrega final - no del desarrollador.
+- Probar en un iPhone real y 2-3 marcas de Android distintas antes de distribuir a los 950 trabajadores.
+- Exportar a Excel + "Imprimir general" en el Directorio de Operadores (diseño de Figma confirmado, sin
+  construir - el "Imprimir general" solo se habilitaría con el Historial filtrado a un solo día).
+- CRUD de Secciones (fase 2, sin pantalla, campo siempre NULL en `registro_actividad`).
+- `usuario.controller.ts` permite a ASISTENTE resetear la clave de cualquier usuario, incluido ADMIN - pendiente
+  de decidir si hace falta una jerarquía de roles más estricta.
+- "Imprimir Hojas del rango" del Historial solo junta operadores de la página actual de la tabla filtrada, no de
+  todas las páginas del rango - suficiente por ahora, revisar si hace falta cubrir el rango completo.
+
+## Ver/Imprimir hoja de actividades
+
+`abrirHojaActividades(grupos, opciones)` abre un modal en la misma pantalla (nunca `window.open`, la app va
+empaquetada) con el diseño de la hoja física real. `grupos: {operador, registros}[]`. Columnas según
+`operador.rol`: MECANICO ve Equipo/OT/Observaciones/Tiempo estimado/Hora; OPERADOR ve Horómetro inicio/fin en vez
+de OT/Hora. Fuente: `GET /api/registro-actividades/por-operador?operador_id&fecha_inicio&fecha_fin` (varias
+jornadas de un operador). Dos entradas: una fila del Historial (un solo día, con pie de Observaciones del
+Supervisor) o "Imprimir Hojas del rango" (varios operadores/días, sin pie, mantiene columna Fecha).
+
+**Mecanismo de impresión global** (`.imprimible`/`.no-imprimir`, `styles.css`): `body *:has(.imprimible) {
+display: revert !important; }` restaura toda la cadena de ancestros del nodo imprimible a cualquier profundidad
+(evita que `visibility:hidden`/`display:none` en `body *` deje la hoja en blanco o mal paginada) -
+`.modal-backdrop` se fuerza a `position:static` en print (un `position:fixed` no pagina bien a varias hojas).
+Los grupos usan `break-inside: avoid` (no `page-break-before` fijo) para que varios operadores cortos compartan
+hoja sin desperdiciar papel, pero un operador con muchas filas nunca se parte a la mitad. La encapsulación de
+estilos de Angular (`[_ngcontent-xxx]`) sube la especificidad del CSS de componente por encima del global -
+cualquier override de impresión que no aplique necesita `!important` directo en el CSS del propio componente.
+
+## Historial de Asistencia de un operador (modal desde la Ficha)
+
+Botón "📅 Ver Historial de Asistencia" en la Ficha del Directorio - misma tabla que la pestaña Historial general,
+sin columna Operador, con su propio filtro Desde/Hasta. Reusa `obtenerHistorial` con `operador_id` opcional (el
+filtro ya existía en el backend, solo le faltaba UI). El carnet QR de la Ficha ("🖨️ Imprimir Carnet") sigue
+siendo la única forma de generar un carnet físico nuevo.
+
+## Gestión de Equipo/Actividad (Panel de Asistente)
+
+Pestañas **Equipo** y **Actividad** junto a Directorio/Historial - mismo patrón lista+buscador (tiempo real, sin
+botón, debounce 300ms)+paginación+modal que Directorio de Operadores. Roles: ADMIN/ASISTENTE. "Eliminar" es
+siempre soft-delete (`paranoid`) - Sequelize excluye automáticamente las filas eliminadas de `findAll` por
+defecto, así que los catálogos y selectores quedan filtrados gratis.
+
+**Cuidado real con `paranoid` + includes**: por defecto Sequelize también aplica el filtro paranoid a los
+includes - un Operador/Actividad/Equipo eliminado DESPUÉS de generar una Asistencia/RegistroActividad
+desaparecería silenciosamente de esos registros ya existentes. Los includes que muestran datos YA REGISTRADOS
+(`obtenerAsistenciaHoy`, `finalizarDia`, `obtenerHistorial`, `obtenerRegistrosPorAsistencia`,
+`obtenerRegistrosPorOperador`) llevan `paranoid: false` explícito. Los includes de VALIDACIÓN al crear un
+registro nuevo se dejan con el comportamiento paranoid por defecto a propósito - un catálogo eliminado sí debe
+rechazarse para uso nuevo.
+
+**Importar desde Excel** (botón "📥 Importar", mismo patrón en Equipo/Actividad): el parseo del `.xlsx` ocurre en
+el navegador (`excel-importar.util.ts`, paquete `@e965/xlsx` - el `xlsx` de npm quedó congelado con 2 CVEs sin
+parche disponible en el registro público). El backend solo recibe el JSON ya mapeado, nunca el archivo crudo.
+Reporta fila por fila qué se creó y qué se rechazó (campo faltante, duplicado en BD - incluye duplicados contra
+registros soft-deleted, ver arriba -, duplicado dentro del mismo archivo, texto que excede el largo de columna)
+en vez de fallar todo-o-nada. Límite 2000 filas por importación.
+
+## Cuenta ADMIN de arranque
+
+`POST /api/usuarios` exige estar logueado como ADMIN, así que el primer Admin se insertó a mano por SQL directo
+en la base de producción (huevo y gallina). Usuario `ronald_admin`, cargo `ADMIN`, sin `hacienda_id`.
