@@ -366,17 +366,29 @@ por el que .hoja-actividades-barra-superior (con .no-imprimir) no se ocultaba al
 clase. Se fuerza todo explicitamente aqui, en el propio @media print de este componente, para que gane siempre.
 */
 /*
-Aprovechar el papel: en vez de forzar un salto de página después de CADA operador (desperdiciaba hoja cuando
-"Sin labores registradas" o pocas filas), se deja que el contenido fluya normal - así caben 2, 3 o los que
-alcancen por hoja cuando son cortos - pero break-inside:avoid en cada grupo le dice al motor de impresión que
-NUNCA parta la tabla de un operador a la mitad: si no cabe completa en lo que queda de la hoja actual, ese
-grupo entero (no solo la fila que sobraba) se va a la siguiente. page-break-inside es el alias viejo, se deja
-igual por si el motor de impresión no reconoce el nombre moderno.
+Máximo 2 reportes (grupos, cada uno YA es un operador en un solo día - ver agruparPorDia en asistencia-panel.ts)
+por hoja física (pedido del usuario, 2026-10-01): antes el contenido fluía libre y podían caber 3, 4 o más
+reportes cortos apretados en una sola hoja, dificultando separarlos al repartirlos. break-inside:avoid (de
+siempre) ya garantiza que un reporte LARGO nunca se parte a la mitad - si no cabe completo en lo que queda de
+la hoja actual, se va entero a la siguiente, quedando solo en esa hoja sin compartirla con nadie; eso ya cubre
+"si un reporte es largo que se imprima en una sola hoja" sin necesitar nada más. Lo que faltaba es el límite de
+2: break-before:page antes de cada 3er, 5to, 7mo... grupo (nth-child impar, saltando el primero) fuerza una
+hoja nueva cada 2 reportes, incluso cuando los dos anteriores eran cortos y habría cabido un tercero.
+page-break-inside/page-break-before son los alias viejos, se dejan igual por si el motor de impresión no
+reconoce los nombres modernos (break-inside/break-before).
 */
 @media print {
   .hoja-actividades-grupo {
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+
+  /* Hijo directo de .hoja-actividades-grupos (no cualquier .hoja-actividades-grupo) a propósito: el nth-child
+     tiene que contar SOLO entre los grupos, sin que la barra superior (hermana, fuera de ese contenedor) corra
+     la numeración. */
+  .hoja-actividades-grupos > .hoja-actividades-grupo:nth-child(odd):not(:first-child) {
+    break-before: page;
+    page-break-before: always;
   }
 
   .hoja-actividades-card {

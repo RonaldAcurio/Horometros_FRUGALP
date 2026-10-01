@@ -1268,10 +1268,11 @@
             ✕
           </button>
         </div>
-        <!-- Un bloque por operador - normalmente 1 (fila del Historial), o varios cuando viene de "Imprimir
-        Hojas del rango" (uno por cada operador distinto de la tabla filtrada). Al imprimir, el contenido
-        fluye normal (caben varios operadores cortos por hoja) pero cada bloque nunca se parte a la mitad
-        entre una hoja y la siguiente (ver break-inside:avoid en el @media print de este componente). -->
+        <!-- Un bloque por operador-y-día (normalmente 1, o varios cuando viene de "Imprimir Hojas del rango" -
+        ver agruparPorDia en asistencia-panel.ts). Envueltos en su propio contenedor (y no sueltos como
+        hermanos directos de la barra superior) para que el :nth-child del @media print cuente limpio: máximo
+        2 reportes por hoja física, y un reporte largo nunca se parte a la mitad (ver ese @media print). -->
+        <div class="hoja-actividades-grupos">
         @for (grupo of hojaGrupos; track grupo) {
           <div class="hoja-actividades-grupo">
             <!-- Titulo y tabla dependen del rol de quien hizo las labores: un Operador no tiene OT ni "daño" (eso
@@ -1292,17 +1293,12 @@
                   · {{ grupo.haciendaNombre }}
                 }
               </span>
-              @if (hojaFechaUnica) {
-                <span class="hoja-actividades-fecha">Fecha: {{ hojaFechaUnica }}</span>
-              }
+              <span class="hoja-actividades-fecha">Fecha: {{ grupo.fecha }}</span>
             </div>
             @if (grupo.operador.rol !== 'OPERADOR') {
               <table class="hoja-actividades-tabla">
                 <thead>
                   <tr>
-                    @if (!hojaFechaUnica) {
-                      <th>Fecha</th>
-                    }
                     <th>Equipo</th>
                     <th>OT</th>
                     <th>Observaciones</th>
@@ -1313,9 +1309,6 @@
                 <tbody>
                   @for (reg of grupo.registros; track reg) {
                     <tr>
-                      @if (!hojaFechaUnica) {
-                        <td>{{ reg.asistencia?.fecha || '—' }}</td>
-                      }
                       <td>
                         {{
                           reg.equipo
@@ -1331,7 +1324,7 @@
                   }
                   @if (grupo.registros.length === 0) {
                     <tr>
-                      <td [attr.colspan]="hojaFechaUnica ? 5 : 6" class="hoja-actividades-vacio">
+                      <td colspan="5" class="hoja-actividades-vacio">
                         Sin labores registradas.
                       </td>
                     </tr>
@@ -1345,9 +1338,6 @@
               <table class="hoja-actividades-tabla">
                 <thead>
                   <tr>
-                    @if (!hojaFechaUnica) {
-                      <th>Fecha</th>
-                    }
                     <th>Equipo</th>
                     <th>Horómetro inicio</th>
                     <th>Horómetro fin</th>
@@ -1358,9 +1348,6 @@
                 <tbody>
                   @for (reg of grupo.registros; track reg) {
                     <tr>
-                      @if (!hojaFechaUnica) {
-                        <td>{{ reg.asistencia?.fecha || '—' }}</td>
-                      }
                       <td>
                         {{
                           reg.equipo
@@ -1376,7 +1363,7 @@
                   }
                   @if (grupo.registros.length === 0) {
                     <tr>
-                      <td [attr.colspan]="hojaFechaUnica ? 5 : 6" class="hoja-actividades-vacio">
+                      <td colspan="5" class="hoja-actividades-vacio">
                         Sin labores registradas.
                       </td>
                     </tr>
@@ -1384,14 +1371,13 @@
                 </tbody>
               </table>
             }
-            @if (hojaFechaUnica) {
-              <div class="hoja-actividades-observaciones">
-                <strong>Observaciones del Supervisor:</strong>
-                <p>{{ hojaObservacionesSupervisor || 'Sin observaciones.' }}</p>
-              </div>
-            }
+            <div class="hoja-actividades-observaciones">
+              <strong>Observaciones del Supervisor:</strong>
+              <p>{{ grupo.observacionesSupervisor || 'Sin observaciones.' }}</p>
+            </div>
           </div>
         }
+        </div>
       </div>
     </div>
   }

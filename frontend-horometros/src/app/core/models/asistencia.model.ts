@@ -58,8 +58,9 @@ export interface RegistroActividad {
     equipo?: Equipo;
     actividad?: Actividad;
     // Solo viene en obtenerPorOperador (reporte imprimible) - obtenerPorAsistencia no lo necesita, ya sabe la
-    // jornada de la que está preguntando.
-    asistencia?: { id: number; fecha: string; operador_id: number };
+    // jornada de la que está preguntando. 'observaciones' es la nota que el Supervisor dejó al revisar ESE día
+    // puntual (ver "Observaciones del Supervisor" en la hoja imprimible).
+    asistencia?: { id: number; fecha: string; operador_id: number; observaciones?: string | null };
 }
 
 export interface Asistencia {

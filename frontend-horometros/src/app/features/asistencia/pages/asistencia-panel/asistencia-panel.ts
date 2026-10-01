@@ -104,15 +104,16 @@ export class AsistenciaPanel implements OnInit{
   // pestaña nueva - la app va a quedar empaquetada, así que todo tiene que vivir dentro de la misma pantalla.
   cargandoReporteImpresion = false;
   mostrarModalHoja: boolean = false;
-  // Un grupo por operador - normalmente 1 (fila del Historial), pero la impresión por rango de fechas manda
-  // uno por cada operador distinto que aparece en la tabla filtrada, todos en la misma ventana con salto de
-  // página entre uno y otro (ver imprimirHojasRangoHistorial).
-  hojaGrupos: { operador: Operador; registros: RegistroActividad[]; haciendaNombre: string | null }[] = [];
-  // Cuando la hoja es de UN solo día (fila del Historial) la fecha va junto al nombre del operador y se
-  // ocultan la columna Fecha de la tabla y trae la observación del Supervisor de esa jornada. Cuando es un
-  // rango de varios días (impresión por rango) queda null y la tabla vuelve a mostrar Fecha por fila.
-  hojaFechaUnica: string | null = null;
-  hojaObservacionesSupervisor: string | null = null;
+  /*
+  Un grupo = UN operador en UN día puntual - siempre, incluso en la impresión por rango (ver
+  imprimirHojasRangoHistorial): antes un grupo del rango mezclaba varios días del mismo operador en una sola
+  tabla con columna "Fecha" por fila, y el pie "Observaciones del Supervisor" (que es un dato POR DÍA, vive en
+  Asistencia.observaciones) directamente no se mostraba ahí porque no había un único día al que atribuírselo
+  (bug reportado por el usuario, 2026-10-01). Partiendo cada operador en un grupo por día, la fecha vuelve a ir
+  junto al nombre (como ya hacía la hoja de un solo día) y cada grupo trae SU PROPIA observación - ya no hace
+  falta distinguir "modo un día" vs "modo rango" en ningún otro lado del componente ni del template.
+  */
+  hojaGrupos: { operador: Operador; registros: RegistroActividad[]; haciendaNombre: string | null; fecha: string; observacionesSupervisor: string | null }[] = [];
 
   // Modal "Historial de Asistencia" de UN operador (Ficha, Directorio de Operadores): mismas columnas que la
   // pestaña Historial general, pero ya filtrado a este operador - reutiliza el mismo GET /historial con
@@ -496,11 +497,9 @@ export class AsistenciaPanel implements OnInit{
           operador: reg.operador!,
           registros,
           haciendaNombre: this.resolverHaciendaJornada(reg.operador!, reg),
-        }], {
-          fechaUnica: reg.fecha,
+          fecha: reg.fecha,
           observacionesSupervisor: reg.observaciones ?? null,
-          autoImprimir,
-        });
+        }], { autoImprimir });
       },
       error: (err) => {
         this.cargandoReporteImpresion = false;
@@ -510,9 +509,39 @@ export class AsistenciaPanel implements OnInit{
     });
   }
 
+  /*
+  Parte las labores (ya vienen ordenadas por fecha y luego hora_inicio, ver obtenerRegistrosPorOperador) de UN
+  operador en un grupo por cada día distinto que aparece - cada día trae su propia observación del Supervisor
+  (reg.asistencia.observaciones), que es exactamente lo que hacía falta para que "Imprimir Hojas del rango"
+  muestre el mismo pie que ya mostraba la hoja de un solo día (ver hojaGrupos más arriba).
+  */
+  private agruparPorDia(
+    operador: Operador, registros: RegistroActividad[], haciendaNombre: string | null
+  ): { operador: Operador; registros: RegistroActividad[]; haciendaNombre: string | null; fecha: string; observacionesSupervisor: string | null }[] {
+    const grupos: { operador: Operador; registros: RegistroActividad[]; haciendaNombre: string | null; fecha: string; observacionesSupervisor: string | null }[] = [];
+    for (const reg of registros) {
+      const fecha = reg.asistencia?.fecha ?? '—';
+      let grupoDelDia = grupos.find((g) => g.fecha === fecha);
+      if (!grupoDelDia) {
+        grupoDelDia = { operador, registros: [], haciendaNombre, fecha, observacionesSupervisor: reg.asistencia?.observaciones ?? null };
+        grupos.push(grupoDelDia);
+      }
+      grupoDelDia.registros.push(reg);
+    }
+    // Un operador sin ninguna labor en el rango (pero que sí tiene una fila en el Historial filtrado) igual
+    // necesita UN grupo vacío para no desaparecer de la impresión - antes "Sin labores registradas" ya cubría
+    // este caso con un hojaFechaUnica null; ahora, sin ningún registro no hay de dónde sacar la fecha real, así
+    // que se muestra igual con un marcador explícito en vez de ocultar al operador por completo.
+    if (grupos.length === 0) {
+      grupos.push({ operador, registros: [], haciendaNombre, fecha: 'Sin labores en el rango', observacionesSupervisor: null });
+    }
+    return grupos;
+  }
+
   // Junta a todos los operadores distintos de la tabla del Historial YA FILTRADA (la página actual, no todo el
-  // rango completo si hay más páginas) y les arma la hoja de cada uno, acotada al mismo rango Desde/Hasta
-  // activo. Solo se habilita cuando el filtro de fecha está completo (ver [disabled] en el template).
+  // rango completo si hay más páginas), les arma la hoja de cada uno acotada al mismo rango Desde/Hasta activo,
+  // y la parte en un grupo por día (ver agruparPorDia). Solo se habilita cuando el filtro de fecha está
+  // completo (ver [disabled] en el template).
   imprimirHojasRangoHistorial(): void {
     if (!this.fechaInicioFiltro || !this.fechaFinFiltro) return;
 
@@ -532,14 +561,14 @@ export class AsistenciaPanel implements OnInit{
       this.registroActividadService.obtenerPorOperador(op.id, this.fechaInicioFiltro, this.fechaFinFiltro).pipe(
         // Rango de varios días: se muestra la hacienda PERMANENTE del operador (no tiene sentido mostrar una
         // sola hacienda "de préstamo" cuando el rango puede cruzar varios días distintos).
-        map((registros) => ({ operador: op, registros, haciendaNombre: this.resolverHaciendaJornada(op) }))
+        map((registros) => this.agruparPorDia(op, registros, this.resolverHaciendaJornada(op)))
       )
     );
 
     forkJoin(peticiones).subscribe({
-      next: (grupos) => {
+      next: (gruposPorOperador) => {
         this.cargandoReporteImpresion = false;
-        this.abrirHojaActividades(grupos, { autoImprimir: true });
+        this.abrirHojaActividades(gruposPorOperador.flat(), { autoImprimir: true });
       },
       error: (err) => {
         this.cargandoReporteImpresion = false;
@@ -589,12 +618,10 @@ export class AsistenciaPanel implements OnInit{
   }
 
   private abrirHojaActividades(
-    grupos: { operador: Operador; registros: RegistroActividad[]; haciendaNombre: string | null }[],
-    opciones: { fechaUnica?: string; observacionesSupervisor?: string | null; autoImprimir: boolean }
+    grupos: { operador: Operador; registros: RegistroActividad[]; haciendaNombre: string | null; fecha: string; observacionesSupervisor: string | null }[],
+    opciones: { autoImprimir: boolean }
   ): void {
     this.hojaGrupos = grupos;
-    this.hojaFechaUnica = opciones.fechaUnica ?? null;
-    this.hojaObservacionesSupervisor = opciones.observacionesSupervisor ?? null;
     this.mostrarModalHoja = true;
     this.cdr.detectChanges();
 
@@ -641,28 +668,25 @@ export class AsistenciaPanel implements OnInit{
         `${esOperador ? 'Operador' : 'Mecánico'}: ${grupo.operador.nombre_completo}` +
           (grupo.haciendaNombre ? ` · ${grupo.haciendaNombre}` : '')
       );
-      if (this.hojaFechaUnica) lineas.push(`Fecha: ${this.hojaFechaUnica}`);
+      lineas.push(`Fecha: ${grupo.fecha}`);
       lineas.push('');
 
       if (grupo.registros.length === 0) {
         lineas.push('Sin labores registradas.');
       } else {
         for (const reg of grupo.registros) {
-          const fecha = this.hojaFechaUnica ? '' : `${reg.asistencia?.fecha || '—'} - `;
           const equipo = reg.equipo ? `${reg.equipo.codigo_megued} - ${reg.equipo.nombre_equipo}` : '—';
           const detalle = esOperador
             ? `Horómetro ${reg.horometro_inicio ?? '—'} → ${reg.horometro_final ?? '—'}`
             : `OT ${reg.area || '—'}`;
           const observaciones = reg.observaciones ? ` | ${reg.observaciones}` : '';
           const horas = esOperador ? '' : ` | ${this.rangoHorasLabor(reg)}`;
-          lineas.push(`${fecha}${equipo} | ${detalle} | ${this.duracionLabor(reg)}${horas}${observaciones}`);
+          lineas.push(`${equipo} | ${detalle} | ${this.duracionLabor(reg)}${horas}${observaciones}`);
         }
       }
 
-      if (this.hojaFechaUnica) {
-        lineas.push('');
-        lineas.push(`Observaciones del Supervisor: ${this.hojaObservacionesSupervisor || 'Sin observaciones.'}`);
-      }
+      lineas.push('');
+      lineas.push(`Observaciones del Supervisor: ${grupo.observacionesSupervisor || 'Sin observaciones.'}`);
       lineas.push('');
     }
     return lineas.join('\n').trim();
@@ -671,8 +695,6 @@ export class AsistenciaPanel implements OnInit{
   cerrarModalHoja(): void {
     this.mostrarModalHoja = false;
     this.hojaGrupos = [];
-    this.hojaFechaUnica = null;
-    this.hojaObservacionesSupervisor = null;
     this.cdr.detectChanges();
   }
 

@@ -445,20 +445,30 @@ es una prueba con fecha de vencimiento.
 ## Ver/Imprimir hoja de actividades
 
 `abrirHojaActividades(grupos, opciones)` abre un modal en la misma pantalla (nunca `window.open`, la app va
-empaquetada) con el diseño de la hoja física real. `grupos: {operador, registros}[]`. Columnas según
-`operador.rol`: MECANICO ve Equipo/OT/Observaciones/Tiempo estimado/Hora; OPERADOR ve Horómetro inicio/fin en vez
-de OT/Hora. Fuente: `GET /api/registro-actividades/por-operador?operador_id&fecha_inicio&fecha_fin` (varias
-jornadas de un operador). Dos entradas: una fila del Historial (un solo día, con pie de Observaciones del
-Supervisor) o "Imprimir Hojas del rango" (varios operadores/días, sin pie, mantiene columna Fecha).
+empaquetada) con el diseño de la hoja física real. Cada entrada de `grupos` es SIEMPRE un operador en UN solo
+día (`{operador, registros, haciendaNombre, fecha, observacionesSupervisor}`) - incluso "Imprimir Hojas del
+rango" (varios operadores/días) parte a cada operador en un grupo por día (`agruparPorDia`, asistencia-panel.ts)
+en vez de una sola tabla multi-día, porque `observacionesSupervisor` es un dato POR DÍA (`Asistencia.observaciones`,
+viaja en el include de `GET /api/registro-actividades/por-operador?operador_id&fecha_inicio&fecha_fin`, ver
+`obtenerRegistrosPorOperador`) - antes la impresión por rango no lo mostraba porque no había un único día al que
+atribuírselo (bug reportado por el usuario, 2026-10-01). Con esto, las dos entradas (fila del Historial o
+"Imprimir Hojas del rango") usan exactamente el mismo diseño de grupo, con su fecha junto al nombre y su propio
+pie de Observaciones del Supervisor - ya no hace falta distinguir "modo un día" vs "modo rango" en el template.
+Columnas según `operador.rol`: MECANICO ve Equipo/OT/Observaciones/Tiempo estimado/Hora; OPERADOR ve Horómetro
+inicio/fin en vez de OT/Hora.
 
 **Mecanismo de impresión global** (`.imprimible`/`.no-imprimir`, `styles.css`): `body *:has(.imprimible) {
 display: revert !important; }` restaura toda la cadena de ancestros del nodo imprimible a cualquier profundidad
 (evita que `visibility:hidden`/`display:none` en `body *` deje la hoja en blanco o mal paginada) -
 `.modal-backdrop` se fuerza a `position:static` en print (un `position:fixed` no pagina bien a varias hojas).
-Los grupos usan `break-inside: avoid` (no `page-break-before` fijo) para que varios operadores cortos compartan
-hoja sin desperdiciar papel, pero un operador con muchas filas nunca se parte a la mitad. La encapsulación de
-estilos de Angular (`[_ngcontent-xxx]`) sube la especificidad del CSS de componente por encima del global -
-cualquier override de impresión que no aplique necesita `!important` directo en el CSS del propio componente.
+**Máximo 2 reportes (grupos) por hoja física** (pedido del usuario, 2026-10-01): los grupos van envueltos en su
+propio contenedor (`.hoja-actividades-grupos`, necesario para que el `:nth-child` cuente limpio sin que la barra
+superior corra la numeración) con `break-inside: avoid` en cada uno (un operador con muchas filas nunca se parte
+a la mitad - si no cabe completo en lo que queda de la hoja actual, se va entero a la siguiente) más
+`break-before: page` antes de cada 3er, 5to, 7mo... grupo, forzando una hoja nueva cada 2 reportes aunque los
+anteriores fueran cortos y hubiera cabido uno más. La encapsulación de estilos de Angular (`[_ngcontent-xxx]`)
+sube la especificidad del CSS de componente por encima del global - cualquier override de impresión que no
+aplique necesita `!important` directo en el CSS del propio componente.
 
 ## Historial de Asistencia de un operador (modal desde la Ficha)
 

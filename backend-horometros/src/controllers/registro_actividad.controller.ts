@@ -270,7 +270,10 @@ export const obtenerRegistrosPorOperador = async (req:Request, res:Response):Pro
                 {model: Equipo, as:'equipo', paranoid: false},
                 {model: Actividad, as:'actividad', paranoid: false},
                 {model: Seccion, as: 'seccion', paranoid: false},
-                {model: Asistencia, as: 'asistencia', where: whereAsistencia, attributes: ['id','fecha','operador_id']},
+                // 'observaciones' agregado (pedido del usuario, 2026-10-01): la hoja imprimible "Imprimir
+                // Hojas del rango" necesita el pie "Observaciones del Supervisor" de CADA dia por separado
+                // (antes solo viajaba en el camino de un solo dia, ver obtenerAsistenciaHoy/obtenerHistorial).
+                {model: Asistencia, as: 'asistencia', where: whereAsistencia, attributes: ['id','fecha','operador_id','observaciones']},
             ],
             order: [[{ model: Asistencia, as: 'asistencia' }, 'fecha', 'ASC'], ['hora_inicio','ASC']],
         });
