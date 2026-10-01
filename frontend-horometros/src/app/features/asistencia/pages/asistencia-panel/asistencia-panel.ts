@@ -17,6 +17,10 @@ import { VisorFoto } from '../../components/visor-foto/visor-foto';
 import { NotificacionService } from '../../../../core/services/notificacion.service';
 import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
 import { leerFilasExcel, descargarPlantillaExcel } from '../../../../core/utils/excel-importar.util';
+// '@e965/xlsx' (usado arriba para la plantilla de importar) no soporta combinar celdas, colores ni fuentes en
+// su version gratuita - el "Exportar a Excel" del Historial (pedido del usuario, 2026-10-01) SI necesita todo
+// eso para calcar el diseno de REGISTRO DE LABORES DIARIAS que ya usan en papel, asi que usa ExcelJS aparte.
+import { Workbook, FillPattern, CellValue } from 'exceljs';
 
 // Respuesta de los endpoints /equipos/importar y /actividad/importar (ver equipo.controller.ts/actividades.controller.ts).
 interface ResultadoImportacion {
@@ -104,6 +108,11 @@ export class AsistenciaPanel implements OnInit{
   // pestaña nueva - la app va a quedar empaquetada, así que todo tiene que vivir dentro de la misma pantalla.
   cargandoReporteImpresion = false;
   mostrarModalHoja: boolean = false;
+  // "Exportar a Excel" (Historial, pedido del usuario 2026-10-01): a diferencia de "Imprimir Hojas del rango",
+  // este reporte es SIEMPRE de un solo dia (asi lo manejan en papel) y necesita Hacienda+Supervisor puntuales
+  // - sin eso no habria un unico "RESPONSABLE" que poner en el encabezado, y se mezclarian trabajadores de
+  // haciendas distintas en la misma hoja (ver puedeExportarExcel).
+  exportandoExcel = false;
   /*
   Un grupo = UN operador en UN día puntual - siempre, incluso en la impresión por rango (ver
   imprimirHojasRangoHistorial): antes un grupo del rango mezclaba varios días del mismo operador en una sola
@@ -576,6 +585,273 @@ export class AsistenciaPanel implements OnInit{
         this.cdr.detectChanges();
       },
     });
+  }
+
+  /*
+  ==================== "Exportar a Excel" (Historial) ====================
+  Reporte SIEMPRE de un solo dia (asi lo manejan en papel) calcando el diseno real "REGISTRO DE LABORES
+  DIARIAS" que ya usan - plantilla provista por el usuario, 2026-10-01. Requiere Fecha+Hacienda+Supervisor
+  puntuales (ver puedeExportarExcel): sin eso no habria un unico RESPONSABLE para el encabezado, ni forma de
+  evitar mezclar trabajadores de haciendas distintas en la misma hoja.
+  */
+  get puedeExportarExcel(): boolean {
+    return !!this.fechaInicioFiltro
+      && this.fechaInicioFiltro === this.fechaFinFiltro
+      && this.haciendaIdFiltro !== null
+      && this.supervisorIdFiltro !== null;
+  }
+
+  exportarExcelDiario(): void {
+    if (!this.puedeExportarExcel || this.exportandoExcel) return;
+    const fecha = this.fechaInicioFiltro;
+    const hacienda = this.haciendas.find((h) => h.id === this.haciendaIdFiltro);
+    const supervisor = this.supervisores.find((s) => s.id === this.supervisorIdFiltro);
+    if (!hacienda || !supervisor) return;
+
+    this.exportandoExcel = true;
+    this.cdr.detectChanges();
+
+    // Pedido aparte del Historial ya cargado en pantalla (y no this.historial): ese viene paginado de a 30, y
+    // el reporte necesita a TODOS los trabajadores del dia completo, no solo la pagina actual (limite 100,
+    // tope real del backend - ver obtenerHistorial - de sobra para la cuadrilla de un solo Supervisor en un dia).
+    this.asistenciaService.obtenerHistorial(fecha, fecha, 1, 100, hacienda.id, undefined, supervisor.id).subscribe({
+      next: (res) => {
+        const operadoresUnicos = new Map<number, Operador>();
+        for (const reg of res.data) {
+          if (reg.operador && !operadoresUnicos.has(reg.operador_id)) {
+            operadoresUnicos.set(reg.operador_id, reg.operador);
+          }
+        }
+        if (operadoresUnicos.size === 0) {
+          this.exportandoExcel = false;
+          this.notificacionService.error('No hay trabajadores registrados ese día para esa Hacienda y Supervisor.');
+          this.cdr.detectChanges();
+          return;
+        }
+
+        const peticiones = Array.from(operadoresUnicos.values()).map((op) =>
+          this.registroActividadService.obtenerPorOperador(op.id, fecha, fecha).pipe(
+            map((registros) => ({ operador: op, registros }))
+          )
+        );
+        forkJoin(peticiones).subscribe({
+          next: (bloques) => this.generarYDescargarExcel(bloques, fecha, hacienda.nombre, supervisor.nombre_completo),
+          error: (err) => {
+            this.exportandoExcel = false;
+            this.notificacionService.error(err.error?.message || 'Error al generar el Excel.');
+            this.cdr.detectChanges();
+          },
+        });
+      },
+      error: (err) => {
+        this.exportandoExcel = false;
+        this.notificacionService.error(err.error?.message || 'Error al generar el Excel.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  // "Tarea/Hrs" redondeado a la media hora mas cercana (pedido explicito del usuario, con sus propios
+  // ejemplos): 1h45min (1.75h) -> 2, 1h20min (1.33h) -> 1.5. Redondeo normal a la mitad mas cercana.
+  private redondearHoras(horas: number): number {
+    return Math.round(horas * 2) / 2;
+  }
+
+  // Numero de semana ISO 8601 (lunes=inicio de semana, la semana 1 es la que contiene el primer jueves del
+  // año) - mismo criterio que Excel/la plantilla real (semana 40 para el 29 de septiembre de 2026).
+  private numeroSemanaISO(fecha: Date): number {
+    const d = new Date(Date.UTC(fecha.getUTCFullYear(), fecha.getUTCMonth(), fecha.getUTCDate()));
+    const diaIso = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - diaIso);
+    const inicioAño = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil(((d.getTime() - inicioAño.getTime()) / 86400000 + 1) / 7);
+  }
+
+  // Sin tildes a proposito - misma convencion que ya usa la plantilla real del usuario ("Seccion",
+  // "Descripcion", "transmision", todos sin acento).
+  private readonly DIAS_SEMANA_ES = ['DOMINGO', 'LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO'];
+
+  private async generarYDescargarExcel(
+    bloques: { operador: Operador; registros: RegistroActividad[] }[],
+    fecha: string,
+    nombreHacienda: string,
+    nombreSupervisor: string,
+  ): Promise<void> {
+    try {
+      // 'fecha' es un string YYYY-MM-DD puro (sin hora) - se interpreta en UTC a proposito (new Date() de un
+      // string asi SIEMPRE cae en UTC medianoche) para que el dia de la semana no cambie segun la zona horaria
+      // de quien genera el reporte.
+      const fechaDate = new Date(`${fecha}T00:00:00Z`);
+      const diaSemana = this.DIAS_SEMANA_ES[fechaDate.getUTCDay()];
+      const semana = this.numeroSemanaISO(fechaDate);
+      const [anio, mes, dia] = fecha.split('-');
+      const fechaDDMMYYYY = `${dia}${mes}${anio}`;
+
+      const wb = new Workbook();
+      const ws = wb.addWorksheet('Hoja1', { views: [{ showGridLines: false }] });
+
+      // Anchos de columna (los que trae medidos la plantilla real; el resto se deja en un ancho razonable).
+      const anchos = [6, 12, 8, 27.66, 10, 11.5, 9, 12.33, 12, 23.83, 16.33, 14.33, 12, 10, 32];
+      anchos.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+
+      const BORDE_FINO = { style: 'thin' as const, color: { argb: 'FF000000' } };
+      const BORDES_TODOS = { top: BORDE_FINO, bottom: BORDE_FINO, left: BORDE_FINO, right: BORDE_FINO };
+      const FUENTE_BASE = { name: 'Aptos Narrow', size: 11 };
+      const CENTRADO = { horizontal: 'center' as const, vertical: 'middle' as const, wrapText: true };
+      const AMARILLO: FillPattern = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+      const AZUL_CLARO: FillPattern = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E2F3' } };
+      const VERDE_CLARO: FillPattern = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2EFDA' } };
+      const VERDE_MEDIO: FillPattern = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6E0B4' } };
+      const MORADO_CLARO: FillPattern = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE4DFEC' } };
+
+      const celda = (coord: string, valor: unknown, opciones: { fill?: FillPattern; bold?: boolean; size?: number } = {}) => {
+        const c = ws.getCell(coord);
+        c.value = valor as CellValue;
+        c.font = { ...FUENTE_BASE, bold: !!opciones.bold, size: opciones.size ?? FUENTE_BASE.size };
+        c.alignment = CENTRADO;
+        c.border = BORDES_TODOS;
+        if (opciones.fill) c.fill = opciones.fill;
+        return c;
+      };
+
+      // Logo (mismo que ya usa el resto de la app - manifest.json, icono PWA).
+      try {
+        const respLogo = await fetch('/logo-source.png');
+        const bufferLogo = await respLogo.arrayBuffer();
+        const base64Logo = btoa(new Uint8Array(bufferLogo).reduce((s, b) => s + String.fromCharCode(b), ''));
+        const idImagen = wb.addImage({ base64: base64Logo, extension: 'png' });
+        ws.mergeCells('A1:E2');
+        ws.addImage(idImagen, 'A1:E2');
+      } catch {
+        // Si el logo no carga (ej. sin red), el Excel se genera igual, solo sin la imagen.
+      }
+
+      // Titulo
+      ws.mergeCells('F1:O2');
+      celda('F1', 'REGISTRO DE LABORES DIARIAS', { bold: true, size: 22 });
+
+      // Encabezado: Responsable / Digitacion TTHH / Dia reportado / Semana / Area.
+      celda('F3', 'RESPONSABLE:');
+      ws.mergeCells('G3:J3'); celda('G3', nombreSupervisor);
+      celda('K3', 'DIGITACION TTHH:');
+      ws.mergeCells('L3:O3'); celda('L3', '');
+
+      celda('F4', 'DIA REPORTADO:');
+      ws.mergeCells('G4:J4'); celda('G4', diaSemana);
+
+      celda('F5', 'SEMANA:');
+      ws.mergeCells('G5:J5'); celda('G5', semana);
+
+      celda('F6', 'AREA:');
+      ws.mergeCells('G6:J6'); celda('G6', 'TALLER');
+
+      // Encabezado de la tabla (fila 7).
+      const ENCABEZADOS: [string, string, FillPattern | undefined][] = [
+        ['A7', 'Nª', undefined],
+        ['B7', 'Fecha', AMARILLO],
+        ['C7', 'Cod.', AMARILLO],
+        ['D7', 'Empleado', undefined],
+        ['E7', 'Cod. Labor', AMARILLO],
+        ['F7', 'Labor', undefined],
+        ['G7', 'Seccion', AMARILLO],
+        ['H7', 'Lote/AREA', undefined],
+        ['I7', 'Cod Equipo&Implemento', AZUL_CLARO],
+        ['J7', 'Descripcion Eq/Implem', AZUL_CLARO],
+        ['K7', 'ETAPA DEL CULTIVO 1', AMARILLO],
+        ['L7', 'ETAPA DEL CULTIVO 2', AMARILLO],
+        ['M7', 'Rendimiento', AMARILLO],
+        ['N7', 'Tarea/Hrs', AMARILLO],
+        ['O7', 'OBSERVACION', AMARILLO],
+      ];
+      for (const [coord, texto, fill] of ENCABEZADOS) celda(coord, texto, { fill, bold: true });
+
+      // Filas de datos: un bloque por trabajador, N° auto-incremental, A/B/C/D/O combinadas y centradas en
+      // todo el bloque (pedido explicito del usuario - igual que en la plantilla real).
+      let filaActual = 8;
+      let numero = 1;
+      for (const bloque of bloques) {
+        const filaInicio = filaActual;
+        const registros: (RegistroActividad | null)[] = bloque.registros.length > 0 ? bloque.registros : [null];
+
+        for (const reg of registros) {
+          const horas = reg?.hora_fin
+            ? this.redondearHoras((new Date(reg.hora_fin).getTime() - new Date(reg.hora_inicio).getTime()) / 3600000)
+            : '';
+          celda(`E${filaActual}`, reg?.actividad?.codigo_megued || '');
+          celda(`F${filaActual}`, reg?.actividad?.description || '');
+          celda(`G${filaActual}`, 'AP06', { fill: AZUL_CLARO });
+          celda(`H${filaActual}`, 'M&Reparacion');
+          celda(`I${filaActual}`, reg?.equipo?.codigo_megued || '');
+          celda(`J${filaActual}`, reg?.equipo?.nombre_equipo || '');
+          celda(`K${filaActual}`, 'FIJOS DEL TALLER', { fill: VERDE_CLARO });
+          celda(`L${filaActual}`, 'FIJOS DEL TALLER', { fill: VERDE_MEDIO });
+          celda(`M${filaActual}`, '', { fill: MORADO_CLARO });
+          celda(`N${filaActual}`, horas);
+          filaActual++;
+        }
+        const filaFin = filaActual - 1;
+
+        celda(`A${filaInicio}`, numero);
+        celda(`B${filaInicio}`, new Date(`${fecha}T00:00:00Z`));
+        ws.getCell(`B${filaInicio}`).numFmt = 'm/d/yy';
+        celda(`C${filaInicio}`, bloque.operador.codigo_megued);
+        celda(`D${filaInicio}`, bloque.operador.nombre_completo, { bold: true });
+        celda(`O${filaInicio}`, ''); // Observacion: vacia a proposito, para que la editen despues.
+        if (filaFin > filaInicio) {
+          ws.mergeCells(`A${filaInicio}:A${filaFin}`);
+          ws.mergeCells(`B${filaInicio}:B${filaFin}`);
+          ws.mergeCells(`C${filaInicio}:C${filaFin}`);
+          ws.mergeCells(`D${filaInicio}:D${filaFin}`);
+          ws.mergeCells(`O${filaInicio}:O${filaFin}`);
+        }
+        numero++;
+      }
+
+      // Pie de firmas (igual que la plantilla real), dos filas despues de la ultima fila de datos.
+      const filaFirma1 = filaActual + 1;
+      const filaFirma2 = filaFirma1 + 1;
+      ws.mergeCells(`A${filaFirma1}:D${filaFirma1}`); celda(`A${filaFirma1}`, 'FIRMA DEL RESPONSABLE', { bold: true });
+      ws.mergeCells(`I${filaFirma1}:J${filaFirma1}`); celda(`I${filaFirma1}`, 'AUTORIZADO POR:', { bold: true });
+      ws.mergeCells(`M${filaFirma1}:O${filaFirma1}`); celda(`M${filaFirma1}`, 'FIRMA DE TTHH', { bold: true });
+      ws.mergeCells(`A${filaFirma2}:D${filaFirma2}`); celda(`A${filaFirma2}`, 'NOMBRE:');
+      ws.mergeCells(`M${filaFirma2}:O${filaFirma2}`); celda(`M${filaFirma2}`, 'DIGITADO POR:');
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const nombreArchivo = `TALLER ${nombreHacienda.toUpperCase()} ${fechaDDMMYYYY}.xlsx`;
+      await this.descargarArchivoExcel(buffer as ArrayBuffer, nombreArchivo);
+    } catch (err) {
+      console.error('Error al generar el Excel:', err);
+      this.notificacionService.error('No se pudo generar el archivo Excel. Intenta de nuevo.');
+    } finally {
+      this.exportandoExcel = false;
+      this.cdr.detectChanges();
+    }
+  }
+
+  /*
+  Mismo patron que compartirHoja()/imprimirQR(): dentro del WebView de la app empaquetada no hay dialogo de
+  descarga del navegador, asi que se escribe el archivo a Cache y se comparte via el selector nativo de
+  Android (ahi lo pueden guardar, mandarlo por WhatsApp/correo, etc). En navegador de escritorio, la descarga
+  normal via un link temporal.
+  */
+  private async descargarArchivoExcel(buffer: ArrayBuffer, nombreArchivo: string): Promise<void> {
+    if (Capacitor.isNativePlatform()) {
+      const base64 = btoa(new Uint8Array(buffer).reduce((s, b) => s + String.fromCharCode(b), ''));
+      const escrito = await Filesystem.writeFile({ path: nombreArchivo, data: base64, directory: Directory.Cache });
+      await Share.share({
+        title: nombreArchivo,
+        dialogTitle: 'Compartir o guardar Excel',
+        files: [escrito.uri],
+      });
+      return;
+    }
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const enlace = document.createElement('a');
+    enlace.href = url;
+    enlace.download = nombreArchivo;
+    enlace.click();
+    URL.revokeObjectURL(url);
   }
 
   /*

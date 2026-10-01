@@ -367,6 +367,18 @@
                 {{ cargandoReporteImpresion ? 'Generando...' : '🖨️ Imprimir Hojas del rango' }}
               </button>
               <button
+                class="btn btn-secondary btn-sm"
+                [disabled]="!puedeExportarExcel || exportandoExcel"
+                [title]="
+                  puedeExportarExcel
+                    ? ''
+                    : 'Elige el mismo día en Desde/Hasta, una Hacienda y un Supervisor específicos para habilitar la exportación'
+                "
+                (click)="exportarExcelDiario()"
+              >
+                {{ exportandoExcel ? 'Generando...' : '📊 Exportar a Excel' }}
+              </button>
+              <button
                 [disabled]="paginaHistorial === 1"
                 (click)="cambiarPaginaHistorial(paginaHistorial - 1)"
                 class="btn btn-secondary btn-sm"

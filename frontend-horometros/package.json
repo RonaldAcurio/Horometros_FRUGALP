@@ -35,6 +35,7 @@
     "@capacitor/share": "^8.0.2",
     "@e965/xlsx": "^0.20.3",
     "@zxing/ngx-scanner": "^22.0.1",
+    "exceljs": "^4.4.0",
     "qrcode": "^1.5.4",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
