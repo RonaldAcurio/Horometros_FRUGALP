@@ -1,8 +1,10 @@
 import { Component, ChangeDetectorRef, ElementRef, OnDestroy, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ZXingScannerModule } from '@zxing/ngx-scanner';
+import { Result } from '@zxing/library';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 import { ModalActividad } from '../../components/modal-actividad/modal-actividad';
+import { resultadoDentroDeZonaActiva, dimensionesRedimensionadas } from '../../../../core/utils/zona-captura.util';
 
 @Component({
   standalone: true,
@@ -35,10 +37,21 @@ export class MarcacionKiosco implements OnDestroy {
    this.detenerCamara();
  }
 
-  onCodeResult(resultString: string): void {
+  /*
+  Recibe el Result completo de ZXing (no solo el texto) para poder revisar DONDE en el video cayo el QR leido -
+  ver zona-captura.util.ts. El recuadro visible en pantalla (marcacion-kiosco.html/css) marca solo esa zona
+  central; un QR leido fuera de ella (ej. el carnet de otra persona que queda de fondo) se ignora en silencio y
+  la camara sigue escaneando, como si no hubiera leido nada.
+  */
+  onCodeResult(resultado: Result): void {
 
     //Guarda de re-entrada: si ya estamos procesando un escaneo, ignoramos cualquier otro disparo
     if(this.procesando || !this.escanearActivo){
+      return;
+    }
+
+    const videoElement = this.elementRef.nativeElement.querySelector('video') as HTMLVideoElement | null;
+    if (!videoElement || !resultadoDentroDeZonaActiva(resultado.getResultPoints(), videoElement.videoWidth, videoElement.videoHeight)) {
       return;
     }
 
@@ -49,7 +62,7 @@ export class MarcacionKiosco implements OnDestroy {
     */
    this.ngZone.run(() => {
       try {
-        const data = JSON.parse(resultString);
+        const data = JSON.parse(resultado.getText());
         if (data && data.operador_id) {
           this.procesando = true;
           this.escanearActivo = false;
@@ -62,7 +75,7 @@ export class MarcacionKiosco implements OnDestroy {
       }
    });
 
-    
+
   }
 
   /*
@@ -78,7 +91,13 @@ export class MarcacionKiosco implements OnDestroy {
     }
   }
 
-  //Toma una "foto" del frame actual del video del escaner QR (si pedir un segundo de permiso de camara)
+  /*
+  Toma una "foto" del frame actual del video del escaner QR (sin pedir un segundo permiso de camara). Captura
+  el video COMPLETO (100% del campo visual, no solo la zona activa del recuadro) - el margen de afuera del
+  recuadro es justo lo que permite que esta foto capture mas contexto/rostro de quien esta escaneando. Se
+  redimensiona (ver zona-captura.util.ts) para que el lado mas largo no pase de 640px: mismo encuadre, mucho
+  menos peso para subir a R2 con señal mala en el campo.
+  */
   private capturarFotoEvidencia():string | null {
     const videoElement = this.elementRef.nativeElement.querySelector('video') as HTMLVideoElement | null;
 
@@ -87,9 +106,10 @@ export class MarcacionKiosco implements OnDestroy {
       return null;
     }
 
+    const { width, height } = dimensionesRedimensionadas(videoElement.videoWidth, videoElement.videoHeight);
     const canvas = document.createElement('canvas');
-    canvas.width = videoElement.videoWidth;
-    canvas.height = videoElement.videoHeight;
+    canvas.width = width;
+    canvas.height = height;
 
     const contexto = canvas.getContext('2d');
     if(!contexto) return null;

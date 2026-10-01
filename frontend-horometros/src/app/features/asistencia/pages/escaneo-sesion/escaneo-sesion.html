@@ -11,8 +11,11 @@
       <div class="scanner-wrapper">
         <zxing-scanner
           [videoConstraints]="{ width: { ideal: 1280 }, height: { ideal: 720 } }"
-          (scanSuccess)="onCodeResult($event)"
+          (scanComplete)="onCodeResult($event)"
         ></zxing-scanner>
+        <!-- Solo visual: marca la zona donde SI se acepta un QR (ver zona-captura.util.ts, onCodeResult). El
+             margen oscurecido de afuera no se recorta de la foto de evidencia, solo deja de ser zona de escaneo. -->
+        <div class="zona-activa-overlay" aria-hidden="true"></div>
       </div>
     </div>
 

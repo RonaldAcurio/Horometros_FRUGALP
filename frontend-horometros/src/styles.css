@@ -357,6 +357,7 @@ html, body {
 }
 
 .scanner-wrapper {
+  position: relative;
   border: 2px dashed var(--amarillo);
   border-radius: 0.5rem;
   padding: 0.5rem;
@@ -364,6 +365,25 @@ html, body {
   max-width: 600px;
   width: 100%;
   margin: 0 auto;
+}
+
+/*
+Marca visualmente la "zona activa" (70% central) donde SI se acepta un QR leido - ver zona-captura.util.ts y
+onCodeResult() en marcacion-kiosco.ts/escaneo-sesion.ts, que son los que de verdad deciden si se acepta o no
+(esto es solo el dibujo, no la logica). El truco del box-shadow gigante oscurece todo lo que queda AFUERA del
+recuadro central sin necesitar clip-path ni SVG - el recuadro en si queda transparente, mostrando el video.
+15% de margen a cada lado = 70% de ancho/alto, el mismo porcentaje que ZONA_ACTIVA_PORCENTAJE.
+*/
+.zona-activa-overlay {
+  position: absolute;
+  top: 15%;
+  left: 15%;
+  right: 15%;
+  bottom: 15%;
+  border: 2px solid var(--amarillo);
+  border-radius: 0.25rem;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
 }
 
 .alert-container {

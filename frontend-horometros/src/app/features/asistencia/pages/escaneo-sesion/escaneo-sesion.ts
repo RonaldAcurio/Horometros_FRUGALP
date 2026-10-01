@@ -1,8 +1,10 @@
 import { Component, ChangeDetectorRef, ElementRef, OnDestroy, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ZXingScannerModule } from '@zxing/ngx-scanner';
+import { Result } from '@zxing/library';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 import { ModalActividad } from '../../components/modal-actividad/modal-actividad';
+import { resultadoDentroDeZonaActiva, dimensionesRedimensionadas } from '../../../../core/utils/zona-captura.util';
 
 /*
 Escaneo de Camino B (QR flotante de 90s de un Operador/Mecanico YA logueado, ver mi-jornada). Distinto del
@@ -38,8 +40,18 @@ export class EscaneoSesion implements OnDestroy {
     this.detenerCamara();
   }
 
-  onCodeResult(resultString: string): void {
+  /*
+  Recibe el Result completo de ZXing (no solo el texto) para revisar DONDE cayo el QR - mismo motivo y mismo
+  mecanismo que marcacion-kiosco.ts (ver zona-captura.util.ts). Un QR leido fuera del recuadro visible se
+  ignora en silencio, la camara sigue escaneando.
+  */
+  onCodeResult(resultado: Result): void {
     if (this.procesando || !this.escanearActivo) {
+      return;
+    }
+
+    const videoElement = this.elementRef.nativeElement.querySelector('video') as HTMLVideoElement | null;
+    if (!videoElement || !resultadoDentroDeZonaActiva(resultado.getResultPoints(), videoElement.videoWidth, videoElement.videoHeight)) {
       return;
     }
 
@@ -47,7 +59,7 @@ export class EscaneoSesion implements OnDestroy {
       this.procesando = true;
       this.escanearActivo = false;
       const fotoEvidencia = this.capturarFotoEvidencia();
-      this.procesarEscaneo(resultString, undefined, fotoEvidencia);
+      this.procesarEscaneo(resultado.getText(), undefined, fotoEvidencia);
     });
   }
 
@@ -59,14 +71,17 @@ export class EscaneoSesion implements OnDestroy {
     }
   }
 
+  // Captura el video COMPLETO (100%, no solo la zona activa) y lo redimensiona - mismo motivo que
+  // marcacion-kiosco.ts (capturarFotoEvidencia).
   private capturarFotoEvidencia(): string | null {
     const videoElement = this.elementRef.nativeElement.querySelector('video') as HTMLVideoElement | null;
     if (!videoElement || videoElement.readyState < 2 || videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
       return null;
     }
+    const { width, height } = dimensionesRedimensionadas(videoElement.videoWidth, videoElement.videoHeight);
     const canvas = document.createElement('canvas');
-    canvas.width = videoElement.videoWidth;
-    canvas.height = videoElement.videoHeight;
+    canvas.width = width;
+    canvas.height = height;
     const contexto = canvas.getContext('2d');
     if (!contexto) return null;
     contexto.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
