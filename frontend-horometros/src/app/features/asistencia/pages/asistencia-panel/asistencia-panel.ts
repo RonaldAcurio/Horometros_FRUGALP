@@ -549,13 +549,21 @@ export class AsistenciaPanel implements OnInit{
     });
   }
 
+  /*
+  Antes redondeaba a minutos enteros (Math.round) y descartaba los segundos - una labor de, ej., 40 segundos
+  se mostraba como "0min", pareciendo mal calculada. Ahora se calcula con el total de segundos reales, sin
+  redondear nada hasta el ultimo paso (truncar, no redondear - "47min 59s" no debe saltar a "48min").
+  */
   duracionLabor(reg: RegistroActividad): string {
     if (!reg.hora_fin) return '—';
-    const minutos = Math.round((new Date(reg.hora_fin).getTime() - new Date(reg.hora_inicio).getTime()) / 60000);
-    if (minutos < 0) return '—';
-    const horas = Math.floor(minutos / 60);
-    const resto = minutos % 60;
-    return horas > 0 ? `${horas}h ${resto}min` : `${resto}min`;
+    const totalSegundos = Math.floor((new Date(reg.hora_fin).getTime() - new Date(reg.hora_inicio).getTime()) / 1000);
+    if (totalSegundos < 0) return '—';
+    const horas = Math.floor(totalSegundos / 3600);
+    const minutos = Math.floor((totalSegundos % 3600) / 60);
+    const segundos = totalSegundos % 60;
+    if (horas > 0) return `${horas}h ${minutos}min ${segundos}s`;
+    if (minutos > 0) return `${minutos}min ${segundos}s`;
+    return `${segundos}s`;
   }
 
   /*
