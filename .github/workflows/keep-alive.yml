@@ -1,0 +1,21 @@
+name: Mantener despierto el backend
+
+# "Ping" cada 10 minutos a /api/health, por dos motivos a la vez (ver CLAUDE.md, "Observabilidad"):
+# 1. Evita que Railway "duerma" el backend por falta de trafico - el primer login despues de un rato de
+#    inactividad tardaba mas (bug reportado por el usuario, 2026-10-01) porque el servicio y el pool de
+#    conexiones a Postgres se reiniciaban desde cero en esa primera peticion.
+# 2. Monitoreo de caida gratis: si /api/health no responde bien, este job falla, y GitHub manda un correo
+#    automatico al dueno del repositorio sin configurar nada mas - cubre el hueco de "nadie se entera si el
+#    sistema se cae" sin pagar un servicio externo (UptimeRobot dejo de ser gratis para uso comercial).
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    name: Ping /api/health
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar que el backend responda
+        run: curl --fail --silent --show-error --max-time 20 https://horometrosfrugalp-production.up.railway.app/api/health
