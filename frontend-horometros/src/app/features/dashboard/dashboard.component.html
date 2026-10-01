@@ -1,18 +1,31 @@
 <div class="dashboard-container">
   <div class="dashboard-header">
     <h2 class="title">Módulos del Sistema</h2>
-    <p class="subtitle">Selecciona una opción para gestionar la operación de maquinaria y personal</p>
+    <p class="subtitle">
+      Selecciona una opción para gestionar la operación de maquinaria y personal
+    </p>
   </div>
 
   <!-- Un SUPERVISOR/ESCANER solo ve "Asistencia" (Administración es *ngIf ADMIN/ASISTENTE) - con el grid de 2
-       columnas esa única tarjeta quedaba pegada a la izquierda; cards-grid-unico la centra. -->
+  columnas esa única tarjeta quedaba pegada a la izquierda; cards-grid-unico la centra. -->
   <div class="cards-grid" [class.cards-grid-unico]="!authService.tieneRol('ADMIN', 'ASISTENTE')">
     <!-- Opción 1: Asistencia (HABILITADA) -->
     <a routerLink="/asistencia" class="card card-active group">
       <div class="card-header-active">
         <div class="icon-box icon-amber">
-          <svg xmlns="http://www.w3.org/2000/svg" class="icon-lg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="icon-lg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
           </svg>
         </div>
         <span class="action-text">Ingresar ➔</span>
@@ -24,20 +37,39 @@
     </a>
 
     <!-- Opción 2: Administración (ADMIN completo; ASISTENTE ve solo Usuarios, ver admin-panel.ts) -->
-    <a routerLink="/admin" class="card card-active group" *ngIf="authService.tieneRol('ADMIN', 'ASISTENTE')">
-      <div class="card-header-active">
-        <div class="icon-box icon-amber">
-          <svg xmlns="http://www.w3.org/2000/svg" class="icon-lg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
+    @if (authService.tieneRol('ADMIN', 'ASISTENTE')) {
+      <a routerLink="/admin" class="card card-active group">
+        <div class="card-header-active">
+          <div class="icon-box icon-amber">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="icon-lg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+              />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+            </svg>
+          </div>
+          <span class="action-text">Ingresar ➔</span>
         </div>
-        <span class="action-text">Ingresar ➔</span>
-      </div>
-      <h3 class="card-title card-title-active">Administración</h3>
-      <p class="card-description">
-        Cuentas de oficina (Admin/Asistente/Supervisor/Escáner) y Token de Hacienda de cada punto de control.
-      </p>
-    </a>
+        <h3 class="card-title card-title-active">Administración</h3>
+        <p class="card-description">
+          Cuentas de oficina (Admin/Asistente/Supervisor/Escáner) y Token de Hacienda de cada punto
+          de control.
+        </p>
+      </a>
+    }
   </div>
 </div>

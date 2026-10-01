@@ -7,28 +7,33 @@
   </div>
 
   <div class="card shadow-sm">
-    <div class="scanner-container" *ngIf="escanearActivo">
-      <div class="scanner-wrapper">
-        <zxing-scanner
-          [videoConstraints]="{ width: { ideal: 1280 }, height: { ideal: 720 } }"
-          (scanComplete)="onCodeResult($event)"
-        ></zxing-scanner>
-        <!-- Solo visual: marca la zona donde SI se acepta un QR (ver zona-captura.util.ts, onCodeResult). El
-             margen oscurecido de afuera no se recorta de la foto de evidencia, solo deja de ser zona de escaneo. -->
-        <div class="zona-activa-overlay" aria-hidden="true"></div>
+    @if (escanearActivo) {
+      <div class="scanner-container">
+        <div class="scanner-wrapper">
+          <zxing-scanner
+            [videoConstraints]="{ width: { ideal: 1280 }, height: { ideal: 720 } }"
+            (scanComplete)="onCodeResult($event)"
+          ></zxing-scanner>
+          <!-- Solo visual: marca la zona donde SI se acepta un QR (ver zona-captura.util.ts, onCodeResult). El
+          margen oscurecido de afuera no se recorta de la foto de evidencia, solo deja de ser zona de escaneo. -->
+          <div class="zona-activa-overlay" aria-hidden="true"></div>
+        </div>
       </div>
-    </div>
+    }
 
-    <div class="alert-container" *ngIf="mensajeEscaneo">
-      <div [class]="tipoMensaje === 'exito' ? 'alert alert-success' : 'alert alert-danger'">
-        {{ mensajeEscaneo }}
+    @if (mensajeEscaneo) {
+      <div class="alert-container">
+        <div [class]="tipoMensaje === 'exito' ? 'alert alert-success' : 'alert alert-danger'">
+          {{ mensajeEscaneo }}
+        </div>
       </div>
-    </div>
+    }
   </div>
 
   <app-modal-actividad
     [mostrar]="mostrarModalActividad"
     (seleccionar)="confirmarSalidaConActividad($event)"
-    (cancelar)="cerrarModalActividad()">
+    (cancelar)="cerrarModalActividad()"
+  >
   </app-modal-actividad>
 </div>

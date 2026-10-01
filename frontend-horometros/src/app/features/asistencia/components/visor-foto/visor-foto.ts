@@ -1,10 +1,10 @@
 import { Component, Input, ChangeDetectorRef } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 
 @Component({
   standalone: true,
-  imports: [CommonModule],
+  imports: [],
   selector: 'app-visor-foto',
   styleUrl: './visor-foto.css',
   templateUrl: './visor-foto.html',
@@ -25,11 +25,11 @@ export class VisorFoto {
 
   constructor(
     private asistenciaService: AsistenciaService,
-    private cdr : ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
   ) {}
 
   abrir(): void {
-    if(!this.tieneFoto || this.asistenciaId == null){
+    if (!this.tieneFoto || this.asistenciaId == null) {
       return;
     }
 
@@ -40,20 +40,20 @@ export class VisorFoto {
     this.cdr.detectChanges();
 
     this.asistenciaService.obtenerFotoAsistencia(this.asistenciaId).subscribe({
-      next:(res)=>{
+      next: (res) => {
         this.fotoUrl = res.foto_ingreso;
         this.cargando = false;
         this.cdr.detectChanges();
       },
-      error: ()=>{
+      error: () => {
         this.error = 'No se puede cargar la evidencia. Intente nuevamente.';
         this.cargando = false;
         this.cdr.detectChanges();
-      }
+      },
     });
   }
 
-  cerrar():void{
+  cerrar(): void {
     this.mostrarModal = false;
     this.fotoUrl = null;
     this.cdr.detectChanges();

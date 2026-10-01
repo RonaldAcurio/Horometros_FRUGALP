@@ -1,10 +1,10 @@
 import { Component, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { NotificacionService } from '../../core/services/notificacion.service';
 
 @Component({
   standalone: true,
-  imports: [CommonModule],
+  imports: [],
   selector: 'app-toast',
   styleUrl: './toast.css',
   templateUrl: './toast.html',

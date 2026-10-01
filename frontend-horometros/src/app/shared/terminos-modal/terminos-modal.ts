@@ -1,5 +1,5 @@
 import { Component, inject, signal, computed } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/services/auth.service';
 import { TerminosService } from '../../core/services/terminos.service';
@@ -13,7 +13,7 @@ Un solo componente para los 2 modos en que aparece (ver CLAUDE.md):
 */
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [FormsModule],
   selector: 'app-terminos-modal',
   styleUrl: './terminos-modal.css',
   templateUrl: './terminos-modal.html',
@@ -28,7 +28,8 @@ export class TerminosModal {
   guardando = signal(false);
 
   modoBloqueante = computed(
-    () => this.authService.estaAutenticado() && this.authService.perfil()?.terminos_aceptados === false
+    () =>
+      this.authService.estaAutenticado() && this.authService.perfil()?.terminos_aceptados === false,
   );
   mostrar = computed(() => this.modoBloqueante() || this.terminosService.mostrarLibre());
 

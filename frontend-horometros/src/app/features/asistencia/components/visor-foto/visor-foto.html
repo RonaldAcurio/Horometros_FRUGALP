@@ -1,20 +1,22 @@
-<button
-  *ngIf="tieneFoto; else sinFoto"
-  type="button"
-  class="btn btn-secondary btn-sm"
-  (click)="abrir()"
->
-  📷 Ver Evidencia
-</button>
-<ng-template #sinFoto>
+@if (tieneFoto) {
+  <button type="button" class="btn btn-secondary btn-sm" (click)="abrir()">📷 Ver Evidencia</button>
+} @else {
   <span class="text-muted-sm">Sin foto</span>
-</ng-template>
+}
 
-<div class="modal-backdrop" *ngIf="mostrarModal" (click)="cerrar()">
-  <div class="visor-foto-card" (click)="$event.stopPropagation()">
-    <button type="button" class="visor-foto-cerrar" (click)="cerrar()">✕</button>
-    <div *ngIf="cargando" class="text-muted-sm">Cargando evidencia...</div>
-    <div *ngIf="error" class="text-muted-sm">{{ error }}</div>
-    <img *ngIf="fotoUrl" [src]="fotoUrl" alt="Evidencia de asistencia" class="visor-foto-imagen" />
+@if (mostrarModal) {
+  <div class="modal-backdrop" (click)="cerrar()">
+    <div class="visor-foto-card" (click)="$event.stopPropagation()">
+      <button type="button" class="visor-foto-cerrar" (click)="cerrar()">✕</button>
+      @if (cargando) {
+        <div class="text-muted-sm">Cargando evidencia...</div>
+      }
+      @if (error) {
+        <div class="text-muted-sm">{{ error }}</div>
+      }
+      @if (fotoUrl) {
+        <img [src]="fotoUrl" alt="Evidencia de asistencia" class="visor-foto-imagen" />
+      }
+    </div>
   </div>
-</div>
+}

@@ -1,10 +1,10 @@
 import { Component, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { ConfirmacionService } from '../../core/services/confirmacion.service';
 
 @Component({
   standalone: true,
-  imports: [CommonModule],
+  imports: [],
   selector: 'app-confirm-modal',
   styleUrl: './confirm-modal.css',
   templateUrl: './confirm-modal.html',

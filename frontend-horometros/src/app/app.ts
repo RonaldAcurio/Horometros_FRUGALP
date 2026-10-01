@@ -1,5 +1,5 @@
 import { Component, signal, inject } from '@angular/core';
-import { CommonModule, Location } from '@angular/common';
+import { Location } from '@angular/common';
 import { RouterOutlet, RouterLink, Router, NavigationEnd } from '@angular/router';
 import { filter } from 'rxjs/operators';
 import { Capacitor } from '@capacitor/core';
@@ -13,7 +13,7 @@ import { rutaHomePorRol } from './core/utils/rutas-por-rol';
 
 @Component({
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, Toast, ConfirmModal, TerminosModal],
+  imports: [RouterOutlet, RouterLink, Toast, ConfirmModal, TerminosModal],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',

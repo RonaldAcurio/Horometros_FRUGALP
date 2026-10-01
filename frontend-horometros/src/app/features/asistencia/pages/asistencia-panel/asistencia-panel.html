@@ -8,968 +8,1520 @@
 
   <!-- NAVEGACION POR PESTAÑAS -->
   <div class="tabs-bar">
-    <button class="tab-btn" [class.active]="tabActual === 'directorio'" (click)="cambiarTab('directorio')">
+    <button
+      class="tab-btn"
+      [class.active]="tabActual === 'directorio'"
+      (click)="cambiarTab('directorio')"
+    >
       📋 Directorio de Operadores
     </button>
-    <button class="tab-btn" [class.active]="tabActual === 'historial'" (click)="cambiarTab('historial')">
+    <button
+      class="tab-btn"
+      [class.active]="tabActual === 'historial'"
+      (click)="cambiarTab('historial')"
+    >
       📅 Historial de Asistencia
     </button>
-    <button class="tab-btn" [class.active]="tabActual === 'equipos'" (click)="cambiarTab('equipos')">
+    <button
+      class="tab-btn"
+      [class.active]="tabActual === 'equipos'"
+      (click)="cambiarTab('equipos')"
+    >
       🚜 Equipo
     </button>
-    <button class="tab-btn" [class.active]="tabActual === 'actividades'" (click)="cambiarTab('actividades')">
+    <button
+      class="tab-btn"
+      [class.active]="tabActual === 'actividades'"
+      (click)="cambiarTab('actividades')"
+    >
       🛠️ Actividad
     </button>
-    <button class="tab-btn" [class.active]="tabActual === 'terminos'" (click)="cambiarTab('terminos')">
+    <button
+      class="tab-btn"
+      [class.active]="tabActual === 'terminos'"
+      (click)="cambiarTab('terminos')"
+    >
       ✅ Términos
     </button>
   </div>
 
   <!-- PESTAÑA: DIRECTORIO (tu contenido de siempre, sin cambios) -->
-  <div *ngIf="tabActual === 'directorio'" class="grid-two-columns">
-    <div class="card">
-      <div class="card-header flex justify-between items-center">
-        <h5 class="card-title">📋 Directorio de Operadores</h5>
-        <div class="flex gap-2">
-          <button class="btn btn-secondary btn-sm" (click)="abrirModalImportarOperador()">📥 Importar</button>
-          <button class="btn btn-primary btn-sm" (click)="abrirModalNuevoOperador()">
-            ➕ Nuevo Operador
-          </button>
-        </div>
-      </div>
-
-      <div class="p-3">
-        <input 
-          type="text" 
-          [(ngModel)]="terminoBusqueda" 
-          (input)="onSearchChange()"
-          placeholder="🔍 Buscar por nombre, código o cédula..." 
-          class="input-control w-full"
-        />
-      </div>
-
-      <div class="table-responsive">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Operador</th>
-              <th>Rol</th>
-              <th>Acción</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let op of operadores" (click)="seleccionarOperador(op)" class="row-hover">
-              <td><strong class="code-badge">{{ op.codigo_megued || op.id }}</strong></td>
-              <td class="font-medium nombre-operador">{{ op.nombre_completo }}</td>
-              <td class="text-muted-sm">{{ op.rol === 'OPERADOR' ? 'Operador' : 'Mecánico' }}</td>
-              <td>
-                <button class="btn btn-secondary btn-sm">Seleccionar</button>
-              </td>
-            </tr>
-            <tr *ngIf="operadores.length === 0">
-              <td colspan="4" class="table-empty">No hay operadores registrados.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="pagination-bar">
-        <span>Página {{ paginaActual }} de {{ totalPaginas }}</span>
-        <div class="flex gap-1">
-          <button [disabled]="paginaActual === 1" (click)="cambiarPagina(paginaActual - 1)" class="btn btn-secondary btn-sm">◀</button>
-          <button [disabled]="paginaActual === totalPaginas" (click)="cambiarPagina(paginaActual + 1)" class="btn btn-secondary btn-sm">▶</button>
-        </div>
-      </div>
-    </div>
-
-    <div>
-      <div class="card" *ngIf="operadorSeleccionado; else sinSeleccion">
-        <div class="card-header">
-          <h5 class="card-title">👤 Ficha: {{ operadorSeleccionado.nombre_completo }}</h5>
-        </div>
-        <div class="card-body-grid">
-          <div class="form-section">
-            <div class="form-group">
-              <label class="form-label">Cédula</label>
-              <input type="text" class="input-control" [(ngModel)]="cedula">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Teléfono</label>
-              <input type="text" class="input-control" [(ngModel)]="telefono">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Dirección</label>
-              <input type="text" class="input-control" [(ngModel)]="direccion">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Supervisor (hacienda permanente)</label>
-              <select class="input-control" [(ngModel)]="supervisorIdSeleccionado">
-                <option [ngValue]="null">Sin asignar</option>
-                <option *ngFor="let sup of supervisores" [ngValue]="sup.id">{{ sup.nombre_completo }} — {{ sup.hacienda?.nombre }}</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Rol</label>
-              <select class="input-control" [(ngModel)]="rolSeleccionado">
-                <option value="MECANICO">Mecánico</option>
-                <option value="OPERADOR">Operador</option>
-              </select>
-            </div>
-
-            <!-- Credenciales de acceso: si ya tiene usuario, solo se puede resetear la clave; si no, se asignan aqui -->
-            <div class="form-group" *ngIf="operadorSeleccionado?.usuario">
-              <label class="form-label">Usuario de acceso</label>
-              <div class="flex items-center gap-2">
-                <span class="code-badge">{{ operadorSeleccionado?.usuario }}</span>
-                <button type="button" class="btn btn-secondary btn-sm" (click)="abrirModalResetClaveOperador()">🔑 Resetear clave</button>
-              </div>
-            </div>
-            <ng-container *ngIf="!operadorSeleccionado?.usuario">
-              <div class="form-group">
-                <label class="form-label">Asignar usuario de acceso</label>
-                <input type="text" class="input-control" [(ngModel)]="credencialesOperador.usuario" placeholder="usuario">
-              </div>
-              <div class="form-group" *ngIf="credencialesOperador.usuario">
-                <label class="form-label">Clave (mínimo 8 caracteres)</label>
-                <div class="campo-clave">
-                  <input [type]="mostrarClaveCredenciales() ? 'text' : 'password'" class="input-control" [(ngModel)]="credencialesOperador.clave" minlength="8">
-                  <button type="button" class="boton-ojo" (click)="mostrarClaveCredenciales.set(!mostrarClaveCredenciales())">
-                    {{ mostrarClaveCredenciales() ? '🙈' : '👁️' }}
-                  </button>
-                </div>
-              </div>
-            </ng-container>
-
-            <button class="btn btn-primary w-full mt-2" (click)="guardarDatosOperador()">
-              💾 Actualizar Ficha
+  @if (tabActual === 'directorio') {
+    <div class="grid-two-columns">
+      <div class="card">
+        <div class="card-header flex justify-between items-center">
+          <h5 class="card-title">📋 Directorio de Operadores</h5>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary btn-sm" (click)="abrirModalImportarOperador()">
+              📥 Importar
             </button>
-            <button class="btn btn-danger w-full mt-2" (click)="eliminarOperadorSeleccionado()">
-              🗑️ Eliminar Operador
+            <button class="btn btn-primary btn-sm" (click)="abrirModalNuevoOperador()">
+              ➕ Nuevo Operador
             </button>
           </div>
-
-          <div class="qr-section">
-            <label class="form-label mb-2">Carnet QR</label>
-            <div class="qr-box" *ngIf="qrCodeUrl">
-              <img [src]="qrCodeUrl" class="qr-image" alt="QR" />
-            </div>
-            <button class="btn btn-secondary w-full mt-2" (click)="imprimirQR()">
-              🖨️ Imprimir Carnet
+        </div>
+        <div class="p-3">
+          <input
+            type="text"
+            [(ngModel)]="terminoBusqueda"
+            (input)="onSearchChange()"
+            placeholder="🔍 Buscar por nombre, código o cédula..."
+            class="input-control w-full"
+          />
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Operador</th>
+                <th>Rol</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (op of operadores; track op) {
+                <tr (click)="seleccionarOperador(op)" class="row-hover">
+                  <td>
+                    <strong class="code-badge">{{ op.codigo_megued || op.id }}</strong>
+                  </td>
+                  <td class="font-medium nombre-operador">{{ op.nombre_completo }}</td>
+                  <td class="text-muted-sm">
+                    {{ op.rol === 'OPERADOR' ? 'Operador' : 'Mecánico' }}
+                  </td>
+                  <td>
+                    <button class="btn btn-secondary btn-sm">Seleccionar</button>
+                  </td>
+                </tr>
+              }
+              @if (operadores.length === 0) {
+                <tr>
+                  <td colspan="4" class="table-empty">No hay operadores registrados.</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination-bar">
+          <span>Página {{ paginaActual }} de {{ totalPaginas }}</span>
+          <div class="flex gap-1">
+            <button
+              [disabled]="paginaActual === 1"
+              (click)="cambiarPagina(paginaActual - 1)"
+              class="btn btn-secondary btn-sm"
+            >
+              ◀
             </button>
             <button
-              class="btn btn-secondary w-full mt-2"
-              (click)="abrirModalHistorialOperador(operadorSeleccionado)"
+              [disabled]="paginaActual === totalPaginas"
+              (click)="cambiarPagina(paginaActual + 1)"
+              class="btn btn-secondary btn-sm"
             >
-              📅 Ver Historial de Asistencia
+              ▶
             </button>
           </div>
         </div>
       </div>
-
-      <ng-template #sinSeleccion>
-        <div class="card empty-state">
-          <p class="text-muted">Seleccione un operador para ver su carnet QR.</p>
-        </div>
-      </ng-template>
+      <div>
+        @if (operadorSeleccionado) {
+          <div class="card">
+            <div class="card-header">
+              <h5 class="card-title">👤 Ficha: {{ operadorSeleccionado.nombre_completo }}</h5>
+            </div>
+            <div class="card-body-grid">
+              <div class="form-section">
+                <div class="form-group">
+                  <label class="form-label">Cédula</label>
+                  <input type="text" class="input-control" [(ngModel)]="cedula" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Teléfono</label>
+                  <input type="text" class="input-control" [(ngModel)]="telefono" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Dirección</label>
+                  <input type="text" class="input-control" [(ngModel)]="direccion" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Supervisor (hacienda permanente)</label>
+                  <select class="input-control" [(ngModel)]="supervisorIdSeleccionado">
+                    <option [ngValue]="null">Sin asignar</option>
+                    @for (sup of supervisores; track sup) {
+                      <option [ngValue]="sup.id">
+                        {{ sup.nombre_completo }} — {{ sup.hacienda?.nombre }}
+                      </option>
+                    }
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Rol</label>
+                  <select class="input-control" [(ngModel)]="rolSeleccionado">
+                    <option value="MECANICO">Mecánico</option>
+                    <option value="OPERADOR">Operador</option>
+                  </select>
+                </div>
+                <!-- Credenciales de acceso: si ya tiene usuario, solo se puede resetear la clave; si no, se asignan aqui -->
+                @if (operadorSeleccionado?.usuario) {
+                  <div class="form-group">
+                    <label class="form-label">Usuario de acceso</label>
+                    <div class="flex items-center gap-2">
+                      <span class="code-badge">{{ operadorSeleccionado?.usuario }}</span>
+                      <button
+                        type="button"
+                        class="btn btn-secondary btn-sm"
+                        (click)="abrirModalResetClaveOperador()"
+                      >
+                        🔑 Resetear clave
+                      </button>
+                    </div>
+                  </div>
+                }
+                @if (!operadorSeleccionado?.usuario) {
+                  <div class="form-group">
+                    <label class="form-label">Asignar usuario de acceso</label>
+                    <input
+                      type="text"
+                      class="input-control"
+                      [(ngModel)]="credencialesOperador.usuario"
+                      placeholder="usuario"
+                    />
+                  </div>
+                  @if (credencialesOperador.usuario) {
+                    <div class="form-group">
+                      <label class="form-label">Clave (mínimo 8 caracteres)</label>
+                      <div class="campo-clave">
+                        <input
+                          [type]="mostrarClaveCredenciales() ? 'text' : 'password'"
+                          class="input-control"
+                          [(ngModel)]="credencialesOperador.clave"
+                          minlength="8"
+                        />
+                        <button
+                          type="button"
+                          class="boton-ojo"
+                          (click)="mostrarClaveCredenciales.set(!mostrarClaveCredenciales())"
+                        >
+                          {{ mostrarClaveCredenciales() ? '🙈' : '👁️' }}
+                        </button>
+                      </div>
+                    </div>
+                  }
+                }
+                <button class="btn btn-primary w-full mt-2" (click)="guardarDatosOperador()">
+                  💾 Actualizar Ficha
+                </button>
+                <button class="btn btn-danger w-full mt-2" (click)="eliminarOperadorSeleccionado()">
+                  🗑️ Eliminar Operador
+                </button>
+              </div>
+              <div class="qr-section">
+                <label class="form-label mb-2">Carnet QR</label>
+                @if (qrCodeUrl) {
+                  <div class="qr-box">
+                    <img [src]="qrCodeUrl" class="qr-image" alt="QR" />
+                  </div>
+                }
+                <button class="btn btn-secondary w-full mt-2" (click)="imprimirQR()">
+                  🖨️ Imprimir Carnet
+                </button>
+                <button
+                  class="btn btn-secondary w-full mt-2"
+                  (click)="abrirModalHistorialOperador(operadorSeleccionado)"
+                >
+                  📅 Ver Historial de Asistencia
+                </button>
+              </div>
+            </div>
+          </div>
+        } @else {
+          <div class="card empty-state">
+            <p class="text-muted">Seleccione un operador para ver su carnet QR.</p>
+          </div>
+        }
+      </div>
     </div>
-  </div>
+  }
 
   <!-- PESTAÑA: HISTORIAL -->
-  <div *ngIf="tabActual === 'historial'">
-    <div class="filter-card">
-      <div class="filter-group">
-        <label class="filter-label">Desde:</label>
-        <input type="date" class="date-input" [(ngModel)]="fechaInicioFiltro">
-        <label class="filter-label">Hasta:</label>
-        <input type="date" class="date-input" [(ngModel)]="fechaFinFiltro">
-        <label class="filter-label">Hacienda:</label>
-        <select class="input-control" [(ngModel)]="haciendaIdFiltro">
-          <option [ngValue]="null">Todas</option>
-          <option *ngFor="let h of haciendas" [ngValue]="h.id">{{ h.nombre }}</option>
-        </select>
-        <label class="filter-label">Supervisor:</label>
-        <select class="input-control" [(ngModel)]="supervisorIdFiltro">
-          <option [ngValue]="null">Todos</option>
-          <option *ngFor="let s of supervisores" [ngValue]="s.id">{{ s.nombre_completo }}</option>
-        </select>
-      </div>
-      <button class="btn btn-primary btn-sm" (click)="buscarHistorial()">🔍 Buscar</button>
-    </div>
-
-    <div class="card">
-      <div class="table-responsive">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Operador</th>
-              <th>Fecha</th>
-              <th>Ingreso</th>
-              <th>Salida</th>
-              <th>Horas Trabajadas</th>
-              <th>Ver/Imprimir</th>
-              <th>Evidencia</th>
-              <th>Observación</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let reg of historial">
-              <td><strong class="nombre-operador">{{ reg.operador?.nombre_completo || 'N/A' }}</strong></td>
-              <td>{{ reg.fecha }}</td>
-              <td><span class="time-badge">{{ reg.hora_ingreso | date:'HH:mm:ss':'-0500' }}</span></td>
-              <td>
-                <span *ngIf="reg.hora_salida" class="time-badge">{{ reg.hora_salida | date:'HH:mm:ss':'-0500' }}</span>
-                <span *ngIf="!reg.hora_salida" class="text-muted-sm">Sin salida</span>
-              </td>
-              <td>{{ reg.total_horas != null ? (reg.total_horas + ' h') : '—' }}</td>
-              <td>
-                <div class="flex gap-1">
-                  <button
-                    class="btn btn-secondary btn-sm"
-                    [disabled]="cargandoReporteImpresion"
-                    (click)="verHojaFilaHistorial(reg)"
-                  >👁️ Ver</button>
-                  <button
-                    class="btn btn-secondary btn-sm"
-                    [disabled]="cargandoReporteImpresion"
-                    (click)="imprimirHojaFilaHistorial(reg)"
-                  >🖨️ Imprimir</button>
-                </div>
-              </td>
-              <td>
-                <app-visor-foto [asistenciaId]="reg.id" [tieneFoto]="!!reg.tiene_foto"></app-visor-foto>
-              </td>
-              <td>{{ reg.observaciones || '—' }}</td>
-            </tr>
-            <tr *ngIf="historial.length === 0">
-              <td colspan="8" class="table-empty">No hay registros para el rango seleccionado.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="pagination-bar" *ngIf="historial.length > 0">
-        <span>Página {{ paginaHistorial }} de {{ totalPaginasHistorial }} ({{ totalHistorial }} registros)</span>
-        <div class="flex gap-2">
-          <button
-            class="btn btn-primary btn-sm"
-            [disabled]="!fechaInicioFiltro || !fechaFinFiltro || cargandoReporteImpresion"
-            [title]="!fechaInicioFiltro || !fechaFinFiltro ? 'Elige un rango Desde/Hasta para habilitar la impresión' : ''"
-            (click)="imprimirHojasRangoHistorial()"
-          >
-            {{ cargandoReporteImpresion ? 'Generando...' : '🖨️ Imprimir Hojas del rango' }}
-          </button>
-          <button [disabled]="paginaHistorial === 1" (click)="cambiarPaginaHistorial(paginaHistorial - 1)" class="btn btn-secondary btn-sm">◀</button>
-          <button [disabled]="paginaHistorial === totalPaginasHistorial" (click)="cambiarPaginaHistorial(paginaHistorial + 1)" class="btn btn-secondary btn-sm">▶</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- PESTAÑA: EQUIPO (catálogo de maquinaria) -->
-  <div *ngIf="tabActual === 'equipos'">
-    <div class="filter-card">
-      <div class="filter-group">
-        <input
-          type="text"
-          [(ngModel)]="equipoBusquedaTab"
-          (ngModelChange)="onBuscarEquiposTab()"
-          placeholder="🔍 Buscar por código o nombre..."
-          class="input-control"
-        />
-      </div>
-      <button class="btn btn-secondary btn-sm" (click)="abrirModalImportarEquipo()">📥 Importar</button>
-      <button class="btn btn-primary btn-sm" (click)="abrirModalNuevoEquipo()">➕ Nuevo Equipo</button>
-    </div>
-
-    <div class="card">
-      <div class="table-responsive">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Nombre</th>
-              <th>Acción</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let eq of equipos">
-              <td><strong class="code-badge">{{ eq.codigo_megued }}</strong></td>
-              <td class="font-medium">{{ eq.nombre_equipo }}</td>
-              <td>
-                <div class="flex gap-1">
-                  <button class="btn btn-secondary btn-sm" (click)="abrirModalEditarEquipo(eq)">✏️ Editar</button>
-                  <button class="btn btn-danger btn-sm" (click)="eliminarEquipoTab(eq)">🗑️ Eliminar</button>
-                </div>
-              </td>
-            </tr>
-            <tr *ngIf="equipos.length === 0">
-              <td colspan="3" class="table-empty">No hay equipos registrados.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="pagination-bar" *ngIf="equipos.length > 0">
-        <span>Página {{ paginaEquiposTab }} de {{ totalPaginasEquiposTab }} ({{ totalEquiposTab }} equipos)</span>
-        <div class="flex gap-1">
-          <button [disabled]="paginaEquiposTab === 1" (click)="cambiarPaginaEquiposTab(paginaEquiposTab - 1)" class="btn btn-secondary btn-sm">◀</button>
-          <button [disabled]="paginaEquiposTab === totalPaginasEquiposTab" (click)="cambiarPaginaEquiposTab(paginaEquiposTab + 1)" class="btn btn-secondary btn-sm">▶</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- PESTAÑA: ACTIVIDAD (catálogo de labores) -->
-  <div *ngIf="tabActual === 'actividades'">
-    <div class="filter-card">
-      <div class="filter-group">
-        <input
-          type="text"
-          [(ngModel)]="actividadBusquedaTab"
-          (ngModelChange)="onBuscarActividadesTab()"
-          placeholder="🔍 Buscar por código o descripción..."
-          class="input-control"
-        />
-      </div>
-      <button class="btn btn-secondary btn-sm" (click)="abrirModalImportarActividad()">📥 Importar</button>
-      <button class="btn btn-primary btn-sm" (click)="abrirModalNuevaActividad()">➕ Nueva Actividad</button>
-    </div>
-
-    <div class="card">
-      <div class="table-responsive">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Descripción</th>
-              <th>Categoría</th>
-              <th>Acción</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let act of actividadesTab">
-              <td><strong class="code-badge">{{ act.codigo_megued }}</strong></td>
-              <td class="font-medium">{{ act.description }}</td>
-              <td class="text-muted-sm">{{ act.categoria === 'CAMPO' ? 'Campo' : 'Taller' }}</td>
-              <td>
-                <div class="flex gap-1">
-                  <button class="btn btn-secondary btn-sm" (click)="abrirModalEditarActividad(act)">✏️ Editar</button>
-                  <button class="btn btn-danger btn-sm" (click)="eliminarActividadTab(act)">🗑️ Eliminar</button>
-                </div>
-              </td>
-            </tr>
-            <tr *ngIf="actividadesTab.length === 0">
-              <td colspan="4" class="table-empty">No hay actividades registradas.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="pagination-bar" *ngIf="actividadesTab.length > 0">
-        <span>Página {{ paginaActividadesTab }} de {{ totalPaginasActividadesTab }} ({{ totalActividadesTab }} actividades)</span>
-        <div class="flex gap-1">
-          <button [disabled]="paginaActividadesTab === 1" (click)="cambiarPaginaActividadesTab(paginaActividadesTab - 1)" class="btn btn-secondary btn-sm">◀</button>
-          <button [disabled]="paginaActividadesTab === totalPaginasActividadesTab" (click)="cambiarPaginaActividadesTab(paginaActividadesTab + 1)" class="btn btn-secondary btn-sm">▶</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- PESTAÑA: TÉRMINOS (quién ya aceptó la Política de Privacidad/Términos de Uso y quién no) -->
-  <div *ngIf="tabActual === 'terminos'">
-    <div class="filter-card">
-      <div class="filter-group">
-        <input
-          type="text"
-          [(ngModel)]="terminosBusquedaTab"
-          (ngModelChange)="onBuscarTerminosTab()"
-          placeholder="🔍 Buscar trabajador por código o nombre..."
-          class="input-control"
-        />
-      </div>
-    </div>
-
-    <div class="card">
-      <h3 class="modal-title" style="margin-bottom: 0.5rem;">👷 Trabajadores</h3>
-      <div class="table-responsive">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Nombre</th>
-              <th>Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let op of operadoresTerminos">
-              <td><strong class="code-badge">{{ op.codigo_megued }}</strong></td>
-              <td class="font-medium">{{ op.nombre_completo }}</td>
-              <td>
-                <span *ngIf="op.terminos_aceptados_en" class="text-muted-sm">✅ Aceptó el {{ op.terminos_aceptados_en | date:'dd/MM/yyyy HH:mm' }}</span>
-                <span *ngIf="!op.terminos_aceptados_en" class="alert-danger" style="padding: 0.15rem 0.5rem; border-radius: 6px; font-size: 0.85rem;">⚠️ Todavía no aceptó</span>
-              </td>
-            </tr>
-            <tr *ngIf="operadoresTerminos.length === 0">
-              <td colspan="3" class="table-empty">No hay trabajadores registrados.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="pagination-bar" *ngIf="operadoresTerminos.length > 0">
-        <span>Página {{ paginaTerminosTab }} de {{ totalPaginasTerminosTab }} ({{ totalTerminosTab }} trabajadores)</span>
-        <div class="flex gap-1">
-          <button [disabled]="paginaTerminosTab === 1" (click)="cambiarPaginaTerminosTab(paginaTerminosTab - 1)" class="btn btn-secondary btn-sm">◀</button>
-          <button [disabled]="paginaTerminosTab === totalPaginasTerminosTab" (click)="cambiarPaginaTerminosTab(paginaTerminosTab + 1)" class="btn btn-secondary btn-sm">▶</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top: 1rem;">
-      <h3 class="modal-title" style="margin-bottom: 0.5rem;">🖥️ Usuarios de oficina</h3>
-      <div class="table-responsive">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Usuario</th>
-              <th>Nombre</th>
-              <th>Cargo</th>
-              <th>Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let us of usuariosTerminos">
-              <td><strong class="code-badge">{{ us.usuario }}</strong></td>
-              <td class="font-medium">{{ us.nombre_completo }}</td>
-              <td class="text-muted-sm">{{ us.cargo }}</td>
-              <td>
-                <span *ngIf="us.terminos_aceptados_en" class="text-muted-sm">✅ Aceptó el {{ us.terminos_aceptados_en | date:'dd/MM/yyyy HH:mm' }}</span>
-                <span *ngIf="!us.terminos_aceptados_en" class="alert-danger" style="padding: 0.15rem 0.5rem; border-radius: 6px; font-size: 0.85rem;">⚠️ Todavía no aceptó</span>
-              </td>
-            </tr>
-            <tr *ngIf="usuariosTerminos.length === 0">
-              <td colspan="4" class="table-empty">No hay usuarios de oficina registrados.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL NUEVO OPERADOR (sin cambios, sigue fuera de las pestañas) -->
-  <div class="modal-backdrop" *ngIf="mostrarModalOperador">
-    <div class="modal-card">
-      <h3 class="modal-title">👤 Registrar Nuevo Operador</h3>
-      <form (ngSubmit)="guardarNuevoOperador()" #formOp="ngForm" class="space-y-3 mt-3">
-        <div>
-          <label class="form-label">Nombre Completo *</label>
-          <input type="text" [(ngModel)]="nuevoOperador.nombre_completo" name="nombre_completo" required class="input-control w-full">
-        </div>
-        <div>
-          <label class="form-label">Código Megued / ID *</label>
-          <input type="text" [(ngModel)]="nuevoOperador.codigo_megued" name="codigo_megued" required class="input-control w-full">
-        </div>
-        <div>
-          <label class="form-label">Cédula</label>
-          <input type="text" [(ngModel)]="nuevoOperador.cedula" name="cedula" class="input-control w-full">
-        </div>
-        <div>
-          <label class="form-label">Supervisor (hacienda permanente)</label>
-          <select [(ngModel)]="nuevoOperador.supervisor_id" name="supervisor_id" class="input-control w-full">
-            <option [ngValue]="null">Sin asignar</option>
-            <option *ngFor="let sup of supervisores" [ngValue]="sup.id">{{ sup.nombre_completo }} — {{ sup.hacienda?.nombre }}</option>
-          </select>
-        </div>
-        <div>
-          <label class="form-label">Rol *</label>
-          <select [(ngModel)]="nuevoOperador.rol" name="rol" required class="input-control w-full">
-            <option value="MECANICO">Mecánico</option>
-            <option value="OPERADOR">Operador</option>
-          </select>
-        </div>
-        <div>
-          <label class="form-label">Usuario de acceso (opcional)</label>
-          <input type="text" [(ngModel)]="nuevoOperador.usuario" name="usuario" class="input-control w-full">
-        </div>
-        <div *ngIf="nuevoOperador.usuario">
-          <label class="form-label">Clave (mínimo 8 caracteres)</label>
-          <div class="campo-clave">
-            <input
-              [type]="mostrarClaveNuevoOperador() ? 'text' : 'password'"
-              [(ngModel)]="nuevoOperadorClave"
-              name="claveNuevoOperador"
-              minlength="8"
-              class="input-control w-full"
-            >
-            <button type="button" class="boton-ojo" (click)="mostrarClaveNuevoOperador.set(!mostrarClaveNuevoOperador())">
-              {{ mostrarClaveNuevoOperador() ? '🙈' : '👁️' }}
-            </button>
-          </div>
-        </div>
-        <div class="flex justify-end gap-2 pt-3">
-          <button type="button" (click)="cerrarModalNuevoOperador()" class="btn btn-secondary">Cancelar</button>
-          <button type="submit" [disabled]="!formOp.form.valid || (!!nuevoOperador.usuario && nuevoOperadorClave.length < 6)" class="btn btn-primary">Guardar</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- MODAL: RESETEAR CLAVE DEL OPERADOR SELECCIONADO -->
-  <div class="modal-backdrop" *ngIf="mostrarModalResetClaveOperador">
-    <div class="modal-card">
-      <h3 class="modal-title">🔑 Resetear clave de {{ operadorSeleccionado?.nombre_completo }}</h3>
-      <p class="text-muted-sm mb-3">La clave anterior no se puede recuperar - se reemplaza por esta nueva.</p>
-      <form (ngSubmit)="guardarClaveResetOperador()" #formClaveOp="ngForm" class="space-y-3">
-        <div class="form-group">
-          <label class="form-label">Clave nueva * (mínimo 8 caracteres)</label>
-          <div class="campo-clave">
-            <input
-              [type]="mostrarClaveResetOperador() ? 'text' : 'password'"
-              [(ngModel)]="claveResetOperador"
-              name="claveResetOperador"
-              required
-              minlength="8"
-              class="input-control w-full"
-            >
-            <button type="button" class="boton-ojo" (click)="mostrarClaveResetOperador.set(!mostrarClaveResetOperador())">
-              {{ mostrarClaveResetOperador() ? '🙈' : '👁️' }}
-            </button>
-          </div>
-        </div>
-        <div class="flex justify-end gap-2 pt-3">
-          <button type="button" (click)="cerrarModalResetClaveOperador()" class="btn btn-secondary">Cancelar</button>
-          <button type="submit" [disabled]="!formClaveOp.form.valid" class="btn btn-primary">Actualizar clave</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- MODAL: NUEVO/EDITAR EQUIPO (pestaña "Equipo") -->
-  <div class="modal-backdrop" *ngIf="mostrarModalEquipo">
-    <div class="modal-card">
-      <h3 class="modal-title">{{ equipoEditando ? '✏️ Editar Equipo' : '🚜 Nuevo Equipo' }}</h3>
-      <form (ngSubmit)="guardarEquipo()" #formEq="ngForm" class="space-y-3 mt-3">
-        <div class="form-group">
-          <label class="form-label">Código Megued *</label>
-          <input type="text" [(ngModel)]="formEquipo.codigo_megued" name="codigo_megued_eq" required class="input-control w-full">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Nombre del equipo *</label>
-          <input type="text" [(ngModel)]="formEquipo.nombre_equipo" name="nombre_equipo_eq" required class="input-control w-full">
-        </div>
-        <div class="flex justify-end gap-2 pt-3">
-          <button type="button" (click)="cerrarModalEquipo()" class="btn btn-secondary">Cancelar</button>
-          <button type="submit" [disabled]="!formEq.form.valid" class="btn btn-primary">Guardar</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- MODAL: NUEVA/EDITAR ACTIVIDAD (pestaña "Actividad") -->
-  <div class="modal-backdrop" *ngIf="mostrarModalActividad">
-    <div class="modal-card">
-      <h3 class="modal-title">{{ actividadEditando ? '✏️ Editar Actividad' : '🛠️ Nueva Actividad' }}</h3>
-      <form (ngSubmit)="guardarActividad()" #formAct="ngForm" class="space-y-3 mt-3">
-        <div class="form-group">
-          <label class="form-label">Código Megued *</label>
-          <input type="text" [(ngModel)]="formActividad.codigo_megued" name="codigo_megued_act" required class="input-control w-full">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Descripción *</label>
-          <input type="text" [(ngModel)]="formActividad.description" name="description_act" required class="input-control w-full">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Categoría</label>
-          <select class="input-control w-full" [(ngModel)]="formActividad.categoria" name="categoria_act">
-            <option value="TALLER">Taller</option>
-            <option value="CAMPO">Campo</option>
-          </select>
-        </div>
-        <div class="flex justify-end gap-2 pt-3">
-          <button type="button" (click)="cerrarModalActividad()" class="btn btn-secondary">Cancelar</button>
-          <button type="submit" [disabled]="!formAct.form.valid" class="btn btn-primary">Guardar</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- MODAL: IMPORTAR TRABAJADORES DESDE EXCEL (Directorio de Operadores) - mismo patrón de 3 pasos que
-       Equipo/Actividad. La columna SUPERVISOR es opcional: si viene, el backend la resuelve por nombre y
-       vincula al trabajador a la hacienda correspondiente automáticamente. -->
-  <div class="modal-backdrop" *ngIf="mostrarModalImportarOperador">
-    <div class="modal-card">
-      <h3 class="modal-title">📥 Importar Trabajadores desde Excel</h3>
-
-      <ng-container *ngIf="!resultadoImportarOperador; else resultadoOperador">
-        <p class="text-muted-sm mb-3">
-          Usa la plantilla para que las columnas coincidan exactamente: NOMBRE y CÓDIGO son obligatorios; CARGO
-          (MECANICO u OPERADOR, por defecto MECANICO), CÉDULA y SUPERVISOR son opcionales. Si escribes el
-          SUPERVISOR (su nombre completo, tal cual está registrado), el trabajador queda vinculado a la hacienda
-          de ese Supervisor automáticamente.
-        </p>
-        <button type="button" class="btn btn-secondary btn-sm mb-3" (click)="descargarPlantillaOperadores()">⬇️ Descargar plantilla</button>
-
-        <div class="form-group">
-          <label class="form-label">Archivo (.xlsx)</label>
-          <input type="file" accept=".xlsx,.xls" class="input-control w-full" (change)="onArchivoOperadoresSeleccionado($event)">
-        </div>
-
-        <div class="alert alert-danger" *ngIf="errorImportarOperador">{{ errorImportarOperador }}</div>
-
-        <p class="text-muted-sm" *ngIf="filasParaImportarOperador.length > 0">
-          Se leyeron <strong>{{ filasParaImportarOperador.length }}</strong> fila(s). Al confirmar, se van a
-          revisar contra lo que ya existe - las que tengan un código o cédula repetido, un cargo inválido, o un
-          Supervisor que no coincida con ninguno registrado, no se van a crear, y se va a mostrar por qué.
-        </p>
-
-        <div class="flex justify-end gap-2 pt-3">
-          <button type="button" (click)="cerrarModalImportarOperador()" class="btn btn-secondary">Cancelar</button>
-          <button
-            type="button"
-            [disabled]="filasParaImportarOperador.length === 0 || importandoOperadores"
-            (click)="confirmarImportarOperadores()"
-            class="btn btn-primary"
-          >{{ importandoOperadores ? 'Importando...' : 'Importar ' + filasParaImportarOperador.length + ' trabajador(es)' }}</button>
-        </div>
-      </ng-container>
-
-      <ng-template #resultadoOperador>
-        <p class="mb-3">
-          ✅ <strong>{{ resultadoImportarOperador!.creados }}</strong> trabajador(es) importado(s) con éxito.
-        </p>
-        <ng-container *ngIf="resultadoImportarOperador!.rechazados.length > 0">
-          <p class="text-muted-sm mb-2">
-            {{ resultadoImportarOperador!.rechazados.length }} fila(s) no se importaron - corrígelas en el Excel y
-            vuelve a intentar solo con esas:
-          </p>
-          <div class="table-responsive">
-            <table class="data-table">
-              <thead>
-                <tr><th>Fila</th><th>Motivo</th></tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let r of resultadoImportarOperador!.rechazados">
-                  <td>{{ r.fila }}</td>
-                  <td>{{ r.motivo }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </ng-container>
-        <div class="flex justify-end gap-2 pt-3">
-          <button type="button" (click)="abrirModalImportarOperador()" class="btn btn-secondary">Importar otro archivo</button>
-          <button type="button" (click)="cerrarModalImportarOperador()" class="btn btn-primary">Cerrar</button>
-        </div>
-      </ng-template>
-    </div>
-  </div>
-
-  <!-- MODAL: IMPORTAR EQUIPOS DESDE EXCEL (pestaña "Equipo") - 3 pasos en la misma ventana: elegir archivo,
-       ver la vista previa (cuántas filas se leyeron) y confirmar, y por último el resultado (creados/rechazados
-       fila por fila) - nunca manda nada al backend hasta que el usuario confirma explícitamente. -->
-  <div class="modal-backdrop" *ngIf="mostrarModalImportarEquipo">
-    <div class="modal-card">
-      <h3 class="modal-title">📥 Importar Equipos desde Excel</h3>
-
-      <ng-container *ngIf="!resultadoImportarEquipo; else resultadoEquipo">
-        <p class="text-muted-sm mb-3">
-          Usa la plantilla para que las columnas coincidan exactamente - dos columnas: Código Megued y Nombre
-          del Equipo, una fila por equipo.
-        </p>
-        <button type="button" class="btn btn-secondary btn-sm mb-3" (click)="descargarPlantillaEquipos()">⬇️ Descargar plantilla</button>
-
-        <div class="form-group">
-          <label class="form-label">Archivo (.xlsx)</label>
-          <input type="file" accept=".xlsx,.xls" class="input-control w-full" (change)="onArchivoEquiposSeleccionado($event)">
-        </div>
-
-        <div class="alert alert-danger" *ngIf="errorImportarEquipo">{{ errorImportarEquipo }}</div>
-
-        <p class="text-muted-sm" *ngIf="filasParaImportarEquipo.length > 0">
-          Se leyeron <strong>{{ filasParaImportarEquipo.length }}</strong> fila(s). Al confirmar, se van a
-          revisar contra lo que ya existe - las que tengan un código o nombre repetido no se van a crear, y se
-          va a mostrar por qué.
-        </p>
-
-        <div class="flex justify-end gap-2 pt-3">
-          <button type="button" (click)="cerrarModalImportarEquipo()" class="btn btn-secondary">Cancelar</button>
-          <button
-            type="button"
-            [disabled]="filasParaImportarEquipo.length === 0 || importandoEquipos"
-            (click)="confirmarImportarEquipos()"
-            class="btn btn-primary"
-          >{{ importandoEquipos ? 'Importando...' : 'Importar ' + filasParaImportarEquipo.length + ' equipo(s)' }}</button>
-        </div>
-      </ng-container>
-
-      <ng-template #resultadoEquipo>
-        <p class="mb-3">
-          ✅ <strong>{{ resultadoImportarEquipo!.creados }}</strong> equipo(s) importado(s) con éxito.
-        </p>
-        <ng-container *ngIf="resultadoImportarEquipo!.rechazados.length > 0">
-          <p class="text-muted-sm mb-2">
-            {{ resultadoImportarEquipo!.rechazados.length }} fila(s) no se importaron - corrígelas en el Excel y
-            vuelve a intentar solo con esas:
-          </p>
-          <div class="table-responsive">
-            <table class="data-table">
-              <thead>
-                <tr><th>Fila</th><th>Motivo</th></tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let r of resultadoImportarEquipo!.rechazados">
-                  <td>{{ r.fila }}</td>
-                  <td>{{ r.motivo }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </ng-container>
-        <div class="flex justify-end gap-2 pt-3">
-          <button type="button" (click)="abrirModalImportarEquipo()" class="btn btn-secondary">Importar otro archivo</button>
-          <button type="button" (click)="cerrarModalImportarEquipo()" class="btn btn-primary">Cerrar</button>
-        </div>
-      </ng-template>
-    </div>
-  </div>
-
-  <!-- MODAL: IMPORTAR ACTIVIDADES DESDE EXCEL (pestaña "Actividad") - mismo patrón que el de Equipos arriba. -->
-  <div class="modal-backdrop" *ngIf="mostrarModalImportarActividad">
-    <div class="modal-card">
-      <h3 class="modal-title">📥 Importar Actividades desde Excel</h3>
-
-      <ng-container *ngIf="!resultadoImportarActividad; else resultadoActividad">
-        <p class="text-muted-sm mb-3">
-          Usa la plantilla para que las columnas coincidan exactamente - tres columnas: Código Megued,
-          Descripción y Categoría (escribe TALLER o CAMPO; si la dejas vacía queda como Taller), una fila por
-          actividad.
-        </p>
-        <button type="button" class="btn btn-secondary btn-sm mb-3" (click)="descargarPlantillaActividades()">⬇️ Descargar plantilla</button>
-
-        <div class="form-group">
-          <label class="form-label">Archivo (.xlsx)</label>
-          <input type="file" accept=".xlsx,.xls" class="input-control w-full" (change)="onArchivoActividadesSeleccionado($event)">
-        </div>
-
-        <div class="alert alert-danger" *ngIf="errorImportarActividad">{{ errorImportarActividad }}</div>
-
-        <p class="text-muted-sm" *ngIf="filasParaImportarActividad.length > 0">
-          Se leyeron <strong>{{ filasParaImportarActividad.length }}</strong> fila(s). Al confirmar, se van a
-          revisar contra lo que ya existe - las que tengan un código repetido no se van a crear, y se va a
-          mostrar por qué.
-        </p>
-
-        <div class="flex justify-end gap-2 pt-3">
-          <button type="button" (click)="cerrarModalImportarActividad()" class="btn btn-secondary">Cancelar</button>
-          <button
-            type="button"
-            [disabled]="filasParaImportarActividad.length === 0 || importandoActividades"
-            (click)="confirmarImportarActividades()"
-            class="btn btn-primary"
-          >{{ importandoActividades ? 'Importando...' : 'Importar ' + filasParaImportarActividad.length + ' actividad(es)' }}</button>
-        </div>
-      </ng-container>
-
-      <ng-template #resultadoActividad>
-        <p class="mb-3">
-          ✅ <strong>{{ resultadoImportarActividad!.creados }}</strong> actividad(es) importada(s) con éxito.
-        </p>
-        <ng-container *ngIf="resultadoImportarActividad!.rechazados.length > 0">
-          <p class="text-muted-sm mb-2">
-            {{ resultadoImportarActividad!.rechazados.length }} fila(s) no se importaron - corrígelas en el
-            Excel y vuelve a intentar solo con esas:
-          </p>
-          <div class="table-responsive">
-            <table class="data-table">
-              <thead>
-                <tr><th>Fila</th><th>Motivo</th></tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let r of resultadoImportarActividad!.rechazados">
-                  <td>{{ r.fila }}</td>
-                  <td>{{ r.motivo }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </ng-container>
-        <div class="flex justify-end gap-2 pt-3">
-          <button type="button" (click)="abrirModalImportarActividad()" class="btn btn-secondary">Importar otro archivo</button>
-          <button type="button" (click)="cerrarModalImportarActividad()" class="btn btn-primary">Cerrar</button>
-        </div>
-      </ng-template>
-    </div>
-  </div>
-
-  <!-- MODAL: VER/IMPRIMIR HOJA DE ACTIVIDADES (Directorio y fila del Historial) - flotante, no pestaña nueva,
-       porque la app va empaquetada. Al imprimir, styles.css oculta el resto de la pantalla y deja visible
-       solo .imprimible (ver @media print en styles.css). -->
-  <!-- modal-backdrop-anidado: esta hoja se puede abrir ENCIMA del modal de Historial de un operador (al
-       clicar Ver/Imprimir dentro de ese modal) - necesita quedar por encima del otro backdrop sin importar
-       el orden en el HTML (ver .modal-backdrop-anidado en asistencia-panel.css). -->
-  <div class="modal-backdrop modal-backdrop-anidado" *ngIf="mostrarModalHoja" (click)="cerrarModalHoja()">
-    <div class="modal-card hoja-actividades-card imprimible" (click)="$event.stopPropagation()">
-      <!-- Barra superior PEGADA (sticky) al desplazar el contenido - Imprimir/Cerrar siempre visibles sin
-           importar cuánto se baje, en vez del botón flotando encima de la tarjeta (se recortaba con el
-           scroll interno, ver nota en CLAUDE.md). -->
-      <div class="hoja-actividades-barra-superior no-imprimir">
-        <button type="button" class="btn btn-primary btn-sm" (click)="imprimirHoja()">🖨️ Imprimir</button>
-        <button type="button" class="hoja-actividades-cerrar" (click)="cerrarModalHoja()">✕</button>
-      </div>
-
-      <!-- Un bloque por operador - normalmente 1 (fila del Historial), o varios cuando viene de "Imprimir
-           Hojas del rango" (uno por cada operador distinto de la tabla filtrada). Al imprimir, el contenido
-           fluye normal (caben varios operadores cortos por hoja) pero cada bloque nunca se parte a la mitad
-           entre una hoja y la siguiente (ver break-inside:avoid en el @media print de este componente). -->
-      <div
-        *ngFor="let grupo of hojaGrupos"
-        class="hoja-actividades-grupo"
-      >
-        <!-- Titulo y tabla dependen del rol de quien hizo las labores: un Operador no tiene OT ni "daño" (eso
-             es del taller mecánico), en cambio sí lleva horómetro inicio/fin - por eso el diseño impreso es
-             distinto para cada uno, no solo el título (ver CLAUDE.md). -->
-        <h2 class="hoja-actividades-titulo">{{ grupo.operador.rol === 'OPERADOR' ? 'REPORTE DE LABORES MAQUINARIAS' : 'REPORTE DE LABORES DIARIOS' }}</h2>
-        <div class="hoja-actividades-encabezado">
-          <span class="hoja-actividades-mecanico">
-            {{ grupo.operador.rol === 'OPERADOR' ? 'Operador' : 'Mecánico' }}: {{ grupo.operador.nombre_completo }}<ng-container *ngIf="grupo.haciendaNombre"> · {{ grupo.haciendaNombre }}</ng-container>
-          </span>
-          <span *ngIf="hojaFechaUnica" class="hoja-actividades-fecha">Fecha: {{ hojaFechaUnica }}</span>
-        </div>
-
-        <table class="hoja-actividades-tabla" *ngIf="grupo.operador.rol !== 'OPERADOR'">
-          <thead>
-            <tr>
-              <th *ngIf="!hojaFechaUnica">Fecha</th>
-              <th>Equipo</th>
-              <th>OT</th>
-              <th>Observaciones</th>
-              <th>Tiempo estimado</th>
-              <th>Hora</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let reg of grupo.registros">
-              <td *ngIf="!hojaFechaUnica">{{ reg.asistencia?.fecha || '—' }}</td>
-              <td>{{ reg.equipo ? (reg.equipo.codigo_megued + ' - ' + reg.equipo.nombre_equipo) : '—' }}</td>
-              <td>{{ reg.area || '—' }}</td>
-              <td>{{ reg.observaciones || '—' }}</td>
-              <td>{{ duracionLabor(reg) }}</td>
-              <td>{{ rangoHorasLabor(reg) }}</td>
-            </tr>
-            <tr *ngIf="grupo.registros.length === 0">
-              <td [attr.colspan]="hojaFechaUnica ? 5 : 6" class="hoja-actividades-vacio">Sin labores registradas.</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <!-- Tabla de OPERADOR: sin OT ni Daño/Taller-Campo (no aplican), con Horómetro inicio/fin y
-             Observaciones de cada labor en su lugar. -->
-        <table class="hoja-actividades-tabla" *ngIf="grupo.operador.rol === 'OPERADOR'">
-          <thead>
-            <tr>
-              <th *ngIf="!hojaFechaUnica">Fecha</th>
-              <th>Equipo</th>
-              <th>Horómetro inicio</th>
-              <th>Horómetro fin</th>
-              <th>Tiempo estimado</th>
-              <th>Observaciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let reg of grupo.registros">
-              <td *ngIf="!hojaFechaUnica">{{ reg.asistencia?.fecha || '—' }}</td>
-              <td>{{ reg.equipo ? (reg.equipo.codigo_megued + ' - ' + reg.equipo.nombre_equipo) : '—' }}</td>
-              <td>{{ reg.horometro_inicio ?? '—' }}</td>
-              <td>{{ reg.horometro_final ?? '—' }}</td>
-              <td>{{ duracionLabor(reg) }}</td>
-              <td>{{ reg.observaciones || '—' }}</td>
-            </tr>
-            <tr *ngIf="grupo.registros.length === 0">
-              <td [attr.colspan]="hojaFechaUnica ? 5 : 6" class="hoja-actividades-vacio">Sin labores registradas.</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="hoja-actividades-observaciones" *ngIf="hojaFechaUnica">
-          <strong>Observaciones del Supervisor:</strong>
-          <p>{{ hojaObservacionesSupervisor || 'Sin observaciones.' }}</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL: HISTORIAL DE ASISTENCIA de UN operador (Ficha, Directorio) - mismas columnas que la pestaña
-       Historial general, ya filtrado a este operador (reutiliza GET /historial con operador_id). -->
-  <div class="modal-backdrop" *ngIf="mostrarModalHistorialOperador" (click)="cerrarModalHistorialOperador()">
-    <div class="modal-card historial-operador-card" (click)="$event.stopPropagation()">
-      <!-- Barra superior PEGADA (sticky) - título y Cerrar siempre visibles al bajar en la tabla. -->
-      <div class="hoja-actividades-barra-superior">
-        <h3 class="modal-title historial-operador-titulo">📅 Historial de Asistencia: {{ historialOperadorSel?.nombre_completo }}</h3>
-        <button type="button" class="hoja-actividades-cerrar" (click)="cerrarModalHistorialOperador()">✕</button>
-      </div>
-
+  @if (tabActual === 'historial') {
+    <div>
       <div class="filter-card">
         <div class="filter-group">
           <label class="filter-label">Desde:</label>
-          <input type="date" class="date-input" [(ngModel)]="historialOperadorFechaInicio">
+          <input type="date" class="date-input" [(ngModel)]="fechaInicioFiltro" />
           <label class="filter-label">Hasta:</label>
-          <input type="date" class="date-input" [(ngModel)]="historialOperadorFechaFin">
+          <input type="date" class="date-input" [(ngModel)]="fechaFinFiltro" />
+          <label class="filter-label">Hacienda:</label>
+          <select class="input-control" [(ngModel)]="haciendaIdFiltro">
+            <option [ngValue]="null">Todas</option>
+            @for (h of haciendas; track h) {
+              <option [ngValue]="h.id">{{ h.nombre }}</option>
+            }
+          </select>
+          <label class="filter-label">Supervisor:</label>
+          <select class="input-control" [(ngModel)]="supervisorIdFiltro">
+            <option [ngValue]="null">Todos</option>
+            @for (s of supervisores; track s) {
+              <option [ngValue]="s.id">{{ s.nombre_completo }}</option>
+            }
+          </select>
         </div>
-        <button class="btn btn-primary btn-sm" (click)="buscarHistorialOperador()">🔍 Buscar</button>
+        <button class="btn btn-primary btn-sm" (click)="buscarHistorial()">🔍 Buscar</button>
       </div>
-
-      <div class="table-responsive">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Ingreso</th>
-              <th>Salida</th>
-              <th>Horas Trabajadas</th>
-              <th>Ver/Imprimir</th>
-              <th>Evidencia</th>
-              <th>Observación</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let reg of historialOperadorRegistros">
-              <td>{{ reg.fecha }}</td>
-              <td><span class="time-badge">{{ reg.hora_ingreso | date:'HH:mm:ss':'-0500' }}</span></td>
-              <td>
-                <span *ngIf="reg.hora_salida" class="time-badge">{{ reg.hora_salida | date:'HH:mm:ss':'-0500' }}</span>
-                <span *ngIf="!reg.hora_salida" class="text-muted-sm">Sin salida</span>
-              </td>
-              <td>{{ reg.total_horas != null ? (reg.total_horas + ' h') : '—' }}</td>
-              <td>
-                <div class="flex gap-1">
-                  <button
-                    class="btn btn-secondary btn-sm"
-                    [disabled]="cargandoReporteImpresion"
-                    (click)="verHojaFilaHistorial(reg)"
-                  >👁️ Ver</button>
-                  <button
-                    class="btn btn-secondary btn-sm"
-                    [disabled]="cargandoReporteImpresion"
-                    (click)="imprimirHojaFilaHistorial(reg)"
-                  >🖨️ Imprimir</button>
-                </div>
-              </td>
-              <td>
-                <app-visor-foto [asistenciaId]="reg.id" [tieneFoto]="!!reg.tiene_foto"></app-visor-foto>
-              </td>
-              <td>{{ reg.observaciones || '—' }}</td>
-            </tr>
-            <tr *ngIf="!cargandoHistorialOperador && historialOperadorRegistros.length === 0">
-              <td colspan="7" class="table-empty">No hay registros para el rango seleccionado.</td>
-            </tr>
-          </tbody>
-        </table>
+      <div class="card">
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Operador</th>
+                <th>Fecha</th>
+                <th>Ingreso</th>
+                <th>Salida</th>
+                <th>Horas Trabajadas</th>
+                <th>Ver/Imprimir</th>
+                <th>Evidencia</th>
+                <th>Observación</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (reg of historial; track reg) {
+                <tr>
+                  <td>
+                    <strong class="nombre-operador">{{
+                      reg.operador?.nombre_completo || 'N/A'
+                    }}</strong>
+                  </td>
+                  <td>{{ reg.fecha }}</td>
+                  <td>
+                    <span class="time-badge">{{
+                      reg.hora_ingreso | date: 'HH:mm:ss' : '-0500'
+                    }}</span>
+                  </td>
+                  <td>
+                    @if (reg.hora_salida) {
+                      <span class="time-badge">{{
+                        reg.hora_salida | date: 'HH:mm:ss' : '-0500'
+                      }}</span>
+                    }
+                    @if (!reg.hora_salida) {
+                      <span class="text-muted-sm">Sin salida</span>
+                    }
+                  </td>
+                  <td>{{ reg.total_horas != null ? reg.total_horas + ' h' : '—' }}</td>
+                  <td>
+                    <div class="flex gap-1">
+                      <button
+                        class="btn btn-secondary btn-sm"
+                        [disabled]="cargandoReporteImpresion"
+                        (click)="verHojaFilaHistorial(reg)"
+                      >
+                        👁️ Ver
+                      </button>
+                      <button
+                        class="btn btn-secondary btn-sm"
+                        [disabled]="cargandoReporteImpresion"
+                        (click)="imprimirHojaFilaHistorial(reg)"
+                      >
+                        🖨️ Imprimir
+                      </button>
+                    </div>
+                  </td>
+                  <td>
+                    <app-visor-foto
+                      [asistenciaId]="reg.id"
+                      [tieneFoto]="!!reg.tiene_foto"
+                    ></app-visor-foto>
+                  </td>
+                  <td>{{ reg.observaciones || '—' }}</td>
+                </tr>
+              }
+              @if (historial.length === 0) {
+                <tr>
+                  <td colspan="8" class="table-empty">
+                    No hay registros para el rango seleccionado.
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (historial.length > 0) {
+          <div class="pagination-bar">
+            <span
+              >Página {{ paginaHistorial }} de {{ totalPaginasHistorial }} ({{
+                totalHistorial
+              }}
+              registros)</span
+            >
+            <div class="flex gap-2">
+              <button
+                class="btn btn-primary btn-sm"
+                [disabled]="!fechaInicioFiltro || !fechaFinFiltro || cargandoReporteImpresion"
+                [title]="
+                  !fechaInicioFiltro || !fechaFinFiltro
+                    ? 'Elige un rango Desde/Hasta para habilitar la impresión'
+                    : ''
+                "
+                (click)="imprimirHojasRangoHistorial()"
+              >
+                {{ cargandoReporteImpresion ? 'Generando...' : '🖨️ Imprimir Hojas del rango' }}
+              </button>
+              <button
+                [disabled]="paginaHistorial === 1"
+                (click)="cambiarPaginaHistorial(paginaHistorial - 1)"
+                class="btn btn-secondary btn-sm"
+              >
+                ◀
+              </button>
+              <button
+                [disabled]="paginaHistorial === totalPaginasHistorial"
+                (click)="cambiarPaginaHistorial(paginaHistorial + 1)"
+                class="btn btn-secondary btn-sm"
+              >
+                ▶
+              </button>
+            </div>
+          </div>
+        }
       </div>
+    </div>
+  }
 
-      <div class="pagination-bar" *ngIf="historialOperadorRegistros.length > 0">
-        <span>Página {{ paginaHistorialOperador }} de {{ totalPaginasHistorialOperador }} ({{ totalHistorialOperador }} registros)</span>
-        <div class="flex gap-1">
-          <button [disabled]="paginaHistorialOperador === 1" (click)="cambiarPaginaHistorialOperador(paginaHistorialOperador - 1)" class="btn btn-secondary btn-sm">◀</button>
-          <button [disabled]="paginaHistorialOperador === totalPaginasHistorialOperador" (click)="cambiarPaginaHistorialOperador(paginaHistorialOperador + 1)" class="btn btn-secondary btn-sm">▶</button>
+  <!-- PESTAÑA: EQUIPO (catálogo de maquinaria) -->
+  @if (tabActual === 'equipos') {
+    <div>
+      <div class="filter-card">
+        <div class="filter-group">
+          <input
+            type="text"
+            [(ngModel)]="equipoBusquedaTab"
+            (ngModelChange)="onBuscarEquiposTab()"
+            placeholder="🔍 Buscar por código o nombre..."
+            class="input-control"
+          />
+        </div>
+        <button class="btn btn-secondary btn-sm" (click)="abrirModalImportarEquipo()">
+          📥 Importar
+        </button>
+        <button class="btn btn-primary btn-sm" (click)="abrirModalNuevoEquipo()">
+          ➕ Nuevo Equipo
+        </button>
+      </div>
+      <div class="card">
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Nombre</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (eq of equipos; track eq) {
+                <tr>
+                  <td>
+                    <strong class="code-badge">{{ eq.codigo_megued }}</strong>
+                  </td>
+                  <td class="font-medium">{{ eq.nombre_equipo }}</td>
+                  <td>
+                    <div class="flex gap-1">
+                      <button class="btn btn-secondary btn-sm" (click)="abrirModalEditarEquipo(eq)">
+                        ✏️ Editar
+                      </button>
+                      <button class="btn btn-danger btn-sm" (click)="eliminarEquipoTab(eq)">
+                        🗑️ Eliminar
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              }
+              @if (equipos.length === 0) {
+                <tr>
+                  <td colspan="3" class="table-empty">No hay equipos registrados.</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (equipos.length > 0) {
+          <div class="pagination-bar">
+            <span
+              >Página {{ paginaEquiposTab }} de {{ totalPaginasEquiposTab }} ({{
+                totalEquiposTab
+              }}
+              equipos)</span
+            >
+            <div class="flex gap-1">
+              <button
+                [disabled]="paginaEquiposTab === 1"
+                (click)="cambiarPaginaEquiposTab(paginaEquiposTab - 1)"
+                class="btn btn-secondary btn-sm"
+              >
+                ◀
+              </button>
+              <button
+                [disabled]="paginaEquiposTab === totalPaginasEquiposTab"
+                (click)="cambiarPaginaEquiposTab(paginaEquiposTab + 1)"
+                class="btn btn-secondary btn-sm"
+              >
+                ▶
+              </button>
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- PESTAÑA: ACTIVIDAD (catálogo de labores) -->
+  @if (tabActual === 'actividades') {
+    <div>
+      <div class="filter-card">
+        <div class="filter-group">
+          <input
+            type="text"
+            [(ngModel)]="actividadBusquedaTab"
+            (ngModelChange)="onBuscarActividadesTab()"
+            placeholder="🔍 Buscar por código o descripción..."
+            class="input-control"
+          />
+        </div>
+        <button class="btn btn-secondary btn-sm" (click)="abrirModalImportarActividad()">
+          📥 Importar
+        </button>
+        <button class="btn btn-primary btn-sm" (click)="abrirModalNuevaActividad()">
+          ➕ Nueva Actividad
+        </button>
+      </div>
+      <div class="card">
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Descripción</th>
+                <th>Categoría</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (act of actividadesTab; track act) {
+                <tr>
+                  <td>
+                    <strong class="code-badge">{{ act.codigo_megued }}</strong>
+                  </td>
+                  <td class="font-medium">{{ act.description }}</td>
+                  <td class="text-muted-sm">
+                    {{ act.categoria === 'CAMPO' ? 'Campo' : 'Taller' }}
+                  </td>
+                  <td>
+                    <div class="flex gap-1">
+                      <button
+                        class="btn btn-secondary btn-sm"
+                        (click)="abrirModalEditarActividad(act)"
+                      >
+                        ✏️ Editar
+                      </button>
+                      <button class="btn btn-danger btn-sm" (click)="eliminarActividadTab(act)">
+                        🗑️ Eliminar
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              }
+              @if (actividadesTab.length === 0) {
+                <tr>
+                  <td colspan="4" class="table-empty">No hay actividades registradas.</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (actividadesTab.length > 0) {
+          <div class="pagination-bar">
+            <span
+              >Página {{ paginaActividadesTab }} de {{ totalPaginasActividadesTab }} ({{
+                totalActividadesTab
+              }}
+              actividades)</span
+            >
+            <div class="flex gap-1">
+              <button
+                [disabled]="paginaActividadesTab === 1"
+                (click)="cambiarPaginaActividadesTab(paginaActividadesTab - 1)"
+                class="btn btn-secondary btn-sm"
+              >
+                ◀
+              </button>
+              <button
+                [disabled]="paginaActividadesTab === totalPaginasActividadesTab"
+                (click)="cambiarPaginaActividadesTab(paginaActividadesTab + 1)"
+                class="btn btn-secondary btn-sm"
+              >
+                ▶
+              </button>
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- PESTAÑA: TÉRMINOS (quién ya aceptó la Política de Privacidad/Términos de Uso y quién no) -->
+  @if (tabActual === 'terminos') {
+    <div>
+      <div class="filter-card">
+        <div class="filter-group">
+          <input
+            type="text"
+            [(ngModel)]="terminosBusquedaTab"
+            (ngModelChange)="onBuscarTerminosTab()"
+            placeholder="🔍 Buscar trabajador por código o nombre..."
+            class="input-control"
+          />
+        </div>
+      </div>
+      <div class="card">
+        <h3 class="modal-title" style="margin-bottom: 0.5rem">👷 Trabajadores</h3>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Nombre</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (op of operadoresTerminos; track op) {
+                <tr>
+                  <td>
+                    <strong class="code-badge">{{ op.codigo_megued }}</strong>
+                  </td>
+                  <td class="font-medium">{{ op.nombre_completo }}</td>
+                  <td>
+                    @if (op.terminos_aceptados_en) {
+                      <span class="text-muted-sm"
+                        >✅ Aceptó el
+                        {{ op.terminos_aceptados_en | date: 'dd/MM/yyyy HH:mm' }}</span
+                      >
+                    }
+                    @if (!op.terminos_aceptados_en) {
+                      <span
+                        class="alert-danger"
+                        style="padding: 0.15rem 0.5rem; border-radius: 6px; font-size: 0.85rem"
+                        >⚠️ Todavía no aceptó</span
+                      >
+                    }
+                  </td>
+                </tr>
+              }
+              @if (operadoresTerminos.length === 0) {
+                <tr>
+                  <td colspan="3" class="table-empty">No hay trabajadores registrados.</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (operadoresTerminos.length > 0) {
+          <div class="pagination-bar">
+            <span
+              >Página {{ paginaTerminosTab }} de {{ totalPaginasTerminosTab }} ({{
+                totalTerminosTab
+              }}
+              trabajadores)</span
+            >
+            <div class="flex gap-1">
+              <button
+                [disabled]="paginaTerminosTab === 1"
+                (click)="cambiarPaginaTerminosTab(paginaTerminosTab - 1)"
+                class="btn btn-secondary btn-sm"
+              >
+                ◀
+              </button>
+              <button
+                [disabled]="paginaTerminosTab === totalPaginasTerminosTab"
+                (click)="cambiarPaginaTerminosTab(paginaTerminosTab + 1)"
+                class="btn btn-secondary btn-sm"
+              >
+                ▶
+              </button>
+            </div>
+          </div>
+        }
+      </div>
+      <div class="card" style="margin-top: 1rem">
+        <h3 class="modal-title" style="margin-bottom: 0.5rem">🖥️ Usuarios de oficina</h3>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Usuario</th>
+                <th>Nombre</th>
+                <th>Cargo</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (us of usuariosTerminos; track us) {
+                <tr>
+                  <td>
+                    <strong class="code-badge">{{ us.usuario }}</strong>
+                  </td>
+                  <td class="font-medium">{{ us.nombre_completo }}</td>
+                  <td class="text-muted-sm">{{ us.cargo }}</td>
+                  <td>
+                    @if (us.terminos_aceptados_en) {
+                      <span class="text-muted-sm"
+                        >✅ Aceptó el
+                        {{ us.terminos_aceptados_en | date: 'dd/MM/yyyy HH:mm' }}</span
+                      >
+                    }
+                    @if (!us.terminos_aceptados_en) {
+                      <span
+                        class="alert-danger"
+                        style="padding: 0.15rem 0.5rem; border-radius: 6px; font-size: 0.85rem"
+                        >⚠️ Todavía no aceptó</span
+                      >
+                    }
+                  </td>
+                </tr>
+              }
+              @if (usuariosTerminos.length === 0) {
+                <tr>
+                  <td colspan="4" class="table-empty">No hay usuarios de oficina registrados.</td>
+                </tr>
+              }
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
-  </div>
+  }
+
+  <!-- MODAL NUEVO OPERADOR (sin cambios, sigue fuera de las pestañas) -->
+  @if (mostrarModalOperador) {
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <h3 class="modal-title">👤 Registrar Nuevo Operador</h3>
+        <form (ngSubmit)="guardarNuevoOperador()" #formOp="ngForm" class="space-y-3 mt-3">
+          <div>
+            <label class="form-label">Nombre Completo *</label>
+            <input
+              type="text"
+              [(ngModel)]="nuevoOperador.nombre_completo"
+              name="nombre_completo"
+              required
+              class="input-control w-full"
+            />
+          </div>
+          <div>
+            <label class="form-label">Código Megued / ID *</label>
+            <input
+              type="text"
+              [(ngModel)]="nuevoOperador.codigo_megued"
+              name="codigo_megued"
+              required
+              class="input-control w-full"
+            />
+          </div>
+          <div>
+            <label class="form-label">Cédula</label>
+            <input
+              type="text"
+              [(ngModel)]="nuevoOperador.cedula"
+              name="cedula"
+              class="input-control w-full"
+            />
+          </div>
+          <div>
+            <label class="form-label">Supervisor (hacienda permanente)</label>
+            <select
+              [(ngModel)]="nuevoOperador.supervisor_id"
+              name="supervisor_id"
+              class="input-control w-full"
+            >
+              <option [ngValue]="null">Sin asignar</option>
+              @for (sup of supervisores; track sup) {
+                <option [ngValue]="sup.id">
+                  {{ sup.nombre_completo }} — {{ sup.hacienda?.nombre }}
+                </option>
+              }
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Rol *</label>
+            <select
+              [(ngModel)]="nuevoOperador.rol"
+              name="rol"
+              required
+              class="input-control w-full"
+            >
+              <option value="MECANICO">Mecánico</option>
+              <option value="OPERADOR">Operador</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Usuario de acceso (opcional)</label>
+            <input
+              type="text"
+              [(ngModel)]="nuevoOperador.usuario"
+              name="usuario"
+              class="input-control w-full"
+            />
+          </div>
+          @if (nuevoOperador.usuario) {
+            <div>
+              <label class="form-label">Clave (mínimo 8 caracteres)</label>
+              <div class="campo-clave">
+                <input
+                  [type]="mostrarClaveNuevoOperador() ? 'text' : 'password'"
+                  [(ngModel)]="nuevoOperadorClave"
+                  name="claveNuevoOperador"
+                  minlength="8"
+                  class="input-control w-full"
+                />
+                <button
+                  type="button"
+                  class="boton-ojo"
+                  (click)="mostrarClaveNuevoOperador.set(!mostrarClaveNuevoOperador())"
+                >
+                  {{ mostrarClaveNuevoOperador() ? '🙈' : '👁️' }}
+                </button>
+              </div>
+            </div>
+          }
+          <div class="flex justify-end gap-2 pt-3">
+            <button type="button" (click)="cerrarModalNuevoOperador()" class="btn btn-secondary">
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              [disabled]="
+                !formOp.form.valid || (!!nuevoOperador.usuario && nuevoOperadorClave.length < 6)
+              "
+              class="btn btn-primary"
+            >
+              Guardar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: RESETEAR CLAVE DEL OPERADOR SELECCIONADO -->
+  @if (mostrarModalResetClaveOperador) {
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <h3 class="modal-title">
+          🔑 Resetear clave de {{ operadorSeleccionado?.nombre_completo }}
+        </h3>
+        <p class="text-muted-sm mb-3">
+          La clave anterior no se puede recuperar - se reemplaza por esta nueva.
+        </p>
+        <form (ngSubmit)="guardarClaveResetOperador()" #formClaveOp="ngForm" class="space-y-3">
+          <div class="form-group">
+            <label class="form-label">Clave nueva * (mínimo 8 caracteres)</label>
+            <div class="campo-clave">
+              <input
+                [type]="mostrarClaveResetOperador() ? 'text' : 'password'"
+                [(ngModel)]="claveResetOperador"
+                name="claveResetOperador"
+                required
+                minlength="8"
+                class="input-control w-full"
+              />
+              <button
+                type="button"
+                class="boton-ojo"
+                (click)="mostrarClaveResetOperador.set(!mostrarClaveResetOperador())"
+              >
+                {{ mostrarClaveResetOperador() ? '🙈' : '👁️' }}
+              </button>
+            </div>
+          </div>
+          <div class="flex justify-end gap-2 pt-3">
+            <button
+              type="button"
+              (click)="cerrarModalResetClaveOperador()"
+              class="btn btn-secondary"
+            >
+              Cancelar
+            </button>
+            <button type="submit" [disabled]="!formClaveOp.form.valid" class="btn btn-primary">
+              Actualizar clave
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: NUEVO/EDITAR EQUIPO (pestaña "Equipo") -->
+  @if (mostrarModalEquipo) {
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <h3 class="modal-title">{{ equipoEditando ? '✏️ Editar Equipo' : '🚜 Nuevo Equipo' }}</h3>
+        <form (ngSubmit)="guardarEquipo()" #formEq="ngForm" class="space-y-3 mt-3">
+          <div class="form-group">
+            <label class="form-label">Código Megued *</label>
+            <input
+              type="text"
+              [(ngModel)]="formEquipo.codigo_megued"
+              name="codigo_megued_eq"
+              required
+              class="input-control w-full"
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Nombre del equipo *</label>
+            <input
+              type="text"
+              [(ngModel)]="formEquipo.nombre_equipo"
+              name="nombre_equipo_eq"
+              required
+              class="input-control w-full"
+            />
+          </div>
+          <div class="flex justify-end gap-2 pt-3">
+            <button type="button" (click)="cerrarModalEquipo()" class="btn btn-secondary">
+              Cancelar
+            </button>
+            <button type="submit" [disabled]="!formEq.form.valid" class="btn btn-primary">
+              Guardar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: NUEVA/EDITAR ACTIVIDAD (pestaña "Actividad") -->
+  @if (mostrarModalActividad) {
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <h3 class="modal-title">
+          {{ actividadEditando ? '✏️ Editar Actividad' : '🛠️ Nueva Actividad' }}
+        </h3>
+        <form (ngSubmit)="guardarActividad()" #formAct="ngForm" class="space-y-3 mt-3">
+          <div class="form-group">
+            <label class="form-label">Código Megued *</label>
+            <input
+              type="text"
+              [(ngModel)]="formActividad.codigo_megued"
+              name="codigo_megued_act"
+              required
+              class="input-control w-full"
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Descripción *</label>
+            <input
+              type="text"
+              [(ngModel)]="formActividad.description"
+              name="description_act"
+              required
+              class="input-control w-full"
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Categoría</label>
+            <select
+              class="input-control w-full"
+              [(ngModel)]="formActividad.categoria"
+              name="categoria_act"
+            >
+              <option value="TALLER">Taller</option>
+              <option value="CAMPO">Campo</option>
+            </select>
+          </div>
+          <div class="flex justify-end gap-2 pt-3">
+            <button type="button" (click)="cerrarModalActividad()" class="btn btn-secondary">
+              Cancelar
+            </button>
+            <button type="submit" [disabled]="!formAct.form.valid" class="btn btn-primary">
+              Guardar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: IMPORTAR TRABAJADORES DESDE EXCEL (Directorio de Operadores) - mismo patrón de 3 pasos que
+  Equipo/Actividad. La columna SUPERVISOR es opcional: si viene, el backend la resuelve por nombre y
+  vincula al trabajador a la hacienda correspondiente automáticamente. -->
+  @if (mostrarModalImportarOperador) {
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <h3 class="modal-title">📥 Importar Trabajadores desde Excel</h3>
+        @if (!resultadoImportarOperador) {
+          <p class="text-muted-sm mb-3">
+            Usa la plantilla para que las columnas coincidan exactamente: NOMBRE y CÓDIGO son
+            obligatorios; CARGO (MECANICO u OPERADOR, por defecto MECANICO), CÉDULA y SUPERVISOR son
+            opcionales. Si escribes el SUPERVISOR (su nombre completo, tal cual está registrado), el
+            trabajador queda vinculado a la hacienda de ese Supervisor automáticamente.
+          </p>
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm mb-3"
+            (click)="descargarPlantillaOperadores()"
+          >
+            ⬇️ Descargar plantilla
+          </button>
+          <div class="form-group">
+            <label class="form-label">Archivo (.xlsx)</label>
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              class="input-control w-full"
+              (change)="onArchivoOperadoresSeleccionado($event)"
+            />
+          </div>
+          @if (errorImportarOperador) {
+            <div class="alert alert-danger">{{ errorImportarOperador }}</div>
+          }
+          @if (filasParaImportarOperador.length > 0) {
+            <p class="text-muted-sm">
+              Se leyeron <strong>{{ filasParaImportarOperador.length }}</strong> fila(s). Al
+              confirmar, se van a revisar contra lo que ya existe - las que tengan un código o
+              cédula repetido, un cargo inválido, o un Supervisor que no coincida con ninguno
+              registrado, no se van a crear, y se va a mostrar por qué.
+            </p>
+          }
+          <div class="flex justify-end gap-2 pt-3">
+            <button type="button" (click)="cerrarModalImportarOperador()" class="btn btn-secondary">
+              Cancelar
+            </button>
+            <button
+              type="button"
+              [disabled]="filasParaImportarOperador.length === 0 || importandoOperadores"
+              (click)="confirmarImportarOperadores()"
+              class="btn btn-primary"
+            >
+              {{
+                importandoOperadores
+                  ? 'Importando...'
+                  : 'Importar ' + filasParaImportarOperador.length + ' trabajador(es)'
+              }}
+            </button>
+          </div>
+        } @else {
+          <p class="mb-3">
+            ✅ <strong>{{ resultadoImportarOperador!.creados }}</strong> trabajador(es) importado(s)
+            con éxito.
+          </p>
+          @if (resultadoImportarOperador!.rechazados.length > 0) {
+            <p class="text-muted-sm mb-2">
+              {{ resultadoImportarOperador!.rechazados.length }} fila(s) no se importaron -
+              corrígelas en el Excel y vuelve a intentar solo con esas:
+            </p>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Fila</th>
+                    <th>Motivo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (r of resultadoImportarOperador!.rechazados; track r) {
+                    <tr>
+                      <td>{{ r.fila }}</td>
+                      <td>{{ r.motivo }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+          <div class="flex justify-end gap-2 pt-3">
+            <button type="button" (click)="abrirModalImportarOperador()" class="btn btn-secondary">
+              Importar otro archivo
+            </button>
+            <button type="button" (click)="cerrarModalImportarOperador()" class="btn btn-primary">
+              Cerrar
+            </button>
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: IMPORTAR EQUIPOS DESDE EXCEL (pestaña "Equipo") - 3 pasos en la misma ventana: elegir archivo,
+  ver la vista previa (cuántas filas se leyeron) y confirmar, y por último el resultado (creados/rechazados
+  fila por fila) - nunca manda nada al backend hasta que el usuario confirma explícitamente. -->
+  @if (mostrarModalImportarEquipo) {
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <h3 class="modal-title">📥 Importar Equipos desde Excel</h3>
+        @if (!resultadoImportarEquipo) {
+          <p class="text-muted-sm mb-3">
+            Usa la plantilla para que las columnas coincidan exactamente - dos columnas: Código
+            Megued y Nombre del Equipo, una fila por equipo.
+          </p>
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm mb-3"
+            (click)="descargarPlantillaEquipos()"
+          >
+            ⬇️ Descargar plantilla
+          </button>
+          <div class="form-group">
+            <label class="form-label">Archivo (.xlsx)</label>
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              class="input-control w-full"
+              (change)="onArchivoEquiposSeleccionado($event)"
+            />
+          </div>
+          @if (errorImportarEquipo) {
+            <div class="alert alert-danger">{{ errorImportarEquipo }}</div>
+          }
+          @if (filasParaImportarEquipo.length > 0) {
+            <p class="text-muted-sm">
+              Se leyeron <strong>{{ filasParaImportarEquipo.length }}</strong> fila(s). Al
+              confirmar, se van a revisar contra lo que ya existe - las que tengan un código o
+              nombre repetido no se van a crear, y se va a mostrar por qué.
+            </p>
+          }
+          <div class="flex justify-end gap-2 pt-3">
+            <button type="button" (click)="cerrarModalImportarEquipo()" class="btn btn-secondary">
+              Cancelar
+            </button>
+            <button
+              type="button"
+              [disabled]="filasParaImportarEquipo.length === 0 || importandoEquipos"
+              (click)="confirmarImportarEquipos()"
+              class="btn btn-primary"
+            >
+              {{
+                importandoEquipos
+                  ? 'Importando...'
+                  : 'Importar ' + filasParaImportarEquipo.length + ' equipo(s)'
+              }}
+            </button>
+          </div>
+        } @else {
+          <p class="mb-3">
+            ✅ <strong>{{ resultadoImportarEquipo!.creados }}</strong> equipo(s) importado(s) con
+            éxito.
+          </p>
+          @if (resultadoImportarEquipo!.rechazados.length > 0) {
+            <p class="text-muted-sm mb-2">
+              {{ resultadoImportarEquipo!.rechazados.length }} fila(s) no se importaron - corrígelas
+              en el Excel y vuelve a intentar solo con esas:
+            </p>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Fila</th>
+                    <th>Motivo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (r of resultadoImportarEquipo!.rechazados; track r) {
+                    <tr>
+                      <td>{{ r.fila }}</td>
+                      <td>{{ r.motivo }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+          <div class="flex justify-end gap-2 pt-3">
+            <button type="button" (click)="abrirModalImportarEquipo()" class="btn btn-secondary">
+              Importar otro archivo
+            </button>
+            <button type="button" (click)="cerrarModalImportarEquipo()" class="btn btn-primary">
+              Cerrar
+            </button>
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: IMPORTAR ACTIVIDADES DESDE EXCEL (pestaña "Actividad") - mismo patrón que el de Equipos arriba. -->
+  @if (mostrarModalImportarActividad) {
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <h3 class="modal-title">📥 Importar Actividades desde Excel</h3>
+        @if (!resultadoImportarActividad) {
+          <p class="text-muted-sm mb-3">
+            Usa la plantilla para que las columnas coincidan exactamente - tres columnas: Código
+            Megued, Descripción y Categoría (escribe TALLER o CAMPO; si la dejas vacía queda como
+            Taller), una fila por actividad.
+          </p>
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm mb-3"
+            (click)="descargarPlantillaActividades()"
+          >
+            ⬇️ Descargar plantilla
+          </button>
+          <div class="form-group">
+            <label class="form-label">Archivo (.xlsx)</label>
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              class="input-control w-full"
+              (change)="onArchivoActividadesSeleccionado($event)"
+            />
+          </div>
+          @if (errorImportarActividad) {
+            <div class="alert alert-danger">{{ errorImportarActividad }}</div>
+          }
+          @if (filasParaImportarActividad.length > 0) {
+            <p class="text-muted-sm">
+              Se leyeron <strong>{{ filasParaImportarActividad.length }}</strong> fila(s). Al
+              confirmar, se van a revisar contra lo que ya existe - las que tengan un código
+              repetido no se van a crear, y se va a mostrar por qué.
+            </p>
+          }
+          <div class="flex justify-end gap-2 pt-3">
+            <button
+              type="button"
+              (click)="cerrarModalImportarActividad()"
+              class="btn btn-secondary"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              [disabled]="filasParaImportarActividad.length === 0 || importandoActividades"
+              (click)="confirmarImportarActividades()"
+              class="btn btn-primary"
+            >
+              {{
+                importandoActividades
+                  ? 'Importando...'
+                  : 'Importar ' + filasParaImportarActividad.length + ' actividad(es)'
+              }}
+            </button>
+          </div>
+        } @else {
+          <p class="mb-3">
+            ✅ <strong>{{ resultadoImportarActividad!.creados }}</strong> actividad(es) importada(s)
+            con éxito.
+          </p>
+          @if (resultadoImportarActividad!.rechazados.length > 0) {
+            <p class="text-muted-sm mb-2">
+              {{ resultadoImportarActividad!.rechazados.length }} fila(s) no se importaron -
+              corrígelas en el Excel y vuelve a intentar solo con esas:
+            </p>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Fila</th>
+                    <th>Motivo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (r of resultadoImportarActividad!.rechazados; track r) {
+                    <tr>
+                      <td>{{ r.fila }}</td>
+                      <td>{{ r.motivo }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+          <div class="flex justify-end gap-2 pt-3">
+            <button type="button" (click)="abrirModalImportarActividad()" class="btn btn-secondary">
+              Importar otro archivo
+            </button>
+            <button type="button" (click)="cerrarModalImportarActividad()" class="btn btn-primary">
+              Cerrar
+            </button>
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: VER/IMPRIMIR HOJA DE ACTIVIDADES (Directorio y fila del Historial) - flotante, no pestaña nueva,
+  porque la app va empaquetada. Al imprimir, styles.css oculta el resto de la pantalla y deja visible
+  solo .imprimible (ver @media print en styles.css). -->
+  <!-- modal-backdrop-anidado: esta hoja se puede abrir ENCIMA del modal de Historial de un operador (al
+  clicar Ver/Imprimir dentro de ese modal) - necesita quedar por encima del otro backdrop sin importar
+  el orden en el HTML (ver .modal-backdrop-anidado en asistencia-panel.css). -->
+  @if (mostrarModalHoja) {
+    <div class="modal-backdrop modal-backdrop-anidado" (click)="cerrarModalHoja()">
+      <div class="modal-card hoja-actividades-card imprimible" (click)="$event.stopPropagation()">
+        <!-- Barra superior PEGADA (sticky) al desplazar el contenido - Imprimir/Cerrar siempre visibles sin
+        importar cuánto se baje, en vez del botón flotando encima de la tarjeta (se recortaba con el
+        scroll interno, ver nota en CLAUDE.md). -->
+        <div class="hoja-actividades-barra-superior no-imprimir">
+          <button type="button" class="btn btn-primary btn-sm" (click)="imprimirHoja()">
+            🖨️ Imprimir
+          </button>
+          <button type="button" class="hoja-actividades-cerrar" (click)="cerrarModalHoja()">
+            ✕
+          </button>
+        </div>
+        <!-- Un bloque por operador - normalmente 1 (fila del Historial), o varios cuando viene de "Imprimir
+        Hojas del rango" (uno por cada operador distinto de la tabla filtrada). Al imprimir, el contenido
+        fluye normal (caben varios operadores cortos por hoja) pero cada bloque nunca se parte a la mitad
+        entre una hoja y la siguiente (ver break-inside:avoid en el @media print de este componente). -->
+        @for (grupo of hojaGrupos; track grupo) {
+          <div class="hoja-actividades-grupo">
+            <!-- Titulo y tabla dependen del rol de quien hizo las labores: un Operador no tiene OT ni "daño" (eso
+            es del taller mecánico), en cambio sí lleva horómetro inicio/fin - por eso el diseño impreso es
+            distinto para cada uno, no solo el título (ver CLAUDE.md). -->
+            <h2 class="hoja-actividades-titulo">
+              {{
+                grupo.operador.rol === 'OPERADOR'
+                  ? 'REPORTE DE LABORES MAQUINARIAS'
+                  : 'REPORTE DE LABORES DIARIOS'
+              }}
+            </h2>
+            <div class="hoja-actividades-encabezado">
+              <span class="hoja-actividades-mecanico">
+                {{ grupo.operador.rol === 'OPERADOR' ? 'Operador' : 'Mecánico' }}:
+                {{ grupo.operador.nombre_completo }}
+                @if (grupo.haciendaNombre) {
+                  · {{ grupo.haciendaNombre }}
+                }
+              </span>
+              @if (hojaFechaUnica) {
+                <span class="hoja-actividades-fecha">Fecha: {{ hojaFechaUnica }}</span>
+              }
+            </div>
+            @if (grupo.operador.rol !== 'OPERADOR') {
+              <table class="hoja-actividades-tabla">
+                <thead>
+                  <tr>
+                    @if (!hojaFechaUnica) {
+                      <th>Fecha</th>
+                    }
+                    <th>Equipo</th>
+                    <th>OT</th>
+                    <th>Observaciones</th>
+                    <th>Tiempo estimado</th>
+                    <th>Hora</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (reg of grupo.registros; track reg) {
+                    <tr>
+                      @if (!hojaFechaUnica) {
+                        <td>{{ reg.asistencia?.fecha || '—' }}</td>
+                      }
+                      <td>
+                        {{
+                          reg.equipo
+                            ? reg.equipo.codigo_megued + ' - ' + reg.equipo.nombre_equipo
+                            : '—'
+                        }}
+                      </td>
+                      <td>{{ reg.area || '—' }}</td>
+                      <td>{{ reg.observaciones || '—' }}</td>
+                      <td>{{ duracionLabor(reg) }}</td>
+                      <td>{{ rangoHorasLabor(reg) }}</td>
+                    </tr>
+                  }
+                  @if (grupo.registros.length === 0) {
+                    <tr>
+                      <td [attr.colspan]="hojaFechaUnica ? 5 : 6" class="hoja-actividades-vacio">
+                        Sin labores registradas.
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            }
+            <!-- Tabla de OPERADOR: sin OT ni Daño/Taller-Campo (no aplican), con Horómetro inicio/fin y
+          Observaciones de cada labor en su lugar. -->
+            @if (grupo.operador.rol === 'OPERADOR') {
+              <table class="hoja-actividades-tabla">
+                <thead>
+                  <tr>
+                    @if (!hojaFechaUnica) {
+                      <th>Fecha</th>
+                    }
+                    <th>Equipo</th>
+                    <th>Horómetro inicio</th>
+                    <th>Horómetro fin</th>
+                    <th>Tiempo estimado</th>
+                    <th>Observaciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (reg of grupo.registros; track reg) {
+                    <tr>
+                      @if (!hojaFechaUnica) {
+                        <td>{{ reg.asistencia?.fecha || '—' }}</td>
+                      }
+                      <td>
+                        {{
+                          reg.equipo
+                            ? reg.equipo.codigo_megued + ' - ' + reg.equipo.nombre_equipo
+                            : '—'
+                        }}
+                      </td>
+                      <td>{{ reg.horometro_inicio ?? '—' }}</td>
+                      <td>{{ reg.horometro_final ?? '—' }}</td>
+                      <td>{{ duracionLabor(reg) }}</td>
+                      <td>{{ reg.observaciones || '—' }}</td>
+                    </tr>
+                  }
+                  @if (grupo.registros.length === 0) {
+                    <tr>
+                      <td [attr.colspan]="hojaFechaUnica ? 5 : 6" class="hoja-actividades-vacio">
+                        Sin labores registradas.
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            }
+            @if (hojaFechaUnica) {
+              <div class="hoja-actividades-observaciones">
+                <strong>Observaciones del Supervisor:</strong>
+                <p>{{ hojaObservacionesSupervisor || 'Sin observaciones.' }}</p>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- MODAL: HISTORIAL DE ASISTENCIA de UN operador (Ficha, Directorio) - mismas columnas que la pestaña
+Historial general, ya filtrado a este operador (reutiliza GET /historial con operador_id). -->
+  @if (mostrarModalHistorialOperador) {
+    <div class="modal-backdrop" (click)="cerrarModalHistorialOperador()">
+      <div class="modal-card historial-operador-card" (click)="$event.stopPropagation()">
+        <!-- Barra superior PEGADA (sticky) - título y Cerrar siempre visibles al bajar en la tabla. -->
+        <div class="hoja-actividades-barra-superior">
+          <h3 class="modal-title historial-operador-titulo">
+            📅 Historial de Asistencia: {{ historialOperadorSel?.nombre_completo }}
+          </h3>
+          <button
+            type="button"
+            class="hoja-actividades-cerrar"
+            (click)="cerrarModalHistorialOperador()"
+          >
+            ✕
+          </button>
+        </div>
+        <div class="filter-card">
+          <div class="filter-group">
+            <label class="filter-label">Desde:</label>
+            <input type="date" class="date-input" [(ngModel)]="historialOperadorFechaInicio" />
+            <label class="filter-label">Hasta:</label>
+            <input type="date" class="date-input" [(ngModel)]="historialOperadorFechaFin" />
+          </div>
+          <button class="btn btn-primary btn-sm" (click)="buscarHistorialOperador()">
+            🔍 Buscar
+          </button>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Ingreso</th>
+                <th>Salida</th>
+                <th>Horas Trabajadas</th>
+                <th>Ver/Imprimir</th>
+                <th>Evidencia</th>
+                <th>Observación</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (reg of historialOperadorRegistros; track reg) {
+                <tr>
+                  <td>{{ reg.fecha }}</td>
+                  <td>
+                    <span class="time-badge">{{
+                      reg.hora_ingreso | date: 'HH:mm:ss' : '-0500'
+                    }}</span>
+                  </td>
+                  <td>
+                    @if (reg.hora_salida) {
+                      <span class="time-badge">{{
+                        reg.hora_salida | date: 'HH:mm:ss' : '-0500'
+                      }}</span>
+                    }
+                    @if (!reg.hora_salida) {
+                      <span class="text-muted-sm">Sin salida</span>
+                    }
+                  </td>
+                  <td>{{ reg.total_horas != null ? reg.total_horas + ' h' : '—' }}</td>
+                  <td>
+                    <div class="flex gap-1">
+                      <button
+                        class="btn btn-secondary btn-sm"
+                        [disabled]="cargandoReporteImpresion"
+                        (click)="verHojaFilaHistorial(reg)"
+                      >
+                        👁️ Ver
+                      </button>
+                      <button
+                        class="btn btn-secondary btn-sm"
+                        [disabled]="cargandoReporteImpresion"
+                        (click)="imprimirHojaFilaHistorial(reg)"
+                      >
+                        🖨️ Imprimir
+                      </button>
+                    </div>
+                  </td>
+                  <td>
+                    <app-visor-foto
+                      [asistenciaId]="reg.id"
+                      [tieneFoto]="!!reg.tiene_foto"
+                    ></app-visor-foto>
+                  </td>
+                  <td>{{ reg.observaciones || '—' }}</td>
+                </tr>
+              }
+              @if (!cargandoHistorialOperador && historialOperadorRegistros.length === 0) {
+                <tr>
+                  <td colspan="7" class="table-empty">
+                    No hay registros para el rango seleccionado.
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (historialOperadorRegistros.length > 0) {
+          <div class="pagination-bar">
+            <span
+              >Página {{ paginaHistorialOperador }} de {{ totalPaginasHistorialOperador }} ({{
+                totalHistorialOperador
+              }}
+              registros)</span
+            >
+            <div class="flex gap-1">
+              <button
+                [disabled]="paginaHistorialOperador === 1"
+                (click)="cambiarPaginaHistorialOperador(paginaHistorialOperador - 1)"
+                class="btn btn-secondary btn-sm"
+              >
+                ◀
+              </button>
+              <button
+                [disabled]="paginaHistorialOperador === totalPaginasHistorialOperador"
+                (click)="cambiarPaginaHistorialOperador(paginaHistorialOperador + 1)"
+                class="btn btn-secondary btn-sm"
+              >
+                ▶
+              </button>
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  }
 </div>

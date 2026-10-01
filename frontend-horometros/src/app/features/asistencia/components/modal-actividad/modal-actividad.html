@@ -1,33 +1,36 @@
-<div class="modal-backdrop" *ngIf="mostrar">
-  <div class="modal-card">
-    <h3 class="modal-title">🌾 Registrar Actividades de Salida</h3>
-    <p class="text-slate-300 text-sm mb-4">Seleccione una o más labores realizadas durante la jornada antes de registrar la salida:</p>
-
-    <div class="form-group mb-4">
-      <label class="form-label">Labores / Actividades Realizadas *</label>
-      <div class="flex flex-col gap-2 max-h-56 overflow-y-auto">
-        <label class="flex items-center gap-2" *ngFor="let act of actividades">
-          <input
-            type="checkbox"
-            [checked]="actividadSeleccionadaIds.includes(act.id)"
-            (change)="toggleActividad(act.id, $any($event.target).checked)"
-          />
-          [{{ act.codigo_megued }}] {{ act.description }}
-        </label>
+@if (mostrar) {
+  <div class="modal-backdrop">
+    <div class="modal-card">
+      <h3 class="modal-title">🌾 Registrar Actividades de Salida</h3>
+      <p class="text-slate-300 text-sm mb-4">
+        Seleccione una o más labores realizadas durante la jornada antes de registrar la salida:
+      </p>
+      <div class="form-group mb-4">
+        <label class="form-label">Labores / Actividades Realizadas *</label>
+        <div class="flex flex-col gap-2 max-h-56 overflow-y-auto">
+          @for (act of actividades; track act) {
+            <label class="flex items-center gap-2">
+              <input
+                type="checkbox"
+                [checked]="actividadSeleccionadaIds.includes(act.id)"
+                (change)="toggleActividad(act.id, $any($event.target).checked)"
+              />
+              [{{ act.codigo_megued }}] {{ act.description }}
+            </label>
+          }
+        </div>
+      </div>
+      <div class="flex justify-end gap-2">
+        <button type="button" (click)="cerrar()" class="btn btn-secondary">Cancelar</button>
+        <button
+          type="button"
+          [disabled]="actividadSeleccionadaIds.length === 0"
+          (click)="confirmar()"
+          class="btn btn-primary"
+        >
+          Confirmar Salida
+        </button>
       </div>
     </div>
-
-    <div class="flex justify-end gap-2">
-      <button type="button" (click)="cerrar()" class="btn btn-secondary">
-        Cancelar
-      </button>
-      <button 
-        type="button" 
-        [disabled]="actividadSeleccionadaIds.length === 0" 
-        (click)="confirmar()" 
-        class="btn btn-primary">
-        Confirmar Salida
-      </button>
-    </div>
   </div>
-</div>
+}

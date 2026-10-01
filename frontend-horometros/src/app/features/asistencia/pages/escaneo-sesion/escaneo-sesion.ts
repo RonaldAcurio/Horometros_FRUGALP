@@ -1,10 +1,13 @@
 import { Component, ChangeDetectorRef, ElementRef, OnDestroy, NgZone } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { ZXingScannerModule } from '@zxing/ngx-scanner';
 import { Result } from '@zxing/library';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 import { ModalActividad } from '../../components/modal-actividad/modal-actividad';
-import { resultadoDentroDeZonaActiva, dimensionesRedimensionadas } from '../../../../core/utils/zona-captura.util';
+import {
+  resultadoDentroDeZonaActiva,
+  dimensionesRedimensionadas,
+} from '../../../../core/utils/zona-captura.util';
 
 /*
 Escaneo de Camino B (QR flotante de 90s de un Operador/Mecanico YA logueado, ver mi-jornada). Distinto del
@@ -15,7 +18,7 @@ camara/evidencia) - se mantienen separados porque son dos caminos de negocio dis
 */
 @Component({
   standalone: true,
-  imports: [CommonModule, ZXingScannerModule, ModalActividad],
+  imports: [ZXingScannerModule, ModalActividad],
   selector: 'app-escaneo-sesion',
   styleUrl: './escaneo-sesion.css',
   templateUrl: './escaneo-sesion.html',
@@ -50,8 +53,17 @@ export class EscaneoSesion implements OnDestroy {
       return;
     }
 
-    const videoElement = this.elementRef.nativeElement.querySelector('video') as HTMLVideoElement | null;
-    if (!videoElement || !resultadoDentroDeZonaActiva(resultado.getResultPoints(), videoElement.videoWidth, videoElement.videoHeight)) {
+    const videoElement = this.elementRef.nativeElement.querySelector(
+      'video',
+    ) as HTMLVideoElement | null;
+    if (
+      !videoElement ||
+      !resultadoDentroDeZonaActiva(
+        resultado.getResultPoints(),
+        videoElement.videoWidth,
+        videoElement.videoHeight,
+      )
+    ) {
       return;
     }
 
@@ -64,21 +76,33 @@ export class EscaneoSesion implements OnDestroy {
   }
 
   private detenerCamara(): void {
-    const videoElemento = this.elementRef.nativeElement.querySelector('video') as HTMLVideoElement | null;
+    const videoElemento = this.elementRef.nativeElement.querySelector(
+      'video',
+    ) as HTMLVideoElement | null;
     const stream = videoElemento?.srcObject as MediaStream | null;
     if (stream) {
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach((track) => track.stop());
     }
   }
 
   // Captura el video COMPLETO (100%, no solo la zona activa) y lo redimensiona - mismo motivo que
   // marcacion-kiosco.ts (capturarFotoEvidencia).
   private capturarFotoEvidencia(): string | null {
-    const videoElement = this.elementRef.nativeElement.querySelector('video') as HTMLVideoElement | null;
-    if (!videoElement || videoElement.readyState < 2 || videoElement.videoWidth === 0 || videoElement.videoHeight === 0) {
+    const videoElement = this.elementRef.nativeElement.querySelector(
+      'video',
+    ) as HTMLVideoElement | null;
+    if (
+      !videoElement ||
+      videoElement.readyState < 2 ||
+      videoElement.videoWidth === 0 ||
+      videoElement.videoHeight === 0
+    ) {
       return null;
     }
-    const { width, height } = dimensionesRedimensionadas(videoElement.videoWidth, videoElement.videoHeight);
+    const { width, height } = dimensionesRedimensionadas(
+      videoElement.videoWidth,
+      videoElement.videoHeight,
+    );
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
@@ -114,9 +138,12 @@ export class EscaneoSesion implements OnDestroy {
         this.mensajeEscaneo = err.error?.message || 'Error al procesar el escaneo.';
         this.tipoMensaje = 'error';
         this.procesando = false;
-        setTimeout(() => { this.escanearActivo = true; this.cdr.detectChanges(); }, 3000);
+        setTimeout(() => {
+          this.escanearActivo = true;
+          this.cdr.detectChanges();
+        }, 3000);
         this.cdr.detectChanges();
-      }
+      },
     });
   }
 

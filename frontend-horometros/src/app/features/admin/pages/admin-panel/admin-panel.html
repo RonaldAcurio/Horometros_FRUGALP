@@ -8,239 +8,388 @@
 
   <!-- NAVEGACION POR PESTAÑAS -->
   <div class="tabs-bar">
-    <button class="tab-btn" [class.active]="tabActual === 'usuarios'" (click)="cambiarTab('usuarios')">
+    <button
+      class="tab-btn"
+      [class.active]="tabActual === 'usuarios'"
+      (click)="cambiarTab('usuarios')"
+    >
       👤 Usuarios
     </button>
     <!-- Solo ADMIN ve/entra a Haciendas: un Asistente puede crear Usuarios pero no toca Token/Haciendas -->
-    <button *ngIf="esAdmin" class="tab-btn" [class.active]="tabActual === 'haciendas'" (click)="cambiarTab('haciendas')">
-      🌾 Haciendas
-    </button>
+    @if (esAdmin) {
+      <button
+        class="tab-btn"
+        [class.active]="tabActual === 'haciendas'"
+        (click)="cambiarTab('haciendas')"
+      >
+        🌾 Haciendas
+      </button>
+    }
     <!-- Historial de auditoría: solo ADMIN (mismo motivo que Haciendas) - el backend ya lo exige igual, ver auditoria.rutes.ts -->
-    <button *ngIf="esAdmin" class="tab-btn" [class.active]="tabActual === 'historial'" (click)="cambiarTab('historial')">
-      📋 Historial
-    </button>
+    @if (esAdmin) {
+      <button
+        class="tab-btn"
+        [class.active]="tabActual === 'historial'"
+        (click)="cambiarTab('historial')"
+      >
+        📋 Historial
+      </button>
+    }
   </div>
 
   <!-- PESTAÑA: USUARIOS -->
-  <div *ngIf="tabActual === 'usuarios'" class="card">
-    <div class="card-header flex justify-between items-center">
-      <h5 class="card-title">👤 Usuarios de Oficina</h5>
-      <button class="btn btn-primary btn-sm" (click)="abrirModalUsuario()">➕ Nuevo Usuario</button>
-    </div>
-
-    <div class="table-responsive">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Nombre</th>
-            <th>Usuario</th>
-            <th>Cargo</th>
-            <th>Hacienda</th>
-            <th>Acción</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let u of usuarios">
-            <td class="nombre-operador">{{ u.nombre_completo }}</td>
-            <td><span class="code-badge">{{ u.usuario }}</span></td>
-            <td>{{ u.cargo }}</td>
-            <td>{{ u.hacienda?.nombre || '—' }}</td>
-            <td>
-              <button class="btn btn-secondary btn-sm" (click)="abrirModalClave(u)">🔑 Resetear clave</button>
-            </td>
-          </tr>
-          <tr *ngIf="usuarios.length === 0">
-            <td colspan="5" class="table-empty">No hay usuarios de oficina registrados.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- PESTAÑA: HACIENDAS (solo ADMIN, ver *ngIf del boton de la pestaña arriba) -->
-  <div *ngIf="tabActual === 'haciendas' && esAdmin" class="card">
-    <div class="card-header flex justify-between items-center">
-      <h5 class="card-title">🌾 Haciendas y su Token de escaneo</h5>
-      <button class="btn btn-primary btn-sm" (click)="abrirModalHacienda()">➕ Nueva Hacienda</button>
-    </div>
-
-    <div class="table-responsive">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Hacienda</th>
-            <th>Token actual</th>
-            <th>Vence en</th>
-            <th>Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let h of haciendas">
-            <td class="nombre-operador">{{ h.nombre }}</td>
-            <td>
-              <span *ngIf="h.token_actual && !tokenVencido(h)" class="code-badge token-valor">{{ h.token_actual }}</span>
-              <span *ngIf="h.token_actual && tokenVencido(h)" class="code-badge token-valor token-vencido">{{ h.token_actual }}</span>
-              <span *ngIf="!h.token_actual" class="text-muted-sm">Sin token activo</span>
-            </td>
-            <td>
-              <span *ngIf="h.token_expira_en" class="text-muted-sm" [class.token-vencido]="tokenVencido(h)">
-                {{ tiempoRestanteToken(h) }}
-              </span>
-              <span *ngIf="!h.token_expira_en">—</span>
-            </td>
-            <td class="flex gap-2">
-              <button class="btn btn-primary btn-sm" (click)="generarToken(h)">🔄 Generar</button>
-              <button class="btn btn-secondary btn-sm" [disabled]="!h.token_actual" (click)="invalidarToken(h)">✕ Invalidar</button>
-            </td>
-          </tr>
-          <tr *ngIf="haciendas.length === 0">
-            <td colspan="4" class="table-empty">No hay haciendas registradas.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- PESTAÑA: HISTORIAL (solo ADMIN, ver *ngIf del boton de la pestaña arriba) -->
-  <div *ngIf="tabActual === 'historial' && esAdmin" class="card">
-    <div class="card-header">
-      <h5 class="card-title">📋 Historial de acciones sensibles</h5>
-      <p class="text-muted-sm">Reseteos de clave y Token de Hacienda generado/invalidado, quién y cuándo.</p>
-    </div>
-
-    <div class="table-responsive">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Fecha</th>
-            <th>Quién</th>
-            <th>Acción</th>
-            <th>Sobre</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let r of auditoria">
-            <td>{{ r.createdAt | date:'dd/MM/yyyy HH:mm' }}</td>
-            <td class="nombre-operador">{{ r.actor?.nombre_completo || '—' }} <span class="text-muted-sm">({{ r.actor?.cargo }})</span></td>
-            <td>{{ etiquetasAccion[r.accion] }}</td>
-            <td>{{ r.objetivo_nombre }}</td>
-          </tr>
-          <tr *ngIf="!cargandoAuditoria && auditoria.length === 0">
-            <td colspan="4" class="table-empty">Todavía no hay acciones registradas.</td>
-          </tr>
-          <tr *ngIf="cargandoAuditoria">
-            <td colspan="4" class="table-empty">Cargando…</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="pagination-bar" *ngIf="auditoria.length > 0">
-      <span>Página {{ paginaAuditoria }} de {{ totalPaginasAuditoria }} ({{ totalAuditoria }} registros)</span>
-      <div class="flex gap-2">
-        <button [disabled]="paginaAuditoria === 1" (click)="cambiarPaginaAuditoria(paginaAuditoria - 1)" class="btn btn-secondary btn-sm">◀</button>
-        <button [disabled]="paginaAuditoria === totalPaginasAuditoria" (click)="cambiarPaginaAuditoria(paginaAuditoria + 1)" class="btn btn-secondary btn-sm">▶</button>
+  @if (tabActual === 'usuarios') {
+    <div class="card">
+      <div class="card-header flex justify-between items-center">
+        <h5 class="card-title">👤 Usuarios de Oficina</h5>
+        <button class="btn btn-primary btn-sm" (click)="abrirModalUsuario()">
+          ➕ Nuevo Usuario
+        </button>
+      </div>
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Usuario</th>
+              <th>Cargo</th>
+              <th>Hacienda</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (u of usuarios; track u) {
+              <tr>
+                <td class="nombre-operador">{{ u.nombre_completo }}</td>
+                <td>
+                  <span class="code-badge">{{ u.usuario }}</span>
+                </td>
+                <td>{{ u.cargo }}</td>
+                <td>{{ u.hacienda?.nombre || '—' }}</td>
+                <td>
+                  <button class="btn btn-secondary btn-sm" (click)="abrirModalClave(u)">
+                    🔑 Resetear clave
+                  </button>
+                </td>
+              </tr>
+            }
+            @if (usuarios.length === 0) {
+              <tr>
+                <td colspan="5" class="table-empty">No hay usuarios de oficina registrados.</td>
+              </tr>
+            }
+          </tbody>
+        </table>
       </div>
     </div>
-  </div>
+  }
+
+  <!-- PESTAÑA: HACIENDAS (solo ADMIN, ver *ngIf del boton de la pestaña arriba) -->
+  @if (tabActual === 'haciendas' && esAdmin) {
+    <div class="card">
+      <div class="card-header flex justify-between items-center">
+        <h5 class="card-title">🌾 Haciendas y su Token de escaneo</h5>
+        <button class="btn btn-primary btn-sm" (click)="abrirModalHacienda()">
+          ➕ Nueva Hacienda
+        </button>
+      </div>
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Hacienda</th>
+              <th>Token actual</th>
+              <th>Vence en</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (h of haciendas; track h) {
+              <tr>
+                <td class="nombre-operador">{{ h.nombre }}</td>
+                <td>
+                  @if (h.token_actual && !tokenVencido(h)) {
+                    <span class="code-badge token-valor">{{ h.token_actual }}</span>
+                  }
+                  @if (h.token_actual && tokenVencido(h)) {
+                    <span class="code-badge token-valor token-vencido">{{ h.token_actual }}</span>
+                  }
+                  @if (!h.token_actual) {
+                    <span class="text-muted-sm">Sin token activo</span>
+                  }
+                </td>
+                <td>
+                  @if (h.token_expira_en) {
+                    <span class="text-muted-sm" [class.token-vencido]="tokenVencido(h)">
+                      {{ tiempoRestanteToken(h) }}
+                    </span>
+                  }
+                  @if (!h.token_expira_en) {
+                    <span>—</span>
+                  }
+                </td>
+                <td class="flex gap-2">
+                  <button class="btn btn-primary btn-sm" (click)="generarToken(h)">
+                    🔄 Generar
+                  </button>
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    [disabled]="!h.token_actual"
+                    (click)="invalidarToken(h)"
+                  >
+                    ✕ Invalidar
+                  </button>
+                </td>
+              </tr>
+            }
+            @if (haciendas.length === 0) {
+              <tr>
+                <td colspan="4" class="table-empty">No hay haciendas registradas.</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+
+  <!-- PESTAÑA: HISTORIAL (solo ADMIN, ver *ngIf del boton de la pestaña arriba) -->
+  @if (tabActual === 'historial' && esAdmin) {
+    <div class="card">
+      <div class="card-header">
+        <h5 class="card-title">📋 Historial de acciones sensibles</h5>
+        <p class="text-muted-sm">
+          Reseteos de clave y Token de Hacienda generado/invalidado, quién y cuándo.
+        </p>
+      </div>
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Quién</th>
+              <th>Acción</th>
+              <th>Sobre</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of auditoria; track r) {
+              <tr>
+                <td>{{ r.createdAt | date: 'dd/MM/yyyy HH:mm' }}</td>
+                <td class="nombre-operador">
+                  {{ r.actor?.nombre_completo || '—' }}
+                  <span class="text-muted-sm">({{ r.actor?.cargo }})</span>
+                </td>
+                <td>{{ etiquetasAccion[r.accion] }}</td>
+                <td>{{ r.objetivo_nombre }}</td>
+              </tr>
+            }
+            @if (!cargandoAuditoria && auditoria.length === 0) {
+              <tr>
+                <td colspan="4" class="table-empty">Todavía no hay acciones registradas.</td>
+              </tr>
+            }
+            @if (cargandoAuditoria) {
+              <tr>
+                <td colspan="4" class="table-empty">Cargando…</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      @if (auditoria.length > 0) {
+        <div class="pagination-bar">
+          <span
+            >Página {{ paginaAuditoria }} de {{ totalPaginasAuditoria }} ({{
+              totalAuditoria
+            }}
+            registros)</span
+          >
+          <div class="flex gap-2">
+            <button
+              [disabled]="paginaAuditoria === 1"
+              (click)="cambiarPaginaAuditoria(paginaAuditoria - 1)"
+              class="btn btn-secondary btn-sm"
+            >
+              ◀
+            </button>
+            <button
+              [disabled]="paginaAuditoria === totalPaginasAuditoria"
+              (click)="cambiarPaginaAuditoria(paginaAuditoria + 1)"
+              class="btn btn-secondary btn-sm"
+            >
+              ▶
+            </button>
+          </div>
+        </div>
+      }
+    </div>
+  }
 
   <!-- MODAL: NUEVO USUARIO -->
-  <div class="modal-backdrop" *ngIf="mostrarModalUsuario">
-    <div class="modal-card">
-      <h3 class="modal-title">👤 Nuevo Usuario de Oficina</h3>
-      <form (ngSubmit)="guardarNuevoUsuario()" #formUsuario="ngForm" class="space-y-3 mt-3">
-        <div class="form-group">
-          <label class="form-label">Nombre completo *</label>
-          <input type="text" [(ngModel)]="nuevoUsuario.nombre_completo" name="nombre_completo" required class="input-control w-full">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Usuario *</label>
-          <input type="text" [(ngModel)]="nuevoUsuario.usuario" name="usuario" required class="input-control w-full">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Clave * (mínimo 8 caracteres)</label>
-          <div class="campo-clave">
+  @if (mostrarModalUsuario) {
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <h3 class="modal-title">👤 Nuevo Usuario de Oficina</h3>
+        <form (ngSubmit)="guardarNuevoUsuario()" #formUsuario="ngForm" class="space-y-3 mt-3">
+          <div class="form-group">
+            <label class="form-label">Nombre completo *</label>
             <input
-              [type]="mostrarClaveNuevo() ? 'text' : 'password'"
-              [(ngModel)]="nuevoUsuario.clave"
-              name="clave"
+              type="text"
+              [(ngModel)]="nuevoUsuario.nombre_completo"
+              name="nombre_completo"
               required
-              minlength="8"
+              class="input-control w-full"
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Usuario *</label>
+            <input
+              type="text"
+              [(ngModel)]="nuevoUsuario.usuario"
+              name="usuario"
+              required
+              class="input-control w-full"
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Clave * (mínimo 8 caracteres)</label>
+            <div class="campo-clave">
+              <input
+                [type]="mostrarClaveNuevo() ? 'text' : 'password'"
+                [(ngModel)]="nuevoUsuario.clave"
+                name="clave"
+                required
+                minlength="8"
+                class="input-control w-full"
+              />
+              <button
+                type="button"
+                class="boton-ojo"
+                (click)="mostrarClaveNuevo.set(!mostrarClaveNuevo())"
+              >
+                {{ mostrarClaveNuevo() ? '🙈' : '👁️' }}
+              </button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cargo *</label>
+            <select
+              [(ngModel)]="nuevoUsuario.cargo"
+              name="cargo"
+              required
               class="input-control w-full"
             >
-            <button type="button" class="boton-ojo" (click)="mostrarClaveNuevo.set(!mostrarClaveNuevo())">
-              {{ mostrarClaveNuevo() ? '🙈' : '👁️' }}
+              @for (cargo of cargosDisponibles; track cargo) {
+                <option [value]="cargo">{{ cargo }}</option>
+              }
+            </select>
+          </div>
+          @if (cargoNecesitaHacienda) {
+            <div class="form-group">
+              <label class="form-label"
+                >Hacienda * (fija para esta cuenta, no se elige en el login)</label
+              >
+              <select
+                [(ngModel)]="nuevoUsuario.hacienda_id"
+                name="hacienda_id"
+                required
+                class="input-control w-full"
+              >
+                <option [ngValue]="null" disabled>Selecciona una hacienda…</option>
+                @for (h of haciendas; track h) {
+                  <option [ngValue]="h.id">{{ h.nombre }}</option>
+                }
+              </select>
+            </div>
+          }
+          <div class="flex justify-end gap-2 pt-3">
+            <button type="button" (click)="cerrarModalUsuario()" class="btn btn-secondary">
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              [disabled]="
+                !formUsuario.form.valid || (cargoNecesitaHacienda && !nuevoUsuario.hacienda_id)
+              "
+              class="btn btn-primary"
+            >
+              Guardar
             </button>
           </div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Cargo *</label>
-          <select [(ngModel)]="nuevoUsuario.cargo" name="cargo" required class="input-control w-full">
-            <option *ngFor="let cargo of cargosDisponibles" [value]="cargo">{{ cargo }}</option>
-          </select>
-        </div>
-        <div class="form-group" *ngIf="cargoNecesitaHacienda">
-          <label class="form-label">Hacienda * (fija para esta cuenta, no se elige en el login)</label>
-          <select [(ngModel)]="nuevoUsuario.hacienda_id" name="hacienda_id" required class="input-control w-full">
-            <option [ngValue]="null" disabled>Selecciona una hacienda…</option>
-            <option *ngFor="let h of haciendas" [ngValue]="h.id">{{ h.nombre }}</option>
-          </select>
-        </div>
-
-        <div class="flex justify-end gap-2 pt-3">
-          <button type="button" (click)="cerrarModalUsuario()" class="btn btn-secondary">Cancelar</button>
-          <button type="submit" [disabled]="!formUsuario.form.valid || (cargoNecesitaHacienda && !nuevoUsuario.hacienda_id)" class="btn btn-primary">
-            Guardar
-          </button>
-        </div>
-      </form>
+        </form>
+      </div>
     </div>
-  </div>
+  }
 
   <!-- MODAL: RESETEAR CLAVE -->
-  <div class="modal-backdrop" *ngIf="mostrarModalClave">
-    <div class="modal-card">
-      <h3 class="modal-title">🔑 Resetear clave de {{ usuarioParaResetear?.nombre_completo }}</h3>
-      <p class="text-muted-sm mb-3">La clave anterior no se puede recuperar - se reemplaza por esta nueva.</p>
-      <form (ngSubmit)="guardarClaveNueva()" #formClave="ngForm" class="space-y-3">
-        <div class="form-group">
-          <label class="form-label">Clave nueva * (mínimo 8 caracteres)</label>
-          <div class="campo-clave">
-            <input
-              [type]="mostrarClaveReset() ? 'text' : 'password'"
-              [(ngModel)]="claveNueva"
-              name="claveNueva"
-              required
-              minlength="8"
-              class="input-control w-full"
-            >
-            <button type="button" class="boton-ojo" (click)="mostrarClaveReset.set(!mostrarClaveReset())">
-              {{ mostrarClaveReset() ? '🙈' : '👁️' }}
+  @if (mostrarModalClave) {
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <h3 class="modal-title">🔑 Resetear clave de {{ usuarioParaResetear?.nombre_completo }}</h3>
+        <p class="text-muted-sm mb-3">
+          La clave anterior no se puede recuperar - se reemplaza por esta nueva.
+        </p>
+        <form (ngSubmit)="guardarClaveNueva()" #formClave="ngForm" class="space-y-3">
+          <div class="form-group">
+            <label class="form-label">Clave nueva * (mínimo 8 caracteres)</label>
+            <div class="campo-clave">
+              <input
+                [type]="mostrarClaveReset() ? 'text' : 'password'"
+                [(ngModel)]="claveNueva"
+                name="claveNueva"
+                required
+                minlength="8"
+                class="input-control w-full"
+              />
+              <button
+                type="button"
+                class="boton-ojo"
+                (click)="mostrarClaveReset.set(!mostrarClaveReset())"
+              >
+                {{ mostrarClaveReset() ? '🙈' : '👁️' }}
+              </button>
+            </div>
+          </div>
+          <div class="flex justify-end gap-2 pt-3">
+            <button type="button" (click)="cerrarModalClave()" class="btn btn-secondary">
+              Cancelar
+            </button>
+            <button type="submit" [disabled]="!formClave.form.valid" class="btn btn-primary">
+              Actualizar clave
             </button>
           </div>
-        </div>
-        <div class="flex justify-end gap-2 pt-3">
-          <button type="button" (click)="cerrarModalClave()" class="btn btn-secondary">Cancelar</button>
-          <button type="submit" [disabled]="!formClave.form.valid" class="btn btn-primary">Actualizar clave</button>
-        </div>
-      </form>
+        </form>
+      </div>
     </div>
-  </div>
+  }
 
   <!-- MODAL: NUEVA HACIENDA -->
-  <div class="modal-backdrop" *ngIf="mostrarModalHacienda">
-    <div class="modal-card">
-      <h3 class="modal-title">🌾 Nueva Hacienda</h3>
-      <form (ngSubmit)="guardarNuevaHacienda()" #formHacienda="ngForm" class="space-y-3 mt-3">
-        <div class="form-group">
-          <label class="form-label">Nombre *</label>
-          <input type="text" [(ngModel)]="nombreHaciendaNueva" name="nombreHacienda" required class="input-control w-full">
-        </div>
-        <div class="flex justify-end gap-2 pt-3">
-          <button type="button" (click)="cerrarModalHacienda()" class="btn btn-secondary">Cancelar</button>
-          <button type="submit" [disabled]="!formHacienda.form.valid" class="btn btn-primary">Guardar</button>
-        </div>
-      </form>
+  @if (mostrarModalHacienda) {
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <h3 class="modal-title">🌾 Nueva Hacienda</h3>
+        <form (ngSubmit)="guardarNuevaHacienda()" #formHacienda="ngForm" class="space-y-3 mt-3">
+          <div class="form-group">
+            <label class="form-label">Nombre *</label>
+            <input
+              type="text"
+              [(ngModel)]="nombreHaciendaNueva"
+              name="nombreHacienda"
+              required
+              class="input-control w-full"
+            />
+          </div>
+          <div class="flex justify-end gap-2 pt-3">
+            <button type="button" (click)="cerrarModalHacienda()" class="btn btn-secondary">
+              Cancelar
+            </button>
+            <button type="submit" [disabled]="!formHacienda.form.valid" class="btn btn-primary">
+              Guardar
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
-  </div>
+  }
 </div>
