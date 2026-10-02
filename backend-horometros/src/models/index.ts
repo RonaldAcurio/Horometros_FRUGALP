@@ -9,6 +9,7 @@ import { Hacienda } from "./hacienda";
 import { Usuario } from "./usuario";
 import { RegistroAuditoria } from "./registro_auditoria";
 import { RegistroDispositivo } from "./registro_dispositivo";
+import { CierreJornada } from "./cierre_jornada";
 
 Asistencia.belongsTo(Operador, { foreignKey:'operador_id' ,as:'operador'});
 Asistencia.belongsTo(Actividad,{ foreignKey: 'actividad_id', as:'actividad'});
@@ -56,6 +57,12 @@ Asistencia.belongsTo(Usuario, { foreignKey: 'admitido_por_usuario_id', as: 'admi
 // (usuario/operador/hacienda) va "congelado" en objetivo_nombre, sin relacion, a proposito.
 RegistroAuditoria.belongsTo(Usuario, { foreignKey: 'actor_usuario_id', as: 'actor' });
 
+// Marca explicita de cierre de jornada (ver cierre_jornada.ts) - un JOIN en vivo esta bien aca, a diferencia
+// del objetivo_nombre "congelado" de RegistroAuditoria, porque calcularDiaCerrado/calcularDiaCerradoHacienda
+// solo necesitan saber SI existe la fila, nunca mostrar el nombre de la hacienda desde aca.
+CierreJornada.belongsTo(Hacienda, { foreignKey: 'hacienda_id', as: 'hacienda' });
+CierreJornada.belongsTo(Usuario, { foreignKey: 'cerrado_por_usuario_id', as: 'cerradoPor' });
+
 export{
     Equipo,
     Operador,
@@ -68,4 +75,5 @@ export{
     Usuario,
     RegistroAuditoria,
     RegistroDispositivo,
+    CierreJornada,
 };

@@ -3,6 +3,7 @@ import { Usuario } from '../models/usuario';
 import { Operador } from '../models/operador';
 import { RegistroAuditoria } from '../models/registro_auditoria';
 import { Hacienda } from '../models/hacienda';
+import { CierreJornada } from '../models/cierre_jornada';
 
 /*
 Helpers compartidos por las pruebas de integracion (ver CLAUDE.md, "Pruebas de integracion"). Todo esto corre
@@ -10,10 +11,12 @@ contra la BD de TEST real (ver config/database.ts, NODE_ENV=test) - nunca contra
 */
 
 // Orden por las FK, igual que cualquier limpieza manual de esta BD (ver CLAUDE.md sobre el bug de orden de
-// deletes de sesiones anteriores): RegistroAuditoria y Operador referencian a Usuario, Usuario referencia a
-// Hacienda - hay que borrar en ese orden o Postgres rechaza el DELETE por la FK.
+// deletes de sesiones anteriores): RegistroAuditoria, Operador y CierreJornada referencian a Usuario (y
+// CierreJornada tambien a Hacienda), Usuario referencia a Hacienda - hay que borrar en ese orden o Postgres
+// rechaza el DELETE por la FK.
 export const limpiarBaseDeDatosTest = async (): Promise<void> => {
     await RegistroAuditoria.destroy({ where: {}, force: true });
+    await CierreJornada.destroy({ where: {}, force: true });
     await Operador.destroy({ where: {}, force: true });
     await Usuario.destroy({ where: {}, force: true });
     await Hacienda.destroy({ where: {}, force: true });
