@@ -1206,9 +1206,14 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
             where: { fecha:hoy },
             attributes: ATRIBUTOS_SIN_FOTO,
             /*
-            paranoid:false en los 3 includes: si el Operador/Actividad de una marcacion de HOY fue eliminado
+            paranoid:false en los includes: si el Operador/Actividad de una marcacion de HOY fue eliminado
             (soft-delete) despues de que marco, el Panel de Supervisor tiene que seguir mostrando su nombre para
             poder confirmar O/X - un catalogo eliminado no debe borrar una marcacion ya hecha.
+
+            supervisor->hacienda y haciendaPrestamo: mismo include que ya usa obtenerHistorial (ver ahi el
+            detalle) - el Panel de Supervisor ahora tambien tiene su propio "Ver/Imprimir" por fila e "Imprimir
+            General" (hoja-actividades-modal.ts, pedido del usuario 2026-10-02), que necesitan la hacienda de
+            la jornada para el mismo encabezado que ya arma la hoja imprimible del Historial.
             */
             include: [
                 {
@@ -1216,9 +1221,15 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
                     required: filtrarPorSupervisor,
                     paranoid: false,
                     ...(filtrarPorSupervisor ? { where: { supervisor_id: supervisorIdAlcance } } : {}),
+                    include: [{
+                        model: Usuario, as: 'supervisor',
+                        attributes: ['hacienda_id'],
+                        include: [{ model: Hacienda, as: 'hacienda', attributes: ['nombre'] }],
+                    }],
                 },
                 { model: Actividad, as:'actividad', paranoid: false},
                 { model: Actividad, as:'actividades', paranoid: false},
+                { model: Hacienda, as: 'haciendaPrestamo', attributes: ['nombre'], paranoid: false },
             ],
             order: [['hora_ingreso','DESC']],
             limit: limitePagina,

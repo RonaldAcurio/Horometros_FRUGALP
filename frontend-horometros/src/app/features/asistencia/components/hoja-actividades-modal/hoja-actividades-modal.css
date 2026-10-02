@@ -1,0 +1,189 @@
+/* Modal "Ver/Imprimir Hoja de Actividades" - imita la hoja física siempre en blanco/negro, sin importar el
+   tema del resto del panel (misma idea que una hoja impresa). Ver también @media print en styles.css. */
+.hoja-actividades-card {
+  max-width: 55rem;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  background-color: #ffffff;
+  color: #1f2937;
+}
+
+.hoja-actividades-cerrar {
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: none;
+  background-color: #7a1f3d;
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.hoja-actividades-cerrar:hover {
+  background-color: #5c1730;
+}
+
+/*
+Barra pegada (sticky) arriba de la tarjeta con scroll interno: antes el botón "✕" flotaba con
+position:absolute fuera de los márgenes de la tarjeta y el propio overflow-y:auto de la tarjeta lo recortaba a
+la mitad apenas había contenido para desplazar. Ahora vive DENTRO del flujo normal, pegado al tope mientras se
+hace scroll (position:sticky), con margen negativo para "comerse" el padding de la tarjeta y quedar a ras de
+los bordes, y su propio padding + fondo opaco para no dejar ver el contenido de abajo al desplazarse.
+*/
+.hoja-actividades-barra-superior {
+  position: sticky;
+  top: -1.5rem;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: -1.5rem -1.5rem 1rem -1.5rem;
+  padding: 1rem 1.5rem;
+  background-color: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+  border-radius: 0.75rem 0.75rem 0 0;
+}
+
+.hoja-actividades-titulo {
+  font-size: 1.1rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin: 0 0 0.5rem;
+  color: #1f2937;
+}
+
+.hoja-actividades-encabezado {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.hoja-actividades-mecanico {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: #1f2937;
+}
+
+.hoja-actividades-fecha {
+  font-size: 0.9rem;
+  color: #4b5563;
+}
+
+.hoja-actividades-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.hoja-actividades-tabla th,
+.hoja-actividades-tabla td {
+  border: 1px solid #9ca3af;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+
+.hoja-actividades-tabla th {
+  background: #f3f4f6;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  color: #1f2937;
+}
+
+.hoja-actividades-vacio {
+  text-align: center;
+  color: #6b7280;
+  padding: 1.25rem;
+}
+
+.hoja-actividades-observaciones {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #9ca3af;
+  font-size: 0.85rem;
+  color: #1f2937;
+}
+
+.hoja-actividades-observaciones p {
+  margin: 0.25rem 0 0;
+  color: #374151;
+}
+
+/* Impresión de varios operadores en una sola ventana (Imprimir General / Imprimir Hojas del rango): separa
+   cada bloque en pantalla con una línea punteada. */
+.hoja-actividades-grupo + .hoja-actividades-grupo {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 2px dashed #9ca3af;
+}
+
+/*
+La hoja de actividades se puede abrir ENCIMA de otro modal del panel que la use (dos modal-backdrop apilados a
+la vez). Sin esto, el que queda "arriba" depende del orden en que aparecen en el HTML, no de cual se abrio
+despues - con los dos en el mismo z-index (50, ver styles.css), el otro modal podia tapar a la hoja y bloquear
+sus clics. Se sube el z-index de la hoja para que SIEMPRE quede arriba.
+*/
+.modal-backdrop-anidado {
+  z-index: 60;
+}
+
+/*
+Fix del scroll interno al imprimir: styles.css (@media print, .imprimible) ya pone max-height:none, pero
+.hoja-actividades-card (mas arriba) tambien fija max-height:90vh/overflow-y:auto fuera de cualquier media query.
+La encapsulacion de estilos de Angular le agrega a cada selector de este archivo un atributo [_ngcontent-xxx],
+lo que sube la especificidad de esta regla (clase+atributo) al nivel de ".imprimible .no-imprimir" (dos clases)
+del global styles.css - y como este componente carga despues en el bundle, gana EL incluso imprimiendo: se veia
+con barra de desplazamiento en la vista previa en vez de dejar fluir el contenido en varias paginas. Mismo
+motivo por el que .hoja-actividades-barra-superior (con .no-imprimir) no se ocultaba al imprimir pese a tener
+esa clase. Se fuerza todo explicitamente aqui, en el propio @media print de este componente, para que gane
+siempre.
+*/
+/*
+Máximo 2 reportes (grupos, cada uno YA es un operador en un solo día) por hoja física (pedido del usuario,
+2026-10-01): antes el contenido fluía libre y podían caber 3, 4 o más reportes cortos apretados en una sola
+hoja, dificultando separarlos al repartirlos. break-inside:avoid (de siempre) ya garantiza que un reporte
+LARGO nunca se parte a la mitad - si no cabe completo en lo que queda de la hoja actual, se va entero a la
+siguiente, quedando solo en esa hoja sin compartirla con nadie; eso ya cubre "si un reporte es largo que se
+imprima en una sola hoja" sin necesitar nada más. Lo que faltaba es el límite de 2: break-before:page antes de
+cada 3er, 5to, 7mo... grupo (nth-child impar, saltando el primero) fuerza una hoja nueva cada 2 reportes,
+incluso cuando los dos anteriores eran cortos y habría cabido un tercero.
+page-break-inside/page-break-before son los alias viejos, se dejan igual por si el motor de impresión no
+reconoce los nombres modernos (break-inside/break-before).
+*/
+@media print {
+  .hoja-actividades-grupo {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Hijo directo de .hoja-actividades-grupos (no cualquier .hoja-actividades-grupo) a propósito: el nth-child
+     tiene que contar SOLO entre los grupos, sin que la barra superior (hermana, fuera de ese contenedor) corra
+     la numeración. */
+  .hoja-actividades-grupos > .hoja-actividades-grupo:nth-child(odd):not(:first-child) {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  .hoja-actividades-card {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .hoja-actividades-barra-superior {
+    display: none !important;
+  }
+
+  /* El "display:revert" global (styles.css, @media print) restaura cada elemento a su display por defecto del
+     navegador (block/table/etc) para deshacer el display:none general - pero de paso también borra cualquier
+     display:flex/grid que un elemento necesite (acá, el encabezado Mecánico/Fecha lado a lado). Se reafirma
+     explícitamente el flex que sí hace falta conservar al imprimir. */
+  .hoja-actividades-encabezado {
+    display: flex !important;
+  }
+}

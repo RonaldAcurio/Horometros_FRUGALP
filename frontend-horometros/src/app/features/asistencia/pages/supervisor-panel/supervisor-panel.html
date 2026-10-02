@@ -90,6 +90,7 @@
             <th>Estado</th>
             <th>Confirmar</th>
             <th>Observación</th>
+            <th>Acción</th>
           </tr>
         </thead>
         <tbody>
@@ -182,11 +183,29 @@
                   }}
                 </button>
               </td>
+              <td>
+                <div class="flex gap-1">
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    [disabled]="cargandoReporteImpresion"
+                    (click)="verHojaFila(asis)"
+                  >
+                    👁️ Ver
+                  </button>
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    [disabled]="cargandoReporteImpresion"
+                    (click)="imprimirHojaFila(asis)"
+                  >
+                    🖨️ Imprimir
+                  </button>
+                </div>
+              </td>
             </tr>
           }
           @if (asistenciasHoy.length === 0) {
             <tr>
-              <td colspan="9" class="table-empty">No hay marcaciones registradas.</td>
+              <td colspan="10" class="table-empty">No hay marcaciones registradas.</td>
             </tr>
           }
         </tbody>
@@ -195,7 +214,35 @@
     @if (asistenciasHoy.length > 0) {
       <div class="pagination-bar">
         <span>Página {{ paginaHoy }} de {{ totalPaginasHoy }} ({{ totalHoy }} registros)</span>
-        <div class="flex gap-1">
+        <div class="flex gap-2">
+          <!-- Filtrados al día que se está viendo (fechaSeleccionada, o "hoy" si está vacío) - a diferencia
+          del Historial (Panel de Asistente), acá no hace falta elegir Hacienda+Supervisor a mano: un
+          Supervisor real ya los tiene implícitos (su propia cuenta); el ADMIN necesita filtrar por un
+          Supervisor puntual arriba para habilitarlos (ver puedeExportarGeneral). -->
+          <button
+            class="btn btn-primary btn-sm"
+            [disabled]="!puedeExportarGeneral || cargandoReporteImpresion"
+            [title]="
+              puedeExportarGeneral
+                ? ''
+                : 'Elige un Supervisor específico arriba para habilitar la impresión general'
+            "
+            (click)="imprimirGeneral()"
+          >
+            {{ cargandoReporteImpresion ? 'Generando...' : '🖨️ Imprimir General' }}
+          </button>
+          <button
+            class="btn btn-secondary btn-sm"
+            [disabled]="!puedeExportarGeneral || exportandoExcel"
+            [title]="
+              puedeExportarGeneral
+                ? ''
+                : 'Elige un Supervisor específico arriba para habilitar la exportación'
+            "
+            (click)="exportarExcel()"
+          >
+            {{ exportandoExcel ? 'Generando...' : '📊 Exportar a Excel' }}
+          </button>
           <button
             [disabled]="paginaHoy === 1"
             (click)="cambiarPaginaHoy(paginaHoy - 1)"
@@ -214,6 +261,8 @@
       </div>
     }
   </div>
+
+  <app-hoja-actividades-modal #hojaModal></app-hoja-actividades-modal>
 
   <!-- MODAL DE OBSERVACION -->
   @if (observacionEditandoId !== null) {

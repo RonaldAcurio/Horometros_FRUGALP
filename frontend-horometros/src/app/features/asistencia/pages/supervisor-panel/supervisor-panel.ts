@@ -1,27 +1,33 @@
-import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Clipboard } from '@capacitor/clipboard';
+import { forkJoin, map } from 'rxjs';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 import { HaciendaService } from '../../../../core/services/hacienda.service';
 import { UsuarioService } from '../../../../core/services/usuario.service';
+import { RegistroActividadService } from '../../../../core/services/registro-actividad.service';
+import { ExportarExcelService } from '../../../../core/services/exportar-excel.service';
 import { AuthService } from '../../../../core/services/auth.service';
-import { Asistencia } from '../../../../core/models/asistencia.model';
+import { Asistencia, Operador } from '../../../../core/models/asistencia.model';
 import { Hacienda } from '../../../../core/models/hacienda.model';
 import { Usuario } from '../../../../core/models/usuario.model';
 import { VisorFoto } from '../../components/visor-foto/visor-foto';
+import { HojaActividadesModal, HojaGrupo, resolverHaciendaJornada } from '../../components/hoja-actividades-modal/hoja-actividades-modal';
 import { NotificacionService } from '../../../../core/services/notificacion.service';
 import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, VisorFoto],
+  imports: [CommonModule, FormsModule, RouterLink, VisorFoto, HojaActividadesModal],
   selector: 'app-supervisor-panel',
   styleUrl: './supervisor-panel.css',
   templateUrl: './supervisor-panel.html',
 })
 export class SupervisorPanel implements OnInit {
+  @ViewChild('hojaModal') hojaModal!: HojaActividadesModal;
+
   asistenciasHoy: Asistencia[] = [];
   fechaSeleccionada: string = '';
 
@@ -57,10 +63,19 @@ export class SupervisorPanel implements OnInit {
     return this.authService.tieneRol('ADMIN');
   }
 
+  // "Ver/Imprimir" por fila y "Imprimir General"/"Exportar a Excel" (pedido del usuario, 2026-10-02) - mismo
+  // componente/servicio compartidos que ya usa el Panel de Asistente (ver hoja-actividades-modal.ts y
+  // exportar-excel.service.ts). Acá SIEMPRE es un solo día (la fecha que ya está filtrada en esta pantalla),
+  // nunca un rango.
+  cargandoReporteImpresion = false;
+  exportandoExcel = false;
+
   constructor(
     private asistenciaService: AsistenciaService,
     private haciendaService: HaciendaService,
     private usuarioService: UsuarioService,
+    private registroActividadService: RegistroActividadService,
+    private exportarExcelService: ExportarExcelService,
     protected authService: AuthService,
     private cdr: ChangeDetectorRef,
     private notificacionService: NotificacionService,
@@ -277,6 +292,163 @@ export class SupervisorPanel implements OnInit {
         this.cargarAsistencias();
       },
       error: (err) => this.notificacionService.error(err.error?.message || 'Error al confirmar la asistencia.'),
+    });
+  }
+
+  // ==================== "Ver/Imprimir" (columna Acción) ====================
+
+  verHojaFila(asis: Asistencia): void {
+    this.abrirHojaFila(asis, false);
+  }
+
+  imprimirHojaFila(asis: Asistencia): void {
+    this.abrirHojaFila(asis, true);
+  }
+
+  private abrirHojaFila(asis: Asistencia, autoImprimir: boolean): void {
+    if (!asis.operador) return;
+    this.cargandoReporteImpresion = true;
+    this.registroActividadService.obtenerPorOperador(asis.operador_id, asis.fecha, asis.fecha).subscribe({
+      next: (registros) => {
+        this.cargandoReporteImpresion = false;
+        this.hojaModal.abrir([{
+          operador: asis.operador!,
+          registros,
+          haciendaNombre: resolverHaciendaJornada(asis.operador!, asis),
+          fecha: asis.fecha,
+          observacionesSupervisor: asis.observaciones ?? null,
+        }], { autoImprimir });
+      },
+      error: (err) => {
+        this.cargandoReporteImpresion = false;
+        this.notificacionService.error(err.error?.message || 'Error al cargar las labores de ese día.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  /*
+  ==================== "Imprimir General" / "Exportar a Excel" ====================
+  A diferencia del Historial (Panel de Asistente), acá SIEMPRE hay una fecha puntual ya filtrada en pantalla
+  (fechaSeleccionada, o "hoy" si está vacío - ver cargarAsistencias) y, para un SUPERVISOR real, su propia
+  hacienda ya se conoce de entrada (miHacienda/su propio perfil) - no hace falta pedirle Hacienda+Supervisor
+  como sí le pide el Historial a un ADMIN. El ADMIN sigue necesitando elegir un Supervisor puntual (si ve
+  "Todos los Supervisores" mezclados no hay un único RESPONSABLE que poner en el encabezado, ni una sola
+  hacienda a la que atribuirle el reporte - pedido explícito del usuario, 2026-10-02).
+  */
+  get puedeExportarGeneral(): boolean {
+    if (this.asistenciasHoy.length === 0) return false;
+    return this.esAdmin ? this.supervisorIdFiltro !== null : true;
+  }
+
+  // Junta a todos los operadores distintos que aparecen HOY en pantalla (la página actual, mismo criterio que
+  // "Imprimir Hojas del rango" del Historial - ver asistencia-panel.ts) y abre su hoja en la misma ventana.
+  // Al ser siempre UN solo día, cada operador es UN único grupo (no hace falta partir por fecha, ver
+  // agruparPorDia del Historial).
+  imprimirGeneral(): void {
+    if (!this.puedeExportarGeneral) return;
+    const fecha = this.fechaSeleccionada || this.asistenciasHoy[0]?.fecha;
+    if (!fecha) return;
+
+    const operadoresUnicos = new Map<number, Operador>();
+    for (const asis of this.asistenciasHoy) {
+      if (asis.operador && !operadoresUnicos.has(asis.operador_id)) {
+        operadoresUnicos.set(asis.operador_id, asis.operador);
+      }
+    }
+    if (operadoresUnicos.size === 0) {
+      this.notificacionService.error('No hay operadores en la tabla para imprimir.');
+      return;
+    }
+
+    this.cargandoReporteImpresion = true;
+    const peticiones = Array.from(operadoresUnicos.values()).map((op) =>
+      this.registroActividadService.obtenerPorOperador(op.id, fecha, fecha).pipe(
+        map((registros): HojaGrupo => {
+          const asis = this.asistenciasHoy.find((a) => a.operador_id === op.id);
+          return {
+            operador: op,
+            registros,
+            haciendaNombre: resolverHaciendaJornada(op, asis),
+            fecha,
+            observacionesSupervisor: asis?.observaciones ?? null,
+          };
+        })
+      )
+    );
+
+    forkJoin(peticiones).subscribe({
+      next: (grupos) => {
+        this.cargandoReporteImpresion = false;
+        this.hojaModal.abrir(grupos, { autoImprimir: true });
+      },
+      error: (err) => {
+        this.cargandoReporteImpresion = false;
+        this.notificacionService.error(err.error?.message || 'Error al generar las hojas.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  exportarExcel(): void {
+    if (!this.puedeExportarGeneral || this.exportandoExcel) return;
+    const fecha = this.fechaSeleccionada || this.asistenciasHoy[0]?.fecha;
+    if (!fecha) return;
+
+    // La hacienda/el responsable del encabezado ya se conocen de entrada acá (al revés que en el Historial,
+    // que necesita que el ADMIN elija Hacienda+Supervisor a mano): un Supervisor real usa su propia hacienda
+    // (miHacienda) y su propio nombre (perfil()); el ADMIN usa el Supervisor que tenga filtrado arriba.
+    let nombreHacienda: string | null;
+    let nombreSupervisor: string;
+    if (this.esAdmin) {
+      const supervisor = this.supervisores.find((s) => s.id === this.supervisorIdFiltro);
+      if (!supervisor) return;
+      nombreHacienda = supervisor.hacienda?.nombre ?? null;
+      nombreSupervisor = supervisor.nombre_completo;
+    } else {
+      nombreHacienda = this.miHacienda?.nombre ?? null;
+      nombreSupervisor = this.authService.perfil()?.nombre_completo ?? '';
+    }
+    if (!nombreHacienda) {
+      this.notificacionService.error('No se pudo determinar la hacienda para generar el Excel.');
+      return;
+    }
+
+    const operadoresUnicos = new Map<number, Operador>();
+    for (const asis of this.asistenciasHoy) {
+      if (asis.operador && !operadoresUnicos.has(asis.operador_id)) {
+        operadoresUnicos.set(asis.operador_id, asis.operador);
+      }
+    }
+    if (operadoresUnicos.size === 0) {
+      this.notificacionService.error('No hay trabajadores registrados ese día.');
+      return;
+    }
+
+    this.exportandoExcel = true;
+    this.cdr.detectChanges();
+    const peticiones = Array.from(operadoresUnicos.values()).map((op) =>
+      this.registroActividadService.obtenerPorOperador(op.id, fecha, fecha).pipe(
+        map((registros) => ({ operador: op, registros }))
+      )
+    );
+    forkJoin(peticiones).subscribe({
+      next: (bloques) => {
+        this.exportarExcelService.generarYDescargar(bloques, fecha, nombreHacienda!, nombreSupervisor)
+          .catch((err) => {
+            console.error('Error al generar el Excel:', err);
+            this.notificacionService.error('No se pudo generar el archivo Excel. Intenta de nuevo.');
+          })
+          .finally(() => {
+            this.exportandoExcel = false;
+            this.cdr.detectChanges();
+          });
+      },
+      error: (err) => {
+        this.exportandoExcel = false;
+        this.notificacionService.error(err.error?.message || 'Error al generar el Excel.');
+        this.cdr.detectChanges();
+      },
     });
   }
 }
