@@ -413,6 +413,21 @@ Variables de entorno requeridas en el backend: `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`
 `R2_BUCKET_NAME`. El tier gratis de R2 (10GB/mes, sin costo de egress) se renueva cada mes indefinidamente, no
 es una prueba con fecha de vencimiento.
 
+## Respaldo automático de la base de datos
+
+Servicio aparte dentro del mismo proyecto de Railway (`respaldo-bd/`, carpeta en este mismo repo, servicio
+"prolific-appreciation" en el dashboard - Root Directory `respaldo-bd`, con su propio Dockerfile y Cron
+Schedule `0 7 * * *` = 2:00 AM Ecuador). Activo y probado en producción desde el 2026-10-02. Cada corrida:
+`pg_dump` → `gzip` → sube a la misma cuenta de R2 que ya usan las fotos (carpeta `backups/` del mismo bucket,
+referenciando las variables `R2_*` del backend directamente vía `${{Horometros_FRUGALP.R2_*}}` en vez de
+copiarlas) → borra cualquier respaldo de más de 7 días. Nunca expone Postgres a internet - corre dentro de la
+red privada de Railway, igual que el backend (`DATABASE_URL` = `${{Postgres.DATABASE_URL}}`). Dos bugs reales
+corregidos al activarlo (ver `respaldo-bd/README.md` para el detalle): la imagen base tiene que usar la MISMA
+versión mayor de Postgres que producción (`pg_dump` no respalda un servidor más nuevo que él mismo), y rclone
+necesita `RCLONE_S3_NO_CHECK_BUCKET=true` porque la credencial de R2 (de propósito limitado) no tiene permiso
+para crear buckets, solo para leer/escribir objetos dentro del que ya existe. Para restaurar un respaldo, ver
+el mismo README - es una operación que sobreescribe datos reales, nunca hacerla sin avisar primero.
+
 ## Infraestructura y despliegue
 
 - **Frontend**: Vercel, autodetección de Angular, dominio estable `https://horometros-frugalp.vercel.app`.
@@ -448,7 +463,6 @@ es una prueba con fecha de vencimiento.
 
 ## Pendiente
 
-- Backups automáticos de la base de datos - no configurados, urgente antes de escalar el piloto.
 - Staging, Sentry (o similar) y monitoreo de uptime de `/api/health` - ninguno de los 3 existe todavía.
 - Balanceador de carga / redundancia - una sola instancia, aplica en cuanto el piloto crezca a la escala real
   (~950 trabajadores de campo).
