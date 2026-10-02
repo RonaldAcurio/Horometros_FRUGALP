@@ -94,7 +94,11 @@
                   </td>
                 </tr>
               }
-              @if (operadores.length === 0) {
+              @if (cargandoOperadores) {
+                <tr>
+                  <td colspan="4" class="table-empty">⏳ Cargando...</td>
+                </tr>
+              } @else if (operadores.length === 0) {
                 <tr>
                   <td colspan="4" class="table-empty">No hay operadores registrados.</td>
                 </tr>
@@ -335,7 +339,11 @@
                   <td>{{ reg.observaciones || '—' }}</td>
                 </tr>
               }
-              @if (historial.length === 0) {
+              @if (cargandoHistorial) {
+                <tr>
+                  <td colspan="8" class="table-empty">⏳ Cargando...</td>
+                </tr>
+              } @else if (historial.length === 0) {
                 <tr>
                   <td colspan="8" class="table-empty">
                     No hay registros para el rango seleccionado.
@@ -448,7 +456,11 @@
                   </td>
                 </tr>
               }
-              @if (equipos.length === 0) {
+              @if (cargandoEquiposTab) {
+                <tr>
+                  <td colspan="3" class="table-empty">⏳ Cargando...</td>
+                </tr>
+              } @else if (equipos.length === 0) {
                 <tr>
                   <td colspan="3" class="table-empty">No hay equipos registrados.</td>
                 </tr>
@@ -542,7 +554,11 @@
                   </td>
                 </tr>
               }
-              @if (actividadesTab.length === 0) {
+              @if (cargandoActividadesTab) {
+                <tr>
+                  <td colspan="4" class="table-empty">⏳ Cargando...</td>
+                </tr>
+              } @else if (actividadesTab.length === 0) {
                 <tr>
                   <td colspan="4" class="table-empty">No hay actividades registradas.</td>
                 </tr>
@@ -629,7 +645,11 @@
                   </td>
                 </tr>
               }
-              @if (operadoresTerminos.length === 0) {
+              @if (cargandoTerminosTab) {
+                <tr>
+                  <td colspan="3" class="table-empty">⏳ Cargando...</td>
+                </tr>
+              } @else if (operadoresTerminos.length === 0) {
                 <tr>
                   <td colspan="3" class="table-empty">No hay trabajadores registrados.</td>
                 </tr>

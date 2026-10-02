@@ -6,6 +6,7 @@ import {
     registrarMacarcoQR,
     obtenerAsistenciaHoy,
     finalizarDia,
+    deshacerCierreJornada,
     obtenerHistorial,
     revisarAsistencia,
     obtenerFotoAsistencia,
@@ -45,6 +46,9 @@ router.post('/marcar-qr', limitadorMarcacion, registrarMacarcoQR);
 // /asistencia/supervisor en el frontend.
 router.get('/hoy', verificarAutenticacion, requireRol('ADMIN','SUPERVISOR'), obtenerAsistenciaHoy);
 router.post('/finalizar-dia', verificarAutenticacion, requireRol('ADMIN','SUPERVISOR'), finalizarDia);
+// Deshacer un cierre hecho por error: exclusivo ADMIN (ver docstring de deshacerCierreJornada) - un Supervisor
+// real no puede deshacer su propio cierre, a proposito, para que quede una segunda persona de por medio.
+router.post('/deshacer-cierre-jornada', verificarAutenticacion, requireRol('ADMIN'), deshacerCierreJornada);
 router.put('/revisar/:id', verificarAutenticacion, requireRol('ADMIN','SUPERVISOR'), revisarAsistencia);
 
 // "Ver Evidencia" (VisorFoto): componente compartido por Panel de Asistente y Panel de Supervisor, asi que

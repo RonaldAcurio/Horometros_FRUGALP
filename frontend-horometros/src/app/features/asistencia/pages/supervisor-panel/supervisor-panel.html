@@ -31,6 +31,18 @@
       <button class="btn btn-warning" (click)="ejecutarCierreDiario()" [disabled]="diaCerrado">
         {{ diaCerrado ? '🔒 Jornada Cerrada' : '🔒 Cerrar Jornada' }}
       </button>
+      <!-- Solo ADMIN, y solo con una hacienda puntual elegida y ya cerrada (ver puedeDeshacerCierre) - deshace
+      un cierre hecho por error (pedido real del usuario, 2026-10-02). -->
+      @if (esAdmin) {
+        <button
+          class="btn btn-secondary"
+          (click)="deshacerCierre()"
+          [disabled]="!puedeDeshacerCierre || deshaciendoCierre"
+          title="Deshace el cierre de la hacienda elegida arriba, si ya está cerrada"
+        >
+          {{ deshaciendoCierre ? 'Deshaciendo…' : '↩️ Deshacer cierre' }}
+        </button>
+      }
     </div>
   </div>
 
@@ -203,7 +215,11 @@
               </td>
             </tr>
           }
-          @if (asistenciasHoy.length === 0) {
+          @if (cargandoAsistencias) {
+            <tr>
+              <td colspan="10" class="table-empty">⏳ Cargando...</td>
+            </tr>
+          } @else if (asistenciasHoy.length === 0) {
             <tr>
               <td colspan="10" class="table-empty">No hay marcaciones registradas.</td>
             </tr>

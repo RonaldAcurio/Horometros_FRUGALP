@@ -17,6 +17,7 @@ import { VisorFoto } from '../../components/visor-foto/visor-foto';
 import { HojaActividadesModal, HojaGrupo, resolverHaciendaJornada } from '../../components/hoja-actividades-modal/hoja-actividades-modal';
 import { NotificacionService } from '../../../../core/services/notificacion.service';
 import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
+import { timeoutDeLista, mensajeErrorCarga } from '../../../../core/utils/peticion-lista.util';
 
 @Component({
   standalone: true,
@@ -45,6 +46,7 @@ export class SupervisorPanel implements OnInit {
   "asistenciasHoy" -- si lo fuera, el boton "Cerrar Jornada" pondria mal segun que pagina se este mirando.
   */
   diaCerrado:boolean = false;
+  cargandoAsistencias: boolean = false;
 
   //Edicion de observacion
   observacionEditandoId: number | null=null;
@@ -107,12 +109,16 @@ export class SupervisorPanel implements OnInit {
     const haciendaId = this.authService.perfil()?.hacienda_id;
     if (!haciendaId) return;
 
-    this.haciendaService.obtenerHaciendas().subscribe({
+    this.haciendaService.obtenerHaciendas().pipe(timeoutDeLista()).subscribe({
       next: (haciendas) => {
         this.miHacienda = haciendas.find((h) => h.id === haciendaId) || null;
         this.cdr.detectChanges();
       },
-      error: (err) => console.error('Error cargando la hacienda del supervisor:', err),
+      error: (err) => {
+        console.error('Error cargando la hacienda del supervisor:', err);
+        this.notificacionService.error(mensajeErrorCarga(err, 'Error al cargar tu hacienda.'));
+        this.cdr.detectChanges();
+      },
     });
   }
 
@@ -173,15 +179,22 @@ export class SupervisorPanel implements OnInit {
   }
 
   cargarAsistencias(): void {
-    this.asistenciaService.obtenerAsistenciasHoy(this.fechaSeleccionada || undefined, this.paginaHoy, 30, this.supervisorIdFiltro || undefined).subscribe({
+    this.cargandoAsistencias = true;
+    this.asistenciaService.obtenerAsistenciasHoy(this.fechaSeleccionada || undefined, this.paginaHoy, 30, this.supervisorIdFiltro || undefined).pipe(timeoutDeLista()).subscribe({
       next: (res) => {
+        this.cargandoAsistencias = false;
         this.asistenciasHoy = res.data || [];
         this.totalPaginasHoy = res.totalPaginas || 1;
         this.totalHoy = res.total || 0;
         this.diaCerrado = res.diaCerrado;
         this.cdr.detectChanges();
       },
-      error: (err) => console.error('Error cargando asistencias:', err)
+      error: (err) => {
+        this.cargandoAsistencias = false;
+        console.error('Error cargando asistencias:', err);
+        this.notificacionService.error(mensajeErrorCarga(err, 'Error al cargar la asistencia del día.'));
+        this.cdr.detectChanges();
+      },
     });
   }
 
@@ -221,6 +234,41 @@ export class SupervisorPanel implements OnInit {
         error: (err) => this.notificacionService.error(err.error?.message || 'Error procesando el cierre de día.')
       });
     }
+  }
+
+  deshaciendoCierre = false;
+
+  /*
+  "Deshacer cierre": exclusivo ADMIN (el backend lo exige, ver deshacerCierreJornada ahí) - un Supervisor que
+  cerró por error no puede deshacer su propio cierre, a propósito, para que quede una segunda persona de por
+  medio. Solo tiene sentido con una hacienda puntual elegida (supervisorIdFiltro) y el día ya cerrado.
+  */
+  get puedeDeshacerCierre(): boolean {
+    return this.esAdmin && this.supervisorIdFiltro !== null && this.diaCerrado;
+  }
+
+  async deshacerCierre(): Promise<void> {
+    if (!this.puedeDeshacerCierre || this.deshaciendoCierre || this.supervisorIdFiltro === null) return;
+
+    const confirmado = await this.confirmacionService.preguntar(
+      '¿Deshacer el cierre de esta jornada? Los registros que ese cierre tocó vuelven a su estado anterior y se genera un Token nuevo. Esto no afecta nada que ya estuviera cerrado de antes.',
+      'Deshacer cierre'
+    );
+    if (!confirmado) return;
+
+    this.deshaciendoCierre = true;
+    this.asistenciaService.deshacerCierreJornada(this.supervisorIdFiltro, this.fechaSeleccionada || undefined).subscribe({
+      next: (res) => {
+        this.deshaciendoCierre = false;
+        this.notificacionService.exito(res.message || 'Cierre deshecho.');
+        this.cargarAsistencias();
+      },
+      error: (err) => {
+        this.deshaciendoCierre = false;
+        this.notificacionService.error(err.error?.message || 'Error al deshacer el cierre.');
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   //Observaciones de SUPERVISOR

@@ -75,6 +75,16 @@ export class AsistenciaService {
         return this.http.post(`${this.baseUrl}/finalizar-dia`, { fecha, supervisor_id: supervisorId });
     }
 
+    /*
+    POST -> /api/asistencia/deshacer-cierre-jornada (deshace un "Cerrar Jornada" hecho por error - exclusivo
+    ADMIN, ver ruta/controller). supervisorId es OBLIGATORIO a propósito (nunca "todas las haciendas a la
+    vez"): el ADMIN tiene que elegir una hacienda puntual en el filtro del panel antes de poder deshacer su
+    cierre, para reducir el riesgo de tocar por error una hacienda que de verdad quería quedar cerrada.
+    */
+    deshacerCierreJornada(supervisorId: number, fecha?: string): Observable<any> {
+        return this.http.post(`${this.baseUrl}/deshacer-cierre-jornada`, { fecha, supervisor_id: supervisorId });
+    }
+
     // PUT -> /api/asistencia/revisar/:id (Edición de observaciones/horas por supervisor)
     revisarAsistencia(id: number, datos: { hora_salida?: string; observaciones?: string; estado?: string; actividad_id?: number }): Observable<any> {
         return this.http.put(`${this.baseUrl}/revisar/${id}`, datos);
