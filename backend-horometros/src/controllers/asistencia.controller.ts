@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 import { Operador } from '../models/operador';
 import { Asistencia } from '../models/asistencias';
 import { Actividad } from '../models';
@@ -1433,6 +1434,112 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
     }catch(err){
         console.error('Error al ejecutar el cierre del dia', err);
         res.status(500).json({ message: 'Error al ejecutar el cierre del dia' });
+    }
+};
+
+/*
+Deshace un "Cerrar Jornada" hecho por error (pedido real del usuario, 2026-10-02: un Supervisor cerro sin
+querer la jornada de su hacienda con gente todavia trabajando). Exclusivo ADMIN (requireRol en la ruta) -
+corrige sobre UNA hacienda puntual (supervisor_id obligatorio, nunca "todas a la vez": reduce el riesgo de
+tocar por error una hacienda que de verdad queria quedar cerrada).
+
+Revierte exactamente lo que finalizarDia hizo en ESE cierre, nada mas:
+1. Las Asistencias que ESE bulk UPDATE toco (identificadas por su updatedAt, pegado en el tiempo al momento en
+   que se creo la fila de CierreJornada - ver mas abajo) vuelven a su estado previo: FINALIZADO ->
+   PENDIENTE_REVISION, SALIDA_OLVIDADA -> EN_JORNADA (con hora_salida en null otra vez, como estaba antes de
+   que finalizarDia se la pusiera). Nunca toca una Asistencia que ya estuviera en ese estado de ANTES del
+   cierre (por su cuenta, horas antes) - esa ventana de tiempo angosta es justo lo que evita reabrir algo que
+   de verdad ya estaba terminado.
+2. Borra la fila de CierreJornada (calcularDiaCerrado/calcularDiaCerradoHacienda vuelven a ver el dia abierto).
+3. Genera un Token nuevo para la hacienda (disparador #2 de los 3 validos, ver CLAUDE.md "cierre explicito") -
+   nunca intenta "adivinar" el token viejo, que ya se perdio al invalidarse.
+No revierte confirmado_por_supervisor de ninguna fila (eso lo decide el Supervisor de nuevo, normal).
+*/
+export const deshacerCierreJornada = async(req:Request, res:Response):Promise<void> => {
+    try{
+        const { fecha, supervisor_id } = req.body;
+        if(!supervisor_id){
+            res.status(400).json({ message: 'supervisor_id es obligatorio: hay que elegir una hacienda puntual para deshacer su cierre.' });
+            return;
+        }
+        const fechaProcesar = fecha || getFetchLocalEcuador();
+
+        const supervisor = await Usuario.findByPk(Number(supervisor_id), { attributes: ['id', 'hacienda_id'] });
+        if(!supervisor?.hacienda_id){
+            res.status(404).json({ message: 'El supervisor indicado no existe o no tiene hacienda asignada.' });
+            return;
+        }
+
+        const hacienda = await Hacienda.findByPk(supervisor.hacienda_id);
+        if(!hacienda){
+            res.status(404).json({ message: 'La hacienda indicada no existe.' });
+            return;
+        }
+
+        const cierre = await CierreJornada.findOne({ where: { hacienda_id: hacienda.id, fecha: fechaProcesar } });
+        if(!cierre){
+            res.status(400).json({ message: `${hacienda.nombre} no tiene un cierre de jornada registrado para el ${fechaProcesar}.` });
+            return;
+        }
+
+        /*
+        Ventana angosta alrededor de cierre.createdAt: el bulk UPDATE de finalizarDia le pone a TODAS las filas
+        que toca el MISMO updatedAt (Sequelize lo calcula una sola vez en JS por llamada a .update()), unos
+        milisegundos ANTES de insertar esta fila de CierreJornada (misma request HTTP). 5s hacia atras / 1s
+        hacia adelante da margen de sobra para esa diferencia real sin alcanzar a cubrir una jornada cerrada
+        horas antes por su cuenta.
+        */
+        const VENTANA_ATRAS_MS = 5000;
+        const VENTANA_ADELANTE_MS = 1000;
+        const desde = new Date(cierre.createdAt.getTime() - VENTANA_ATRAS_MS);
+        const hasta = new Date(cierre.createdAt.getTime() + VENTANA_ADELANTE_MS);
+
+        const candidatos = await Asistencia.findAll({
+            where: {
+                fecha: fechaProcesar,
+                estado: { [Op.in]: ['FINALIZADO', 'SALIDA_OLVIDADA'] },
+                // 'updatedAt' no esta declarado en el modelo Asistencia (igual que en el resto de modelos de
+                // esta app, ver registro_auditoria.ts) - 'as any' solo porque TS no conoce esta columna,
+                // Postgres si la tiene (timestamps:true).
+                updatedAt: { [Op.between]: [desde, hasta] },
+            } as any,
+            include: [{
+                model: Operador, as: 'operador', required: true, attributes: [], paranoid: false,
+                where: { supervisor_id: supervisor.id },
+            }],
+        });
+
+        for(const asis of candidatos){
+            if(asis.estado === 'FINALIZADO'){
+                await asis.update({ estado: 'PENDIENTE_REVISION' });
+            } else if(asis.estado === 'SALIDA_OLVIDADA'){
+                await asis.update({ estado: 'EN_JORNADA', hora_salida: null });
+            }
+        }
+
+        await cierre.destroy();
+
+        const nuevoToken = crypto.randomBytes(20).toString('hex');
+        const expiraEn = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await hacienda.update({ token_actual: nuevoToken, token_expira_en: expiraEn });
+
+        await registrarAuditoria({
+            actorUsuarioId: req.auth!.id,
+            accion: 'DESHACER_CIERRE_JORNADA',
+            objetivoTipo: 'hacienda',
+            objetivoId: hacienda.id,
+            objetivoNombre: hacienda.nombre,
+        });
+
+        res.json({
+            message: `Se deshizo el cierre de ${hacienda.nombre} del ${fechaProcesar}. Se generó un Token nuevo.`,
+            registros_restaurados: candidatos.length,
+            token_actual: nuevoToken,
+            token_expira_en: expiraEn,
+        });
+    }catch(err){
+        console.error('Error al deshacer el cierre de jornada', err);
+        res.status(500).json({ message: 'Error al deshacer el cierre de jornada' });
     }
 };
 

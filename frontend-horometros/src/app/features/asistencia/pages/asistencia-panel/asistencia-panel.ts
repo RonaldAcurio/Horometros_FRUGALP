@@ -19,6 +19,7 @@ import { HojaActividadesModal, HojaGrupo, resolverHaciendaJornada } from '../../
 import { NotificacionService } from '../../../../core/services/notificacion.service';
 import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
 import { leerFilasExcel, descargarPlantillaExcel } from '../../../../core/utils/excel-importar.util';
+import { timeoutDeLista, mensajeErrorCarga } from '../../../../core/utils/peticion-lista.util';
 
 // Respuesta de los endpoints /equipos/importar y /actividad/importar (ver equipo.controller.ts/actividades.controller.ts).
 interface ResultadoImportacion {
@@ -45,6 +46,7 @@ export class AsistenciaPanel implements OnInit{
   paginaActual: number = 1;
   totalPaginas: number = 1;
   totalOperadores: number = 0;
+  cargandoOperadores: boolean = false;
   private debounceOperadores?: ReturnType<typeof setTimeout>;
 
   // Operador Seleccionado
@@ -101,6 +103,7 @@ export class AsistenciaPanel implements OnInit{
   paginaHistorial: number = 1;
   totalPaginasHistorial: number = 1;
   totalHistorial: number = 0;
+  cargandoHistorial: boolean = false;
 
   // Reporte imprimible "Ver/Imprimir" (fila del Historial, o varios operadores a la vez desde el rango de
   // fechas del Historial): carga las labores para mostrarlas con el mismo diseño de la hoja física "REPORTES
@@ -135,6 +138,7 @@ export class AsistenciaPanel implements OnInit{
   paginaEquiposTab: number = 1;
   totalPaginasEquiposTab: number = 1;
   totalEquiposTab: number = 0;
+  cargandoEquiposTab: boolean = false;
   mostrarModalEquipo: boolean = false;
   equipoEditando: Equipo | null = null;
   formEquipo = { codigo_megued: '', nombre_equipo: '' };
@@ -146,6 +150,7 @@ export class AsistenciaPanel implements OnInit{
   paginaActividadesTab: number = 1;
   totalPaginasActividadesTab: number = 1;
   totalActividadesTab: number = 0;
+  cargandoActividadesTab: boolean = false;
   mostrarModalActividad: boolean = false;
   private debounceActividadesTab?: ReturnType<typeof setTimeout>;
   actividadEditando: Actividad | null = null;
@@ -163,6 +168,7 @@ export class AsistenciaPanel implements OnInit{
   paginaTerminosTab: number = 1;
   totalPaginasTerminosTab: number = 1;
   totalTerminosTab: number = 0;
+  cargandoTerminosTab: boolean = false;
   private debounceTerminosTab?: ReturnType<typeof setTimeout>;
   // Usuarios de oficina (ADMIN/ASISTENTE/SUPERVISOR/ESCANER): lista corta, no hace falta paginar.
   usuariosTerminos: Usuario[] = [];
@@ -211,31 +217,46 @@ export class AsistenciaPanel implements OnInit{
   }
 
   cargarHaciendas(): void {
-    this.haciendaService.obtenerHaciendas().subscribe({
+    this.haciendaService.obtenerHaciendas().pipe(timeoutDeLista()).subscribe({
       next: (data) => { this.haciendas = data; this.cdr.detectChanges(); },
-      error: (err) => console.error('Error cargando haciendas:', err),
+      error: (err) => {
+        console.error('Error cargando haciendas:', err);
+        this.notificacionService.error(mensajeErrorCarga(err, 'Error al cargar las haciendas.'));
+        this.cdr.detectChanges();
+      },
     });
   }
 
   cargarSupervisores(): void {
-    this.usuarioService.obtenerUsuarios().subscribe({
+    this.usuarioService.obtenerUsuarios().pipe(timeoutDeLista()).subscribe({
       next: (data) => {
         this.supervisores = data.filter((u) => u.cargo === 'SUPERVISOR');
         this.cdr.detectChanges();
       },
-      error: (err) => console.error('Error cargando supervisores:', err),
+      error: (err) => {
+        console.error('Error cargando supervisores:', err);
+        this.notificacionService.error(mensajeErrorCarga(err, 'Error al cargar los supervisores.'));
+        this.cdr.detectChanges();
+      },
     });
   }
 
   cargarOperadores(): void {
-    this.asistenciaService.obtenerOperadoresPaginado(this.paginaActual, 20, this.terminoBusqueda || undefined).subscribe({
+    this.cargandoOperadores = true;
+    this.asistenciaService.obtenerOperadoresPaginado(this.paginaActual, 20, this.terminoBusqueda || undefined).pipe(timeoutDeLista()).subscribe({
       next: (res) => {
+        this.cargandoOperadores = false;
         this.operadores = res.data || [];
         this.totalPaginas = res.totalPaginas || 1;
         this.totalOperadores = res.total || 0;
         this.cdr.detectChanges();
       },
-      error: (err) => console.error('Error cargando operadores:', err)
+      error: (err) => {
+        this.cargandoOperadores = false;
+        console.error('Error cargando operadores:', err);
+        this.notificacionService.error(mensajeErrorCarga(err, 'Error al cargar los operadores.'));
+        this.cdr.detectChanges();
+      },
     });
   }
 
@@ -690,7 +711,7 @@ export class AsistenciaPanel implements OnInit{
       10,
       undefined,
       this.historialOperadorSel.id
-    ).subscribe({
+    ).pipe(timeoutDeLista()).subscribe({
       next: (res) => {
         this.cargandoHistorialOperador = false;
         this.historialOperadorRegistros = res.data || [];
@@ -698,9 +719,9 @@ export class AsistenciaPanel implements OnInit{
         this.totalHistorialOperador = res.total || 0;
         this.cdr.detectChanges();
       },
-      error: () => {
+      error: (err) => {
         this.cargandoHistorialOperador = false;
-        this.notificacionService.error('Error al cargar el historial de este operador.');
+        this.notificacionService.error(mensajeErrorCarga(err, 'Error al cargar el historial de este operador.'));
         this.cdr.detectChanges();
       },
     });
@@ -738,6 +759,7 @@ export class AsistenciaPanel implements OnInit{
   }
 
   private cargarPaginaHistorial():void{
+    this.cargandoHistorial = true;
     this.asistenciaService.obtenerHistorial(
       this.fechaInicioFiltro || undefined,
       this.fechaFinFiltro || undefined,
@@ -746,14 +768,20 @@ export class AsistenciaPanel implements OnInit{
       this.haciendaIdFiltro || undefined,
       undefined,
       this.supervisorIdFiltro || undefined
-    ).subscribe({
+    ).pipe(timeoutDeLista()).subscribe({
       next:(res) => {
+        this.cargandoHistorial = false;
         this.historial = res.data || [];
         this.totalPaginasHistorial = res.totalPaginas || 1;
         this.totalHistorial = res.total || 0;
         this.cdr.detectChanges();
       },
-      error:(err) => console.error('Error cargando historial:', err)
+      error:(err) => {
+        this.cargandoHistorial = false;
+        console.error('Error cargando historial:', err);
+        this.notificacionService.error(mensajeErrorCarga(err, 'Error al cargar el historial.'));
+        this.cdr.detectChanges();
+      },
     });
   }
 
@@ -779,14 +807,21 @@ export class AsistenciaPanel implements OnInit{
   }
 
   private cargarPaginaEquiposTab(): void {
-    this.registroActividadService.obtenerEquipos(this.paginaEquiposTab, 20, this.equipoBusquedaTab || undefined).subscribe({
+    this.cargandoEquiposTab = true;
+    this.registroActividadService.obtenerEquipos(this.paginaEquiposTab, 20, this.equipoBusquedaTab || undefined).pipe(timeoutDeLista()).subscribe({
       next: (res) => {
+        this.cargandoEquiposTab = false;
         this.equipos = res.data || [];
         this.totalPaginasEquiposTab = res.totalPaginas || 1;
         this.totalEquiposTab = res.total || 0;
         this.cdr.detectChanges();
       },
-      error: (err) => console.error('Error cargando equipos:', err),
+      error: (err) => {
+        this.cargandoEquiposTab = false;
+        console.error('Error cargando equipos:', err);
+        this.notificacionService.error(mensajeErrorCarga(err, 'Error al cargar los equipos.'));
+        this.cdr.detectChanges();
+      },
     });
   }
 
@@ -868,14 +903,21 @@ export class AsistenciaPanel implements OnInit{
   }
 
   private cargarPaginaActividadesTab(): void {
-    this.asistenciaService.obtenerActividadesPaginado(this.paginaActividadesTab, 20, this.actividadBusquedaTab || undefined).subscribe({
+    this.cargandoActividadesTab = true;
+    this.asistenciaService.obtenerActividadesPaginado(this.paginaActividadesTab, 20, this.actividadBusquedaTab || undefined).pipe(timeoutDeLista()).subscribe({
       next: (res) => {
+        this.cargandoActividadesTab = false;
         this.actividadesTab = res.data || [];
         this.totalPaginasActividadesTab = res.totalPaginas || 1;
         this.totalActividadesTab = res.total || 0;
         this.cdr.detectChanges();
       },
-      error: (err) => console.error('Error cargando actividades:', err),
+      error: (err) => {
+        this.cargandoActividadesTab = false;
+        console.error('Error cargando actividades:', err);
+        this.notificacionService.error(mensajeErrorCarga(err, 'Error al cargar las actividades.'));
+        this.cdr.detectChanges();
+      },
     });
   }
 
@@ -957,24 +999,35 @@ export class AsistenciaPanel implements OnInit{
   }
 
   private cargarPaginaTerminosTab(): void {
-    this.asistenciaService.obtenerOperadoresPaginado(this.paginaTerminosTab, 20, this.terminosBusquedaTab || undefined).subscribe({
+    this.cargandoTerminosTab = true;
+    this.asistenciaService.obtenerOperadoresPaginado(this.paginaTerminosTab, 20, this.terminosBusquedaTab || undefined).pipe(timeoutDeLista()).subscribe({
       next: (res) => {
+        this.cargandoTerminosTab = false;
         this.operadoresTerminos = res.data || [];
         this.totalPaginasTerminosTab = res.totalPaginas || 1;
         this.totalTerminosTab = res.total || 0;
         this.cdr.detectChanges();
       },
-      error: (err) => console.error('Error cargando operadores para Términos:', err),
+      error: (err) => {
+        this.cargandoTerminosTab = false;
+        console.error('Error cargando operadores para Términos:', err);
+        this.notificacionService.error(mensajeErrorCarga(err, 'Error al cargar los operadores.'));
+        this.cdr.detectChanges();
+      },
     });
   }
 
   private cargarUsuariosTerminos(): void {
-    this.usuarioService.obtenerUsuarios().subscribe({
+    this.usuarioService.obtenerUsuarios().pipe(timeoutDeLista()).subscribe({
       next: (data) => {
         this.usuariosTerminos = data;
         this.cdr.detectChanges();
       },
-      error: (err) => console.error('Error cargando usuarios de oficina para Términos:', err),
+      error: (err) => {
+        console.error('Error cargando usuarios de oficina para Términos:', err);
+        this.notificacionService.error(mensajeErrorCarga(err, 'Error al cargar los usuarios de oficina.'));
+        this.cdr.detectChanges();
+      },
     });
   }
 

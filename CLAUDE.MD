@@ -287,7 +287,11 @@ manda a un `/dashboard` fijo, causaría loop para roles sin Dashboard), `homeRed
   (Camino B), distinto del kiosco público (`marcacion-kiosco`, `/asistencia/marcacion`, público, sin guard).
 - `supervisor-panel` (`/asistencia/supervisor`) - validación diaria, O/X, Finalizar Día, botón Escanear,
   columna "Acción" (Ver/Imprimir hoja de actividades por fila) e "Imprimir General"/"Exportar a Excel" del día
-  que se está viendo (ver "Exportar a Excel" más abajo).
+  que se está viendo (ver "Exportar a Excel" más abajo). "Deshacer cierre" (solo ADMIN, pedido real del
+  usuario 2026-10-02: una Supervisora cerró por error con gente todavía trabajando) - habilitado solo con una
+  hacienda puntual elegida en el filtro Y su día ya cerrado; llama a `deshacerCierreJornada` (backend, ver
+  docstring ahí): revierte exactamente los registros que ESE cierre tocó (nunca uno que ya estuviera cerrado
+  de antes por su cuenta), borra la marca de `CierreJornada` y genera un Token nuevo.
 - `asistencia-panel` (`/asistencia/asistente`) - Directorio de Operadores, Historial, pestañas Equipo/Actividad/
   Términos (ver abajo).
 - `mi-jornada` (`/mi-jornada`, MECANICO/OPERADOR, pantalla cautiva sin botón Menú) - 3 fases: `codigo`, `qr`,
@@ -310,6 +314,14 @@ manda a un `/dashboard` fijo, causaría loop para roles sin Dashboard), `homeRed
 **Detalle técnico importante:** esta app necesita `ChangeDetectorRef.detectChanges()` explícito después de cada
 respuesta HTTP que mute un campo plano (no-signal) - el zone.js del proyecto no lo dispara solo. Los `signal()`
 (toggles de UI) sí se actualizan solos.
+
+**Listas sin "Cargando..." ni timeout** (pedido real del usuario, 2026-10-02: con internet inestable, las
+tablas del Panel de Asistente/Supervisor se quedaban en blanco sin avisar nada, sensación de app trabada).
+`core/utils/peticion-lista.util.ts` da `timeoutDeLista()` (operator de 20s, usar con `.pipe(...)` antes del
+`.subscribe()`) y `mensajeErrorCarga(err, generico)` (mensaje claro si fue timeout, si no el de siempre). Cada
+lista (Operadores, Equipos, Actividades, Historial, Términos del Panel de Asistente; la tabla del día del Panel
+de Supervisor) tiene su propio flag `cargandoX` que muestra una fila "⏳ Cargando..." mientras espera, y ahora
+sí notifica un error visible (antes varias de estas solo hacían `console.error`, sin avisarle nada al usuario).
 
 **Al agregar una columna UNIQUE nueva:** chequear el duplicado ANTES del INSERT/UPDATE y devolver 409 con mensaje
 claro (campo, valor, quién ya lo tiene) - un `SequelizeUniqueConstraintError` que se escapa da un error crudo de
