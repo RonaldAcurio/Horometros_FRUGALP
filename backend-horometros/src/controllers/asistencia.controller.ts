@@ -682,6 +682,28 @@ const procesarMarcacion = async(
         };
     }
 
+    /*
+    Paso 2.5: aunque para ESTE operador hoy sea una entrada nueva (no tiene jornada abierta ni ya completo la de
+    hoy), hay que verificar que la HACIENDA donde esta entrando - la propia, o la PRESTADA via
+    contexto.hacienda_prestamo_id, ver ContextoMarcacion - no haya ya FINALIZADO ese dia (ver
+    calcularDiaCerradoHacienda abajo, version por hacienda de calcularDiaCerrado - esta SI tiene que ser
+    consciente de hacienda_prestamo_id, al reves que esa). Antes esto solo quedaba bloqueado indirectamente
+    para el Camino A (codigo) porque finalizarDia invalida el Token de Hacienda al cerrar - pero el Camino B
+    (QR de sesion, marcarConQrSesion) y el carnet fisico (registrarMacarcoQR) nunca dependieron del token, asi
+    que seguian dejando entrar aunque el dia ya estuviera cerrado (hueco real reportado por el usuario: "ni con
+    QR les tiene que permitir entrar porque ya ese dia se cerro"). Se usa `hoy` (nunca una fecha pasada) a
+    proposito: el dia SIGUIENTE siempre arranca en 0 registros para esa hacienda (calcularDiaCerradoHacienda
+    devuelve false) y deja entrar normal, y cerrar dias atrasados uno por uno (backlog, finalizarDia con otra
+    fecha) nunca toca la fecha de HOY, asi que tampoco interfiere con eso.
+    */
+    const haciendaIdDestino = contexto.hacienda_prestamo_id ?? await resolverHaciendaPropia(operador);
+    if(haciendaIdDestino !== null && await calcularDiaCerradoHacienda(hoy, haciendaIdDestino)){
+        return {
+            status: 403,
+            body: { message: 'El Supervisor ya finalizo la jornada de hoy en esta hacienda. Debes esperar al siguiente dia.' },
+        };
+    }
+
     //Paso 3: Entrada Nueva
     const { fotoIngreso, fotoR2Key } = await prepararFotoParaGuardar(datos.foto_ingreso, operador.id, ahora);
     asistencia = await Asistencia.create({
@@ -713,6 +735,17 @@ const resolverHaciendaPropia = async(operador: Operador): Promise<number | null>
     if(!operador.supervisor_id) return null;
     const supervisor = await Usuario.findByPk(operador.supervisor_id);
     return supervisor?.hacienda_id ?? null;
+};
+
+/*
+Inverso de resolverHaciendaPropia: dado el id de una Hacienda, encuentra al Usuario con cargo SUPERVISOR
+asignado a ella (mismo patron ya usado en marcarConCodigo para resolver `admitido_por_usuario_id`). Lo usa
+calcularDiaCerradoHacienda (mas abajo) para saber a que supervisorId acotar los registros "propios" de esa
+hacienda puntual.
+*/
+const resolverSupervisorDeHacienda = async(haciendaId: number): Promise<number | null> => {
+    const supervisor = await Usuario.findOne({ where: { hacienda_id: haciendaId, cargo: 'SUPERVISOR' } });
+    return supervisor?.id ?? null;
 };
 
 /*
@@ -1097,6 +1130,45 @@ const calcularDiaCerrado = async (fecha: string, supervisorId: number | null = n
     return totalAbiertos === 0;
 };
 
+/*
+Version "por HACIENDA" de calcularDiaCerrado (arriba): esa version acota por el supervisor HOGAR de cada
+operador a proposito (asi tiene que ser para su uso original: decirle a un Supervisor si a EL le queda algo
+pendiente entre SU GENTE, sin importar en que hacienda haya trabajado hoy). Pero esa misma regla la vuelve
+INUTIL para responder "¿ya se finalizo HOY la jornada de ESTA hacienda puntual?" (lo que necesita el nuevo
+bloqueo de procesarMarcacion mas abajo): un trabajador PRESTADO hoy a otra hacienda (hacienda_prestamo_id)
+seguia contando para el cierre de SU PROPIA hacienda (la de casa) aunque ya no este ahi - un prestamo nuevo
+despues de cerrar "reabria" el calculo para la hacienda de casa por error (hueco real, encontrado probando
+esta misma funcion: Supervisor1 cierra su hacienda, el trabajador 3 (de esa misma hacienda) entra PRESTADO a
+la hacienda 2, y el chequeo de la hacienda 1 volvia a salir "abierta"). Aca se separan los registros de HOY en
+dos grupos y se suman: los "propios" de esta hacienda (hacienda_prestamo_id NULL, del Supervisor que la
+administra) y los "prestados" HACIA esta hacienda (hacienda_prestamo_id = la de aca) - nunca los prestados
+HACIA OTRO LADO, que no cuentan para nada de esta hacienda.
+*/
+const calcularDiaCerradoHacienda = async (fecha: string, haciendaId: number): Promise<boolean> => {
+    const supervisorId = await resolverSupervisorDeHacienda(haciendaId);
+    const includePropios = supervisorId !== null
+        ? [{ model: Operador, as: 'operador', required: true, attributes: [], where: { supervisor_id: supervisorId }, paranoid: false }]
+        : [];
+
+    const totalPropios = supervisorId !== null
+        ? await Asistencia.count({ where: { fecha, hacienda_prestamo_id: null }, include: includePropios })
+        : 0;
+    const totalPrestados = await Asistencia.count({ where: { fecha, hacienda_prestamo_id: haciendaId } });
+    if(totalPropios + totalPrestados === 0) return false;
+
+    const condicionAbierto = {
+        [Op.or]: [
+            { estado: { [Op.in]: ['EN_JORNADA','PENDIENTE_REVISION']} },
+            { confirmado_por_supervisor: null },
+        ],
+    };
+    const abiertosPropios = supervisorId !== null
+        ? await Asistencia.count({ where: { fecha, hacienda_prestamo_id: null, ...condicionAbierto }, include: includePropios })
+        : 0;
+    const abiertosPrestados = await Asistencia.count({ where: { fecha, hacienda_prestamo_id: haciendaId, ...condicionAbierto } });
+    return (abiertosPropios + abiertosPrestados) === 0;
+};
+
 //Obtener reporte diario de asistencia
 export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<void> =>{
     try{
@@ -1212,8 +1284,10 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
             where: {fecha: fechaProcesar},
             // paranoid:false: el operador pudo haber sido eliminado (soft-delete) despues de marcar hoy - su
             // nombre igual tiene que poder aparecer en "Falta confirmar la asistencia de: ..." mas abajo.
+            // 'supervisor_id' agregado para poder resolver que hacienda(s) se estan cerrando mas abajo (ver
+            // invalidacion del Token al cerrar).
             include: [{
-                model: Operador, as: 'operador', attributes: ['nombre_completo'], paranoid: false,
+                model: Operador, as: 'operador', attributes: ['nombre_completo', 'supervisor_id'], paranoid: false,
                 required: supervisorIdAlcance !== null,
                 ...(supervisorIdAlcance !== null ? { where: { supervisor_id: supervisorIdAlcance } } : {}),
             }],
@@ -1278,6 +1352,53 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
                 }
             }
         );
+
+        /*
+        Invalidar el Token de Hacienda al cerrar el dia (pedido del usuario, 2026-10-02, tras probar el hueco
+        en una prueba dedicada): "Cerrar Jornada" existia pero el Token seguia vivo hasta su vencimiento normal
+        (24h) - cualquiera que lo conociera podia seguir marcando entrada DESPUES de que el Supervisor ya dio
+        el dia por cerrado, reabriendo el boton de cierre sin que nadie lo pidiera. Mismo alcance que el cierre
+        mismo (ver supervisorIdAlcance arriba): si cerro UN Supervisor puntual (o el Admin con 'supervisor_id'),
+        se invalida SOLO el Token de esa hacienda; si el Admin cerro TODAS las haciendas de una vez (sin
+        'supervisor_id'), se invalidan los Tokens de las haciendas que de verdad tenian marcaciones en este
+        cierre - nunca una hacienda sin ninguna actividad hoy, que ni siquiera paso por el filtro de arriba.
+        */
+        let haciendaIdsAInvalidar: number[];
+        if (supervisorIdAlcance !== null) {
+            const supervisorDelCierre = await Usuario.findByPk(supervisorIdAlcance, { attributes: ['hacienda_id'] });
+            haciendaIdsAInvalidar = supervisorDelCierre?.hacienda_id ? [supervisorDelCierre.hacienda_id] : [];
+        } else {
+            const supervisorIdsInvolucrados = [...new Set(
+                registroDelDia.map((r) => r.operador?.supervisor_id).filter((id): id is number => id != null)
+            )];
+            const supervisoresInvolucrados = await Usuario.findAll({
+                where: { id: { [Op.in]: supervisorIdsInvolucrados } },
+                attributes: ['hacienda_id'],
+            });
+            haciendaIdsAInvalidar = [...new Set(
+                supervisoresInvolucrados.map((s) => s.hacienda_id).filter((id): id is number => id != null)
+            )];
+        }
+
+        if (haciendaIdsAInvalidar.length > 0) {
+            const haciendasAInvalidar = await Hacienda.findAll({
+                where: { id: { [Op.in]: haciendaIdsAInvalidar } },
+                attributes: ['id', 'nombre'],
+            });
+            await Hacienda.update(
+                { token_actual: null, token_expira_en: null },
+                { where: { id: { [Op.in]: haciendaIdsAInvalidar } } },
+            );
+            for (const hda of haciendasAInvalidar) {
+                await registrarAuditoria({
+                    actorUsuarioId: req.auth!.id,
+                    accion: 'INVALIDAR_TOKEN_HACIENDA',
+                    objetivoTipo: 'hacienda',
+                    objetivoId: hda.id,
+                    objetivoNombre: hda.nombre,
+                });
+            }
+        }
 
         res.json({
             message: `Jornada del ${fechaProcesar} cerrada con exito.`,
