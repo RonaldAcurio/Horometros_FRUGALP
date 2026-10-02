@@ -25,6 +25,12 @@ export RCLONE_CONFIG_R2_PROVIDER=Cloudflare
 export RCLONE_CONFIG_R2_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
 export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
 export RCLONE_CONFIG_R2_ENDPOINT="$R2_ENDPOINT"
+# Sin esto, rclone intenta primero un CreateBucket "por si acaso" antes de subir - falla con 403 AccessDenied
+# (error real, 2026-10-02) porque la credencial de R2 (la misma que ya usa el backend para las fotos, con
+# permiso de proposito limitado) solo puede leer/escribir OBJETOS dentro del bucket que ya existe, no crear
+# buckets nuevos - a proposito, es mas seguro asi. Esto le dice a rclone que el bucket ya existe y que no
+# necesita verificarlo/crearlo.
+export RCLONE_S3_NO_CHECK_BUCKET=true
 
 echo "Subiendo a R2 (carpeta backups/)..."
 rclone copyto "$RUTA_TMP" "r2:${R2_BUCKET_NAME}/backups/${ARCHIVO}"
