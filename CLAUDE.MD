@@ -204,6 +204,25 @@ mientras el día siga abierto, sin importar el estado de esa fila puntual).
     otro) se auto-resuelven como `'iniciar_nuevo'` (`permiteAutoDecidirJornadaAnterior`). La ambigüedad solo
     puede aparecer después de que el trabajador toque "Marcar salida" explícitamente - un refresh con jornada
     abierta siempre va directo al Panel de Actividades, nunca al formulario en blanco.
+11. **"Cerrar Jornada" cierra TODAS las puertas de esa hacienda para ese día, no solo el Token**: Token de
+    Hacienda (Camino A) y QR de sesión (Camino B) son las dos únicas puertas de entrada al Panel de Actividades
+    - una vez que el Supervisor (o el ADMIN) ejecuta `finalizarDia` sobre una hacienda, ninguna de las dos debe
+    volver a dejar entrar para esa fecha, "porque ya se cerró ese día" (pedido explícito del usuario,
+    2026-10-02). `finalizarDia` invalida `token_actual`/`token_expira_en` de la(s) hacienda(s) que de verdad
+    cerró (mismo alcance que el cierre mismo - ver regla 3), lo que ya bloquea el Camino A. Para el Camino B y
+    el carnet físico (que nunca dependieron del Token), `procesarMarcacion` agrega un chequeo explícito antes de
+    crear una entrada nueva: `calcularDiaCerradoHacienda(hoy, haciendaDestino)` - una versión de
+    `calcularDiaCerrado` (regla 9) que SÍ es consciente de `hacienda_prestamo_id`, al revés que esa (necesaria
+    porque esa otra está acotada a propósito por el supervisor-hogar de cada trabajador, no por la hacienda
+    física donde ocurrió la marcación - un préstamo nuevo después de cerrar "reabría" el cálculo de la hacienda
+    de casa por error si se reusaba tal cual). El chequeo es siempre sobre la hacienda de DESTINO (la propia del
+    operador, o la prestada vía `hacienda_prestamo_id` si está entrando a marcar en otra hacienda distinta a la
+    suya) - nunca sobre la hacienda de "casa" del operador cuando es un préstamo, para que: (a) un trabajador
+    prestado a una hacienda ya cerrada quede bloqueado aunque su propia hacienda siga abierta, (b) uno que
+    presta su hacienda (ya cerrada) a otra que sigue abierta SÍ pueda entrar ahí. Usa siempre la fecha de HOY
+    (nunca una pasada), así que el día siguiente arranca en 0 registros para esa hacienda y deja entrar normal
+    solo, y cerrar días atrasados uno por uno (backlog) nunca toca la fecha de hoy - no interfiere con ninguno
+    de los dos.
 
 ## Tablas (estado real en producción)
 
