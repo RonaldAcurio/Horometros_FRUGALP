@@ -56,6 +56,27 @@ export class SupervisorPanel implements OnInit {
   // independiente de las demas - no hay selector, no puede tocar el de otra hacienda (ver CLAUDE.md).
   miHacienda: Hacienda | null = null;
 
+  /*
+  "Token de hoy" solamente (pedido real del usuario, 2026-10-04): antes esta tarjeta mostraba SIEMPRE el
+  token_actual de la hacienda tal cual, sin importar qué fecha estuviera viendo el Supervisor - si lo generaba
+  el lunes (vigente 24h, hasta el martes), seguía apareciendo como "activo" el martes, el miércoles, etc.,
+  confundiendo a más de un Supervisor ("ya tenía token generado" cuando en realidad era el de días atrás).
+  token_expira_en siempre es exactamente +24h desde que se generó (TOKEN_VIGENCIA_MS, ver hacienda.controller.ts),
+  así que restando esas 24h se recupera el DÍA en que ese token nació - si no coincide con el día que se está
+  viendo (la fecha filtrada arriba, o "hoy" si no hay filtro), se trata como si no hubiera token: aunque
+  técnicamente le quedaran horas de vigencia hasta la madrugada del día siguiente, es una "mentira" a propósito
+  para que cada día el Supervisor genere el suyo sin depender de a qué hora exacta lo generó el día anterior.
+  */
+  get tokenCorrespondeAFechaVista(): boolean {
+    if (!this.miHacienda?.token_actual || !this.miHacienda.token_expira_en) return false;
+    const hoyEcuador = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Guayaquil' });
+    const fechaVista = this.fechaSeleccionada || hoyEcuador;
+    const fechaGeneracionToken = new Date(
+      new Date(this.miHacienda.token_expira_en).getTime() - 24 * 60 * 60 * 1000
+    ).toLocaleDateString('sv-SE', { timeZone: 'America/Guayaquil' });
+    return fechaVista === fechaGeneracionToken;
+  }
+
   // Filtro por Supervisor: solo tiene sentido para ADMIN (ver esAdmin abajo) - un Supervisor real ya ve todo
   // mezclado en esta misma pantalla (deuda tecnica heredada, no filtra por hacienda propia, ver CLAUDE.md), asi
   // que dejarlo elegir OTRO supervisor no tendria sentido de negocio.

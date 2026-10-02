@@ -54,7 +54,7 @@
       </div>
       <div class="card-body-grid" style="grid-template-columns: 1fr">
         <div class="flex items-center gap-3 flex-wrap">
-          @if (miHacienda.token_actual) {
+          @if (miHacienda.token_actual && tokenCorrespondeAFechaVista) {
             <span class="code-badge token-valor">{{ miHacienda.token_actual }}</span>
             <button
               class="btn btn-secondary btn-sm"
@@ -73,7 +73,7 @@
           <button class="btn btn-primary btn-sm" (click)="generarMiToken()">🔄 Generar</button>
           <button
             class="btn btn-secondary btn-sm"
-            [disabled]="!miHacienda.token_actual"
+            [disabled]="!miHacienda.token_actual || !tokenCorrespondeAFechaVista"
             (click)="invalidarMiToken()"
           >
             ✕ Invalidar
