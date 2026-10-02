@@ -3,7 +3,7 @@ import { Operador } from '../models/operador';
 import { Asistencia } from '../models/asistencias';
 import { Actividad } from '../models';
 import { Op, literal } from 'sequelize';
-import { AsistenciaActividad, RegistroActividad } from '../models';
+import { AsistenciaActividad, RegistroActividad, CierreJornada } from '../models';
 import { Usuario } from '../models/usuario';
 import { Hacienda } from '../models/hacienda';
 import bcrypt from 'bcryptjs';
@@ -738,17 +738,6 @@ const resolverHaciendaPropia = async(operador: Operador): Promise<number | null>
 };
 
 /*
-Inverso de resolverHaciendaPropia: dado el id de una Hacienda, encuentra al Usuario con cargo SUPERVISOR
-asignado a ella (mismo patron ya usado en marcarConCodigo para resolver `admitido_por_usuario_id`). Lo usa
-calcularDiaCerradoHacienda (mas abajo) para saber a que supervisorId acotar los registros "propios" de esa
-hacienda puntual.
-*/
-const resolverSupervisorDeHacienda = async(haciendaId: number): Promise<number | null> => {
-    const supervisor = await Usuario.findOne({ where: { hacienda_id: haciendaId, cargo: 'SUPERVISOR' } });
-    return supervisor?.id ?? null;
-};
-
-/*
 Alcance de un SUPERVISOR real sobre UNA Asistencia puntual (revisarAsistencia/confirmarAsistencia/
 obtenerFotoAsistencia) - antes ninguno de los 3 chequeaba esto, cualquier Supervisor podia leer/editar/
 confirmar la de CUALQUIER operador del sistema con solo conocer el id (bug real de autorizacion, confirmado
@@ -1094,79 +1083,68 @@ export const marcarConQrSesion = async(req:Request, res:Response):Promise<void> 
 };
 
 /*
-Calcula si un DIA (una fecha puntual) ya esta "cerrado" en el sentido operativo: nadie sigue EN_JORNADA/
-PENDIENTE_REVISION Y todos los registros de ese dia ya fueron confirmados (O/X) por el Supervisor. Lo comparten
-obtenerAsistenciaHoy (el flag `diaCerrado` que muestra, y que habilita/deshabilita "Cerrar Jornada") y
-revisarAsistencia (que lo usa para congelar observaciones) - antes revisarAsistencia miraba solo el `estado` de
-ESE registro puntual, lo que congelaba la observacion de un trabajador que se autocerro (SALIDA_OLVIDADA)
-mucho antes de que el Supervisor terminara de revisar a los demas. Las observaciones tienen que poder
-editarse hasta que el DIA COMPLETO quede cerrado, no fila por fila.
-
-supervisorId opcional: bug real encontrado por el usuario (2026-09-27/28) - esto antes SIEMPRE calculaba sobre
-TODAS las haciendas mezcladas, sin importar quien preguntara. Resultado: un Supervisor cuya propia hacienda ya
-estaba 100% resuelta (todo FINALIZADO/SALIDA_OLVIDADA/OBSERVANDO) seguia viendo el boton "Cerrar Jornada"
-habilitado Y podia seguir editando observaciones - simplemente porque OTRA hacienda, de OTRO Supervisor,
-todavia tenia algo pendiente. Con `supervisorId`, el calculo queda acotado a los operadores de ESE supervisor
-(mismo patron/criterio ya usado en finalizarDia/obtenerAsistenciaHoy - no considera hacienda_prestamo_id,
-trabajador prestado, mismo criterio ya establecido ahi). `null` (o ADMIN sin filtro) sigue calculando sobre
-el dia completo, a proposito.
+Resuelve, para una fecha puntual, el id (o los ids) de Hacienda que estan "en juego" ese dia - mismo criterio
+que finalizarDia ya usa para `haciendaIdsAInvalidar` (ver ahi): la hacienda de CASA del Supervisor de cada
+operador (operador.supervisor_id -> Usuario.hacienda_id), nunca hacienda_prestamo_id. Si viene supervisorId, es
+solo la hacienda de ese Supervisor puntual (sin mirar si hubo marcaciones o no - "cerrado" tiene que poder
+calcularse incluso antes de que exista una sola Asistencia hoy). Si no, son TODAS las haciendas con al menos un
+registro hoy (acotado a quienes de verdad marcaron, igual que finalizarDia sin 'supervisor_id').
 */
-const calcularDiaCerrado = async (fecha: string, supervisorId: number | null = null): Promise<boolean> => {
-    const includeOperador = supervisorId !== null
-        ? [{ model: Operador, as: 'operador', required: true, attributes: [], where: { supervisor_id: supervisorId }, paranoid: false }]
-        : [];
-    const total = await Asistencia.count({ where: { fecha }, include: includeOperador });
-    if(total === 0) return false;
-    const totalAbiertos = await Asistencia.count({
-        where: {
-            fecha,
-            [Op.or]: [
-                { estado: { [Op.in]: ['EN_JORNADA','PENDIENTE_REVISION']} },
-                { confirmado_por_supervisor: null },
-            ],
-        },
-        include: includeOperador,
+const resolverHaciendasDelDia = async (fecha: string, supervisorId: number | null): Promise<number[]> => {
+    if(supervisorId !== null){
+        const supervisor = await Usuario.findByPk(supervisorId, { attributes: ['hacienda_id'] });
+        return supervisor?.hacienda_id ? [supervisor.hacienda_id] : [];
+    }
+    const registros = await Asistencia.findAll({
+        where: { fecha },
+        include: [{ model: Operador, as: 'operador', attributes: ['supervisor_id'], required: true, paranoid: false }],
     });
-    return totalAbiertos === 0;
+    const supervisorIds = [...new Set(
+        registros.map((r) => r.operador?.supervisor_id).filter((id): id is number => id != null)
+    )];
+    if(supervisorIds.length === 0) return [];
+    const supervisores = await Usuario.findAll({
+        where: { id: { [Op.in]: supervisorIds } },
+        attributes: ['hacienda_id'],
+    });
+    return [...new Set(supervisores.map((s) => s.hacienda_id).filter((id): id is number => id != null))];
 };
 
 /*
-Version "por HACIENDA" de calcularDiaCerrado (arriba): esa version acota por el supervisor HOGAR de cada
-operador a proposito (asi tiene que ser para su uso original: decirle a un Supervisor si a EL le queda algo
-pendiente entre SU GENTE, sin importar en que hacienda haya trabajado hoy). Pero esa misma regla la vuelve
-INUTIL para responder "¿ya se finalizo HOY la jornada de ESTA hacienda puntual?" (lo que necesita el nuevo
-bloqueo de procesarMarcacion mas abajo): un trabajador PRESTADO hoy a otra hacienda (hacienda_prestamo_id)
-seguia contando para el cierre de SU PROPIA hacienda (la de casa) aunque ya no este ahi - un prestamo nuevo
-despues de cerrar "reabria" el calculo para la hacienda de casa por error (hueco real, encontrado probando
-esta misma funcion: Supervisor1 cierra su hacienda, el trabajador 3 (de esa misma hacienda) entra PRESTADO a
-la hacienda 2, y el chequeo de la hacienda 1 volvia a salir "abierta"). Aca se separan los registros de HOY en
-dos grupos y se suman: los "propios" de esta hacienda (hacienda_prestamo_id NULL, del Supervisor que la
-administra) y los "prestados" HACIA esta hacienda (hacienda_prestamo_id = la de aca) - nunca los prestados
-HACIA OTRO LADO, que no cuentan para nada de esta hacienda.
+Calcula si un DIA (una fecha puntual) ya esta "cerrado": TODAS las haciendas en juego ese dia (ver
+resolverHaciendasDelDia) tienen su fila explicita en CierreJornada. Lo comparten obtenerAsistenciaHoy (el flag
+`diaCerrado` que muestra, y que habilita/deshabilita "Cerrar Jornada"), revisarAsistencia y confirmarAsistencia
+(que lo usan para congelar observaciones/O-X).
+
+Antes esto se INFERIA contando Asistencias EN_JORNADA/PENDIENTE_REVISION/sin confirmar - bug real (pedido del
+usuario, 2026-10-02): si el UNICO trabajador del dia se autocerraba (SALIDA_OLVIDADA, autoservicio) y el
+Supervisor lo confirmaba (O), el sistema ya daba el dia por cerrado SOLO, sin que "Cerrar Jornada" se hubiera
+ejecutado ni una vez - el Token seguia vivo pero el panel ya mostraba el dia congelado y el boton bloqueado.
+Regla explicita del usuario: el Token (y el dia) solo pierden vigencia por vencimiento normal (24h), por un
+Token nuevo, o porque "Finalizar Jornada" de verdad corrio - nunca por inferencia, ni con un solo trabajador.
+Por eso ahora se consulta CierreJornada (la marca explicita que deja finalizarDia al cerrar), nunca el estado
+de las Asistencias.
+
+supervisorId opcional, mismo criterio ya establecido (ver resolverHaciendasDelDia): acota a la hacienda de ESE
+Supervisor. `null` (o ADMIN sin filtro) sigue calculando sobre el dia completo.
+*/
+const calcularDiaCerrado = async (fecha: string, supervisorId: number | null = null): Promise<boolean> => {
+    const haciendaIds = await resolverHaciendasDelDia(fecha, supervisorId);
+    if(haciendaIds.length === 0) return false;
+    const cerradas = await CierreJornada.count({ where: { fecha, hacienda_id: { [Op.in]: haciendaIds } } });
+    return cerradas === haciendaIds.length;
+};
+
+/*
+Version "por HACIENDA" de calcularDiaCerrado (arriba), usada por procesarMarcacion para bloquear nuevas
+entradas (QR/Token) en una hacienda cuyo dia ya cerro de verdad. Con la marca explicita de CierreJornada esto
+ya no necesita separar "propios" vs "prestados" ni resolver ningun supervisor: solo pregunta si existe la fila
+para esta hacienda+fecha puntual - la misma que finalizarDia escribe al cerrar la hacienda de CASA del
+Supervisor que cierra (ver haciendaIdsAInvalidar ahi, mismo criterio documentado ahi: home del Supervisor via
+operador.supervisor_id, nunca hacienda_prestamo_id).
 */
 const calcularDiaCerradoHacienda = async (fecha: string, haciendaId: number): Promise<boolean> => {
-    const supervisorId = await resolverSupervisorDeHacienda(haciendaId);
-    const includePropios = supervisorId !== null
-        ? [{ model: Operador, as: 'operador', required: true, attributes: [], where: { supervisor_id: supervisorId }, paranoid: false }]
-        : [];
-
-    const totalPropios = supervisorId !== null
-        ? await Asistencia.count({ where: { fecha, hacienda_prestamo_id: null }, include: includePropios })
-        : 0;
-    const totalPrestados = await Asistencia.count({ where: { fecha, hacienda_prestamo_id: haciendaId } });
-    if(totalPropios + totalPrestados === 0) return false;
-
-    const condicionAbierto = {
-        [Op.or]: [
-            { estado: { [Op.in]: ['EN_JORNADA','PENDIENTE_REVISION']} },
-            { confirmado_por_supervisor: null },
-        ],
-    };
-    const abiertosPropios = supervisorId !== null
-        ? await Asistencia.count({ where: { fecha, hacienda_prestamo_id: null, ...condicionAbierto }, include: includePropios })
-        : 0;
-    const abiertosPrestados = await Asistencia.count({ where: { fecha, hacienda_prestamo_id: haciendaId, ...condicionAbierto } });
-    return (abiertosPropios + abiertosPrestados) === 0;
+    return (await CierreJornada.findOne({ where: { fecha, hacienda_id: haciendaId } })) !== null;
 };
 
 //Obtener reporte diario de asistencia
@@ -1311,6 +1289,50 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
         }
 
         /*
+        Que hacienda(s) se estan cerrando con esta llamada - se resuelve ACA (antes de cualquier chequeo) porque
+        ahora tambien lo usa el chequeo de "ya cerrada" de abajo, ademas de la invalidacion de Token que ya lo
+        necesitaba (ver ese comentario mas abajo para el detalle del criterio: hacienda de CASA del Supervisor,
+        via operador.supervisor_id, nunca hacienda_prestamo_id).
+        */
+        let haciendaIdsAInvalidar: number[];
+        if (supervisorIdAlcance !== null) {
+            const supervisorDelCierre = await Usuario.findByPk(supervisorIdAlcance, { attributes: ['hacienda_id'] });
+            haciendaIdsAInvalidar = supervisorDelCierre?.hacienda_id ? [supervisorDelCierre.hacienda_id] : [];
+        } else {
+            const supervisorIdsInvolucrados = [...new Set(
+                registroDelDia.map((r) => r.operador?.supervisor_id).filter((id): id is number => id != null)
+            )];
+            const supervisoresInvolucrados = await Usuario.findAll({
+                where: { id: { [Op.in]: supervisorIdsInvolucrados } },
+                attributes: ['hacienda_id'],
+            });
+            haciendaIdsAInvalidar = [...new Set(
+                supervisoresInvolucrados.map((s) => s.hacienda_id).filter((id): id is number => id != null)
+            )];
+        }
+
+        /*
+        Ya cerrada: antes esto se inferia viendo si quedaba algun registro EN_JORNADA/PENDIENTE_REVISION sin
+        tocar - bug real (pedido del usuario, 2026-10-02): si el UNICO trabajador del dia se autocerraba
+        (SALIDA_OLVIDADA, autoservicio) y el Supervisor lo confirmaba (O) ANTES de darle a "Cerrar Jornada", ya
+        no quedaba ningun registro pendiente, asi que esto decia "ya fue cerrada anteriormente" sin que el
+        cierre de verdad (invalidar el Token, dejar la marca de CierreJornada) se hubiera ejecutado ni una vez.
+        Ahora se pregunta por la marca EXPLICITA (CierreJornada) que esta misma funcion deja al cerrar, mas
+        abajo - el dia SOLO esta cerrado si "Cerrar Jornada" de verdad corrio antes para TODAS las haciendas en
+        juego ahora.
+        */
+        const cerradasExistentes = haciendaIdsAInvalidar.length > 0
+            ? await CierreJornada.count({ where: { fecha: fechaProcesar, hacienda_id: { [Op.in]: haciendaIdsAInvalidar } } })
+            : 0;
+        if(haciendaIdsAInvalidar.length > 0 && cerradasExistentes === haciendaIdsAInvalidar.length){
+            res.status(400).json({
+                message:`La jornada del ${fechaProcesar} ya fue cerrada anteriormente.`,
+                ya_cerrado : true
+            });
+            return;
+        }
+
+        /*
         El cierre de dia no se puede saltar el chequeo O/X del Supervisor: si un trabajador se autocerro
         (SALIDA_OLVIDADA) sin que el Supervisor lo haya confirmado, cerrar la jornada igual dejaria pasar
         exactamente el caso que O/X existe para atrapar (alguien paso su codigo/QR a un companero). Se avisa
@@ -1322,17 +1344,6 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
             res.status(400).json({
                 message: `Falta confirmar (O/X) la asistencia de: ${nombres.join(', ')}.`,
                 faltan_confirmar: nombres,
-            });
-            return;
-        }
-
-        const quedanPendientes = registroDelDia.some(
-            (r) => r.estado == 'EN_JORNADA' || r.estado === 'PENDIENTE_REVISION'
-        );
-        if(!quedanPendientes){
-            res.status(400).json({
-                message:`La jornada del ${fechaProcesar} ya fue cerrada anteriormente.`,
-                ya_cerrado : true
             });
             return;
         }
@@ -1369,28 +1380,17 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
         en una prueba dedicada): "Cerrar Jornada" existia pero el Token seguia vivo hasta su vencimiento normal
         (24h) - cualquiera que lo conociera podia seguir marcando entrada DESPUES de que el Supervisor ya dio
         el dia por cerrado, reabriendo el boton de cierre sin que nadie lo pidiera. Mismo alcance que el cierre
-        mismo (ver supervisorIdAlcance arriba): si cerro UN Supervisor puntual (o el Admin con 'supervisor_id'),
-        se invalida SOLO el Token de esa hacienda; si el Admin cerro TODAS las haciendas de una vez (sin
-        'supervisor_id'), se invalidan los Tokens de las haciendas que de verdad tenian marcaciones en este
-        cierre - nunca una hacienda sin ninguna actividad hoy, que ni siquiera paso por el filtro de arriba.
-        */
-        let haciendaIdsAInvalidar: number[];
-        if (supervisorIdAlcance !== null) {
-            const supervisorDelCierre = await Usuario.findByPk(supervisorIdAlcance, { attributes: ['hacienda_id'] });
-            haciendaIdsAInvalidar = supervisorDelCierre?.hacienda_id ? [supervisorDelCierre.hacienda_id] : [];
-        } else {
-            const supervisorIdsInvolucrados = [...new Set(
-                registroDelDia.map((r) => r.operador?.supervisor_id).filter((id): id is number => id != null)
-            )];
-            const supervisoresInvolucrados = await Usuario.findAll({
-                where: { id: { [Op.in]: supervisorIdsInvolucrados } },
-                attributes: ['hacienda_id'],
-            });
-            haciendaIdsAInvalidar = [...new Set(
-                supervisoresInvolucrados.map((s) => s.hacienda_id).filter((id): id is number => id != null)
-            )];
-        }
+        mismo (ver haciendaIdsAInvalidar, resuelto arriba): si cerro UN Supervisor puntual (o el Admin con
+        'supervisor_id'), se invalida SOLO el Token de esa hacienda; si el Admin cerro TODAS las haciendas de
+        una vez (sin 'supervisor_id'), se invalidan los Tokens de las haciendas que de verdad tenian
+        marcaciones en este cierre - nunca una hacienda sin ninguna actividad hoy, que ni siquiera paso por el
+        filtro de arriba.
 
+        Ademas (2026-10-02, fix de la regla de 3 disparadores) se deja la marca EXPLICITA de CierreJornada por
+        cada hacienda: es la UNICA forma en que calcularDiaCerrado/calcularDiaCerradoHacienda ahora consideran
+        un dia cerrado (ver esas funciones mas arriba) - findOrCreate porque el UNIQUE(hacienda_id, fecha) de la
+        tabla no permite duplicar el cierre si por lo que sea esto se volviera a ejecutar para la misma hacienda.
+        */
         if (haciendaIdsAInvalidar.length > 0) {
             const haciendasAInvalidar = await Hacienda.findAll({
                 where: { id: { [Op.in]: haciendaIdsAInvalidar } },
@@ -1404,6 +1404,17 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
                 await registrarAuditoria({
                     actorUsuarioId: req.auth!.id,
                     accion: 'INVALIDAR_TOKEN_HACIENDA',
+                    objetivoTipo: 'hacienda',
+                    objetivoId: hda.id,
+                    objetivoNombre: hda.nombre,
+                });
+                await CierreJornada.findOrCreate({
+                    where: { hacienda_id: hda.id, fecha: fechaProcesar },
+                    defaults: { hacienda_id: hda.id, fecha: fechaProcesar, cerrado_por_usuario_id: req.auth!.id },
+                });
+                await registrarAuditoria({
+                    actorUsuarioId: req.auth!.id,
+                    accion: 'CERRAR_JORNADA',
                     objetivoTipo: 'hacienda',
                     objetivoId: hda.id,
                     objetivoNombre: hda.nombre,

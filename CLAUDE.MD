@@ -161,12 +161,19 @@ para que sus credenciales no puedan "cubrir" a un compañero ausente con logins 
 - **Se congela por completo una vez que "Cerrar Jornada" cerró el día de esa hacienda** (`calcularDiaCerrado`,
   ver abajo) - si se detecta fraude después de cerrado, no hay forma de corregirlo desde este endpoint.
 
-**"Cerrar Jornada" exige que TODOS estén confirmados primero.** `calcularDiaCerrado(fecha, supervisorId?)` es la
-fuente única de verdad (acotada por hacienda cuando aplica): un día está cerrado cuando ningún registro de esa
-fecha (y ese alcance) sigue `EN_JORNADA`/`PENDIENTE_REVISION` y ninguno tiene `confirmado_por_supervisor: null`.
-3 consumidores: `diaCerrado` en `obtenerAsistenciaHoy` (controla el botón), `finalizarDia` (400 con
-`{ message, faltan_confirmar: [...] }` si falta alguien), `revisarAsistencia` (Observación/hora_salida editable
-mientras el día siga abierto, sin importar el estado de esa fila puntual).
+**"Cerrar Jornada" exige que TODOS estén confirmados primero** (ver `finalizarDia` abajo, que sigue chequeando
+`confirmado_por_supervisor: null` antes de dejar cerrar). Pero "¿ya está cerrado el día?" ya NO se infiere de eso:
+`calcularDiaCerrado(fecha, supervisorId?)` consulta la tabla `cierres_jornada` (ver "Tablas" abajo) - la fuente
+única de verdad es la marca EXPLÍCITA que deja `finalizarDia` al ejecutarse de verdad, nunca el estado de las
+Asistencias. Antes esto se calculaba contando si ya no quedaba ningún registro `EN_JORNADA`/`PENDIENTE_REVISION`/
+sin confirmar - bug real (pedido del usuario, 2026-10-02): si el ÚNICO trabajador del día se autocerraba
+(`SALIDA_OLVIDADA` por autoservicio) y el Supervisor lo confirmaba (O) ANTES de darle a "Cerrar Jornada", el
+sistema ya daba el día por cerrado solo, sin que el botón se hubiera presionado ni una vez - el Token seguía vivo
+pero el panel ya aparecía congelado. Regla explícita del usuario: el Token (y el día) **solo** pierden vigencia
+por (1) vencimiento normal del cronómetro (24h), (2) un Token nuevo generado, o (3) porque "Finalizar Jornada" de
+verdad corrió - nunca por inferencia, ni siquiera con un solo trabajador. 3 consumidores de `calcularDiaCerrado`:
+`diaCerrado` en `obtenerAsistenciaHoy` (controla el botón), `revisarAsistencia`/`confirmarAsistencia`
+(Observación/hora_salida/O-X editables mientras el día siga abierto, sin importar el estado de esa fila puntual).
 
 ## Reglas de negocio confirmadas
 
@@ -211,18 +218,26 @@ mientras el día siga abierto, sin importar el estado de esa fila puntual).
     2026-10-02). `finalizarDia` invalida `token_actual`/`token_expira_en` de la(s) hacienda(s) que de verdad
     cerró (mismo alcance que el cierre mismo - ver regla 3), lo que ya bloquea el Camino A. Para el Camino B y
     el carnet físico (que nunca dependieron del Token), `procesarMarcacion` agrega un chequeo explícito antes de
-    crear una entrada nueva: `calcularDiaCerradoHacienda(hoy, haciendaDestino)` - una versión de
-    `calcularDiaCerrado` (regla 9) que SÍ es consciente de `hacienda_prestamo_id`, al revés que esa (necesaria
-    porque esa otra está acotada a propósito por el supervisor-hogar de cada trabajador, no por la hacienda
-    física donde ocurrió la marcación - un préstamo nuevo después de cerrar "reabría" el cálculo de la hacienda
-    de casa por error si se reusaba tal cual). El chequeo es siempre sobre la hacienda de DESTINO (la propia del
-    operador, o la prestada vía `hacienda_prestamo_id` si está entrando a marcar en otra hacienda distinta a la
-    suya) - nunca sobre la hacienda de "casa" del operador cuando es un préstamo, para que: (a) un trabajador
-    prestado a una hacienda ya cerrada quede bloqueado aunque su propia hacienda siga abierta, (b) uno que
-    presta su hacienda (ya cerrada) a otra que sigue abierta SÍ pueda entrar ahí. Usa siempre la fecha de HOY
-    (nunca una pasada), así que el día siguiente arranca en 0 registros para esa hacienda y deja entrar normal
-    solo, y cerrar días atrasados uno por uno (backlog) nunca toca la fecha de hoy - no interfiere con ninguno
-    de los dos.
+    crear una entrada nueva: `calcularDiaCerradoHacienda(hoy, haciendaDestino)` - a diferencia de
+    `calcularDiaCerrado` (regla 9), esta versión siempre pregunta directamente por `cierres_jornada` (hacienda +
+    fecha puntual), nunca por el supervisor-hogar de nadie, así que es igual de válida para la hacienda de
+    DESTINO en un préstamo que para una hacienda sin préstamos de por medio. El chequeo es siempre sobre la
+    hacienda de DESTINO (la propia del operador, o la prestada vía `hacienda_prestamo_id` si está entrando a
+    marcar en otra hacienda distinta a la suya) - nunca sobre la hacienda de "casa" del operador cuando es un
+    préstamo, para que: (a) un trabajador prestado a una hacienda ya cerrada quede bloqueado aunque su propia
+    hacienda siga abierta, (b) uno que presta su hacienda (ya cerrada) a otra que sigue abierta SÍ pueda entrar
+    ahí. Usa siempre la fecha de HOY (nunca una pasada), así que el día siguiente arranca sin ningún
+    `CierreJornada` para esa hacienda y deja entrar normal solo, y cerrar días atrasados uno por uno (backlog)
+    nunca toca la fecha de hoy - no interfiere con ninguno de los dos.
+12. **El cierre de un día/hacienda es una marca EXPLÍCITA (`cierres_jornada`), nunca una inferencia** (pedido
+    explícito del usuario, 2026-10-02 - ver el bug real descrito en la sección "O/X" arriba). `finalizarDia`
+    es el ÚNICO lugar que crea filas en `cierres_jornada` (una por hacienda que de verdad cerró, `findOrCreate`
+    por el UNIQUE(`hacienda_id`,`fecha`) - también deja auditoría `CERRAR_JORNADA`). `calcularDiaCerrado` y
+    `calcularDiaCerradoHacienda` SOLO consultan esa tabla - ninguna de las dos vuelve a mirar `estado`/
+    `confirmado_por_supervisor` de las Asistencias para decidir si un día está cerrado. Consecuencia directa:
+    el Token (y el día) de una hacienda pierden vigencia ÚNICAMENTE por 3 disparadores - vencimiento normal del
+    Token (24h), generación de un Token nuevo, o `finalizarDia` ejecutándose de verdad - nunca porque todos los
+    presentes ya hayan quedado en estado terminal por su cuenta, ni siquiera si es un solo trabajador.
 
 ## Tablas (estado real en producción)
 
@@ -242,6 +257,10 @@ mientras el día siga abierto, sin importar el estado de esa fila puntual).
 - **registro_actividades**: detalle del Panel de Actividades (equipo + actividad + sección + horómetro por
   jornada).
 - **registros_auditoria** / **registros_dispositivo**: append-only, ver "Auditoría y observabilidad".
+- **cierres_jornada**: marca EXPLÍCITA de que `finalizarDia` ya cerró una hacienda en una fecha puntual
+  (`hacienda_id`, `fecha`, `cerrado_por_usuario_id`; UNIQUE(`hacienda_id`,`fecha`); append-only). Única fuente
+  de verdad de `calcularDiaCerrado`/`calcularDiaCerradoHacienda` (ver regla de negocio 12) - reemplaza la
+  inferencia antigua basada en el estado de las Asistencias.
 
 ## Frontend
 
