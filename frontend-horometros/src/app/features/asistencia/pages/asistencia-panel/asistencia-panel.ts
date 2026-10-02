@@ -1,4 +1,4 @@
-import { Component, ChangeDetectorRef, OnInit, signal } from '@angular/core';
+import { Component, ChangeDetectorRef, OnInit, ViewChild, signal } from '@angular/core';
 import { Observable, forkJoin, map } from 'rxjs';
 import { Operador, Asistencia, RegistroActividad, Equipo, Actividad } from '../../../../core/models/asistencia.model';
 import * as QRCode from 'qrcode';
@@ -9,18 +9,16 @@ import { AsistenciaService } from '../../../../core/services/asistencia.service'
 import { UsuarioService } from '../../../../core/services/usuario.service';
 import { RegistroActividadService } from '../../../../core/services/registro-actividad.service';
 import { HaciendaService } from '../../../../core/services/hacienda.service';
+import { ExportarExcelService } from '../../../../core/services/exportar-excel.service';
 import { Usuario } from '../../../../core/models/usuario.model';
 import { Hacienda } from '../../../../core/models/hacienda.model';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { VisorFoto } from '../../components/visor-foto/visor-foto';
+import { HojaActividadesModal, HojaGrupo, resolverHaciendaJornada } from '../../components/hoja-actividades-modal/hoja-actividades-modal';
 import { NotificacionService } from '../../../../core/services/notificacion.service';
 import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
 import { leerFilasExcel, descargarPlantillaExcel } from '../../../../core/utils/excel-importar.util';
-// '@e965/xlsx' (usado arriba para la plantilla de importar) no soporta combinar celdas, colores ni fuentes en
-// su version gratuita - el "Exportar a Excel" del Historial (pedido del usuario, 2026-10-01) SI necesita todo
-// eso para calcar el diseno de REGISTRO DE LABORES DIARIAS que ya usan en papel, asi que usa ExcelJS aparte.
-import { Workbook, FillPattern, CellValue } from 'exceljs';
 
 // Respuesta de los endpoints /equipos/importar y /actividad/importar (ver equipo.controller.ts/actividades.controller.ts).
 interface ResultadoImportacion {
@@ -30,12 +28,14 @@ interface ResultadoImportacion {
 
 @Component({
   standalone:true,
-  imports: [CommonModule, FormsModule, VisorFoto],
+  imports: [CommonModule, FormsModule, VisorFoto, HojaActividadesModal],
   selector: 'app-asistencia-panel',
   styleUrl: './asistencia-panel.css',
   templateUrl: './asistencia-panel.html',
 })
 export class AsistenciaPanel implements OnInit{
+  @ViewChild('hojaModal') hojaModal!: HojaActividadesModal;
+
   operadores: Operador[] = [];
 
   // Búsqueda y Paginación (por servidor, ver cargarOperadores - antes filtraba/paginaba en el navegador sobre
@@ -104,25 +104,14 @@ export class AsistenciaPanel implements OnInit{
 
   // Reporte imprimible "Ver/Imprimir" (fila del Historial, o varios operadores a la vez desde el rango de
   // fechas del Historial): carga las labores para mostrarlas con el mismo diseño de la hoja física "REPORTES
-  // DE LABORES DIARIOS". Se muestra en una ventana flotante (mismo patrón que "Ver Evidencia") en vez de una
-  // pestaña nueva - la app va a quedar empaquetada, así que todo tiene que vivir dentro de la misma pantalla.
+  // DE LABORES DIARIOS", vía el componente compartido <app-hoja-actividades-modal> (#hojaModal, ver
+  // hoja-actividades-modal.ts) - mismo patrón que "Ver Evidencia" (visor-foto.ts).
   cargandoReporteImpresion = false;
-  mostrarModalHoja: boolean = false;
   // "Exportar a Excel" (Historial, pedido del usuario 2026-10-01): a diferencia de "Imprimir Hojas del rango",
   // este reporte es SIEMPRE de un solo dia (asi lo manejan en papel) y necesita Hacienda+Supervisor puntuales
   // - sin eso no habria un unico "RESPONSABLE" que poner en el encabezado, y se mezclarian trabajadores de
   // haciendas distintas en la misma hoja (ver puedeExportarExcel).
   exportandoExcel = false;
-  /*
-  Un grupo = UN operador en UN día puntual - siempre, incluso en la impresión por rango (ver
-  imprimirHojasRangoHistorial): antes un grupo del rango mezclaba varios días del mismo operador en una sola
-  tabla con columna "Fecha" por fila, y el pie "Observaciones del Supervisor" (que es un dato POR DÍA, vive en
-  Asistencia.observaciones) directamente no se mostraba ahí porque no había un único día al que atribuírselo
-  (bug reportado por el usuario, 2026-10-01). Partiendo cada operador en un grupo por día, la fecha vuelve a ir
-  junto al nombre (como ya hacía la hoja de un solo día) y cada grupo trae SU PROPIA observación - ya no hace
-  falta distinguir "modo un día" vs "modo rango" en ningún otro lado del componente ni del template.
-  */
-  hojaGrupos: { operador: Operador; registros: RegistroActividad[]; haciendaNombre: string | null; fecha: string; observacionesSupervisor: string | null }[] = [];
 
   // Modal "Historial de Asistencia" de UN operador (Ficha, Directorio de Operadores): mismas columnas que la
   // pestaña Historial general, pero ya filtrado a este operador - reutiliza el mismo GET /historial con
@@ -209,6 +198,7 @@ export class AsistenciaPanel implements OnInit{
     private usuarioService: UsuarioService,
     private registroActividadService: RegistroActividadService,
     private haciendaService: HaciendaService,
+    private exportarExcelService: ExportarExcelService,
     private cdr: ChangeDetectorRef,
     private notificacionService: NotificacionService,
     private confirmacionService: ConfirmacionService
@@ -502,10 +492,10 @@ export class AsistenciaPanel implements OnInit{
     this.registroActividadService.obtenerPorOperador(reg.operador_id, reg.fecha, reg.fecha).subscribe({
       next: (registros) => {
         this.cargandoReporteImpresion = false;
-        this.abrirHojaActividades([{
+        this.hojaModal.abrir([{
           operador: reg.operador!,
           registros,
-          haciendaNombre: this.resolverHaciendaJornada(reg.operador!, reg),
+          haciendaNombre: resolverHaciendaJornada(reg.operador!, reg),
           fecha: reg.fecha,
           observacionesSupervisor: reg.observaciones ?? null,
         }], { autoImprimir });
@@ -522,12 +512,12 @@ export class AsistenciaPanel implements OnInit{
   Parte las labores (ya vienen ordenadas por fecha y luego hora_inicio, ver obtenerRegistrosPorOperador) de UN
   operador en un grupo por cada día distinto que aparece - cada día trae su propia observación del Supervisor
   (reg.asistencia.observaciones), que es exactamente lo que hacía falta para que "Imprimir Hojas del rango"
-  muestre el mismo pie que ya mostraba la hoja de un solo día (ver hojaGrupos más arriba).
+  muestre el mismo pie que ya mostraba la hoja de un solo día (ver HojaGrupo en hoja-actividades-modal.ts).
   */
   private agruparPorDia(
     operador: Operador, registros: RegistroActividad[], haciendaNombre: string | null
-  ): { operador: Operador; registros: RegistroActividad[]; haciendaNombre: string | null; fecha: string; observacionesSupervisor: string | null }[] {
-    const grupos: { operador: Operador; registros: RegistroActividad[]; haciendaNombre: string | null; fecha: string; observacionesSupervisor: string | null }[] = [];
+  ): HojaGrupo[] {
+    const grupos: HojaGrupo[] = [];
     for (const reg of registros) {
       const fecha = reg.asistencia?.fecha ?? '—';
       let grupoDelDia = grupos.find((g) => g.fecha === fecha);
@@ -570,14 +560,14 @@ export class AsistenciaPanel implements OnInit{
       this.registroActividadService.obtenerPorOperador(op.id, this.fechaInicioFiltro, this.fechaFinFiltro).pipe(
         // Rango de varios días: se muestra la hacienda PERMANENTE del operador (no tiene sentido mostrar una
         // sola hacienda "de préstamo" cuando el rango puede cruzar varios días distintos).
-        map((registros) => this.agruparPorDia(op, registros, this.resolverHaciendaJornada(op)))
+        map((registros) => this.agruparPorDia(op, registros, resolverHaciendaJornada(op)))
       )
     );
 
     forkJoin(peticiones).subscribe({
       next: (gruposPorOperador) => {
         this.cargandoReporteImpresion = false;
-        this.abrirHojaActividades(gruposPorOperador.flat(), { autoImprimir: true });
+        this.hojaModal.abrir(gruposPorOperador.flat(), { autoImprimir: true });
       },
       error: (err) => {
         this.cargandoReporteImpresion = false;
@@ -635,7 +625,17 @@ export class AsistenciaPanel implements OnInit{
           )
         );
         forkJoin(peticiones).subscribe({
-          next: (bloques) => this.generarYDescargarExcel(bloques, fecha, hacienda.nombre, supervisor.nombre_completo),
+          next: (bloques) => {
+            this.exportarExcelService.generarYDescargar(bloques, fecha, hacienda.nombre, supervisor.nombre_completo)
+              .catch((err) => {
+                console.error('Error al generar el Excel:', err);
+                this.notificacionService.error('No se pudo generar el archivo Excel. Intenta de nuevo.');
+              })
+              .finally(() => {
+                this.exportandoExcel = false;
+                this.cdr.detectChanges();
+              });
+          },
           error: (err) => {
             this.exportandoExcel = false;
             this.notificacionService.error(err.error?.message || 'Error al generar el Excel.');
@@ -649,329 +649,6 @@ export class AsistenciaPanel implements OnInit{
         this.cdr.detectChanges();
       },
     });
-  }
-
-  // "Tarea/Hrs" redondeado a la media hora mas cercana (pedido explicito del usuario, con sus propios
-  // ejemplos): 1h45min (1.75h) -> 2, 1h20min (1.33h) -> 1.5. Redondeo normal a la mitad mas cercana.
-  private redondearHoras(horas: number): number {
-    return Math.round(horas * 2) / 2;
-  }
-
-  // Numero de semana ISO 8601 (lunes=inicio de semana, la semana 1 es la que contiene el primer jueves del
-  // año) - mismo criterio que Excel/la plantilla real (semana 40 para el 29 de septiembre de 2026).
-  private numeroSemanaISO(fecha: Date): number {
-    const d = new Date(Date.UTC(fecha.getUTCFullYear(), fecha.getUTCMonth(), fecha.getUTCDate()));
-    const diaIso = d.getUTCDay() || 7;
-    d.setUTCDate(d.getUTCDate() + 4 - diaIso);
-    const inicioAño = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil(((d.getTime() - inicioAño.getTime()) / 86400000 + 1) / 7);
-  }
-
-  // Sin tildes a proposito - misma convencion que ya usa la plantilla real del usuario ("Seccion",
-  // "Descripcion", "transmision", todos sin acento).
-  private readonly DIAS_SEMANA_ES = ['DOMINGO', 'LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO'];
-
-  private async generarYDescargarExcel(
-    bloques: { operador: Operador; registros: RegistroActividad[] }[],
-    fecha: string,
-    nombreHacienda: string,
-    nombreSupervisor: string,
-  ): Promise<void> {
-    try {
-      // 'fecha' es un string YYYY-MM-DD puro (sin hora) - se interpreta en UTC a proposito (new Date() de un
-      // string asi SIEMPRE cae en UTC medianoche) para que el dia de la semana no cambie segun la zona horaria
-      // de quien genera el reporte.
-      const fechaDate = new Date(`${fecha}T00:00:00Z`);
-      const diaSemana = this.DIAS_SEMANA_ES[fechaDate.getUTCDay()];
-      const semana = this.numeroSemanaISO(fechaDate);
-      const [anio, mes, dia] = fecha.split('-');
-      const fechaDDMMYYYY = `${dia}${mes}${anio}`;
-
-      const wb = new Workbook();
-      const ws = wb.addWorksheet('Hoja1', { views: [{ showGridLines: false }] });
-
-      // Anchos de columna (los que trae medidos la plantilla real; el resto se deja en un ancho razonable).
-      const anchos = [6, 12, 8, 27.66, 10, 11.5, 9, 12.33, 12, 23.83, 16.33, 14.33, 12, 10, 32];
-      anchos.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
-
-      const BORDE_FINO = { style: 'thin' as const, color: { argb: 'FF000000' } };
-      const BORDES_TODOS = { top: BORDE_FINO, bottom: BORDE_FINO, left: BORDE_FINO, right: BORDE_FINO };
-      const FUENTE_BASE = { name: 'Aptos Narrow', size: 11 };
-      const CENTRADO = { horizontal: 'center' as const, vertical: 'middle' as const, wrapText: true };
-      const AMARILLO: FillPattern = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
-      const AZUL_CLARO: FillPattern = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E2F3' } };
-      const VERDE_CLARO: FillPattern = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2EFDA' } };
-      const VERDE_MEDIO: FillPattern = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6E0B4' } };
-      const MORADO_CLARO: FillPattern = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE4DFEC' } };
-
-      const celda = (coord: string, valor: unknown, opciones: { fill?: FillPattern; bold?: boolean; size?: number } = {}) => {
-        const c = ws.getCell(coord);
-        c.value = valor as CellValue;
-        c.font = { ...FUENTE_BASE, bold: !!opciones.bold, size: opciones.size ?? FUENTE_BASE.size };
-        c.alignment = CENTRADO;
-        c.border = BORDES_TODOS;
-        if (opciones.fill) c.fill = opciones.fill;
-        return c;
-      };
-
-      // Logo (mismo que ya usa el resto de la app - manifest.json, icono PWA).
-      try {
-        const respLogo = await fetch('/logo-source.png');
-        const bufferLogo = await respLogo.arrayBuffer();
-        const base64Logo = btoa(new Uint8Array(bufferLogo).reduce((s, b) => s + String.fromCharCode(b), ''));
-        const idImagen = wb.addImage({ base64: base64Logo, extension: 'png' });
-        ws.mergeCells('A1:E2');
-        ws.addImage(idImagen, 'A1:E2');
-      } catch {
-        // Si el logo no carga (ej. sin red), el Excel se genera igual, solo sin la imagen.
-      }
-
-      // Titulo
-      ws.mergeCells('F1:O2');
-      celda('F1', 'REGISTRO DE LABORES DIARIAS', { bold: true, size: 22 });
-
-      // Encabezado: Responsable / Digitacion TTHH / Dia reportado / Semana / Area.
-      celda('F3', 'RESPONSABLE:');
-      ws.mergeCells('G3:J3'); celda('G3', nombreSupervisor);
-      celda('K3', 'DIGITACION TTHH:');
-      ws.mergeCells('L3:O3'); celda('L3', '');
-
-      celda('F4', 'DIA REPORTADO:');
-      ws.mergeCells('G4:J4'); celda('G4', diaSemana);
-
-      celda('F5', 'SEMANA:');
-      ws.mergeCells('G5:J5'); celda('G5', semana);
-
-      celda('F6', 'AREA:');
-      ws.mergeCells('G6:J6'); celda('G6', 'TALLER');
-
-      // Encabezado de la tabla (fila 7).
-      const ENCABEZADOS: [string, string, FillPattern | undefined][] = [
-        ['A7', 'Nª', undefined],
-        ['B7', 'Fecha', AMARILLO],
-        ['C7', 'Cod.', AMARILLO],
-        ['D7', 'Empleado', undefined],
-        ['E7', 'Cod. Labor', AMARILLO],
-        ['F7', 'Labor', undefined],
-        ['G7', 'Seccion', AMARILLO],
-        ['H7', 'Lote/AREA', undefined],
-        ['I7', 'Cod Equipo&Implemento', AZUL_CLARO],
-        ['J7', 'Descripcion Eq/Implem', AZUL_CLARO],
-        ['K7', 'ETAPA DEL CULTIVO 1', AMARILLO],
-        ['L7', 'ETAPA DEL CULTIVO 2', AMARILLO],
-        ['M7', 'Rendimiento', AMARILLO],
-        ['N7', 'Tarea/Hrs', AMARILLO],
-        ['O7', 'OBSERVACION', AMARILLO],
-      ];
-      for (const [coord, texto, fill] of ENCABEZADOS) celda(coord, texto, { fill, bold: true });
-
-      // Filas de datos: un bloque por trabajador, N° auto-incremental, A/B/C/D/O combinadas y centradas en
-      // todo el bloque (pedido explicito del usuario - igual que en la plantilla real).
-      let filaActual = 8;
-      let numero = 1;
-      for (const bloque of bloques) {
-        const filaInicio = filaActual;
-        const registros: (RegistroActividad | null)[] = bloque.registros.length > 0 ? bloque.registros : [null];
-
-        for (const reg of registros) {
-          const horas = reg?.hora_fin
-            ? this.redondearHoras((new Date(reg.hora_fin).getTime() - new Date(reg.hora_inicio).getTime()) / 3600000)
-            : '';
-          celda(`E${filaActual}`, reg?.actividad?.codigo_megued || '');
-          celda(`F${filaActual}`, reg?.actividad?.description || '');
-          celda(`G${filaActual}`, 'AP06', { fill: AZUL_CLARO });
-          celda(`H${filaActual}`, 'M&Reparacion');
-          celda(`I${filaActual}`, reg?.equipo?.codigo_megued || '');
-          celda(`J${filaActual}`, reg?.equipo?.nombre_equipo || '');
-          celda(`K${filaActual}`, 'FIJOS DEL TALLER', { fill: VERDE_CLARO });
-          celda(`L${filaActual}`, 'FIJOS DEL TALLER', { fill: VERDE_MEDIO });
-          celda(`M${filaActual}`, '', { fill: MORADO_CLARO });
-          celda(`N${filaActual}`, horas);
-          filaActual++;
-        }
-        const filaFin = filaActual - 1;
-
-        celda(`A${filaInicio}`, numero);
-        celda(`B${filaInicio}`, new Date(`${fecha}T00:00:00Z`));
-        ws.getCell(`B${filaInicio}`).numFmt = 'm/d/yy';
-        celda(`C${filaInicio}`, bloque.operador.codigo_megued);
-        celda(`D${filaInicio}`, bloque.operador.nombre_completo, { bold: true });
-        celda(`O${filaInicio}`, ''); // Observacion: vacia a proposito, para que la editen despues.
-        if (filaFin > filaInicio) {
-          ws.mergeCells(`A${filaInicio}:A${filaFin}`);
-          ws.mergeCells(`B${filaInicio}:B${filaFin}`);
-          ws.mergeCells(`C${filaInicio}:C${filaFin}`);
-          ws.mergeCells(`D${filaInicio}:D${filaFin}`);
-          ws.mergeCells(`O${filaInicio}:O${filaFin}`);
-        }
-        numero++;
-      }
-
-      // Pie de firmas (igual que la plantilla real), dos filas despues de la ultima fila de datos.
-      const filaFirma1 = filaActual + 1;
-      const filaFirma2 = filaFirma1 + 1;
-      ws.mergeCells(`A${filaFirma1}:D${filaFirma1}`); celda(`A${filaFirma1}`, 'FIRMA DEL RESPONSABLE', { bold: true });
-      ws.mergeCells(`I${filaFirma1}:J${filaFirma1}`); celda(`I${filaFirma1}`, 'AUTORIZADO POR:', { bold: true });
-      ws.mergeCells(`M${filaFirma1}:O${filaFirma1}`); celda(`M${filaFirma1}`, 'FIRMA DE TTHH', { bold: true });
-      ws.mergeCells(`A${filaFirma2}:D${filaFirma2}`); celda(`A${filaFirma2}`, 'NOMBRE:');
-      ws.mergeCells(`M${filaFirma2}:O${filaFirma2}`); celda(`M${filaFirma2}`, 'DIGITADO POR:');
-
-      const buffer = await wb.xlsx.writeBuffer();
-      const nombreArchivo = `TALLER ${nombreHacienda.toUpperCase()} ${fechaDDMMYYYY}.xlsx`;
-      await this.descargarArchivoExcel(buffer as ArrayBuffer, nombreArchivo);
-    } catch (err) {
-      console.error('Error al generar el Excel:', err);
-      this.notificacionService.error('No se pudo generar el archivo Excel. Intenta de nuevo.');
-    } finally {
-      this.exportandoExcel = false;
-      this.cdr.detectChanges();
-    }
-  }
-
-  /*
-  Mismo patron que compartirHoja()/imprimirQR(): dentro del WebView de la app empaquetada no hay dialogo de
-  descarga del navegador, asi que se escribe el archivo a Cache y se comparte via el selector nativo de
-  Android (ahi lo pueden guardar, mandarlo por WhatsApp/correo, etc). En navegador de escritorio, la descarga
-  normal via un link temporal.
-  */
-  private async descargarArchivoExcel(buffer: ArrayBuffer, nombreArchivo: string): Promise<void> {
-    if (Capacitor.isNativePlatform()) {
-      const base64 = btoa(new Uint8Array(buffer).reduce((s, b) => s + String.fromCharCode(b), ''));
-      const escrito = await Filesystem.writeFile({ path: nombreArchivo, data: base64, directory: Directory.Cache });
-      await Share.share({
-        title: nombreArchivo,
-        dialogTitle: 'Compartir o guardar Excel',
-        files: [escrito.uri],
-      });
-      return;
-    }
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const enlace = document.createElement('a');
-    enlace.href = url;
-    enlace.download = nombreArchivo;
-    enlace.click();
-    URL.revokeObjectURL(url);
-  }
-
-  /*
-  Antes redondeaba a minutos enteros (Math.round) y descartaba los segundos - una labor de, ej., 40 segundos
-  se mostraba como "0min", pareciendo mal calculada. Ahora se calcula con el total de segundos reales, sin
-  redondear nada hasta el ultimo paso (truncar, no redondear - "47min 59s" no debe saltar a "48min").
-  */
-  duracionLabor(reg: RegistroActividad): string {
-    if (!reg.hora_fin) return '—';
-    const totalSegundos = Math.floor((new Date(reg.hora_fin).getTime() - new Date(reg.hora_inicio).getTime()) / 1000);
-    if (totalSegundos < 0) return '—';
-    const horas = Math.floor(totalSegundos / 3600);
-    const minutos = Math.floor((totalSegundos % 3600) / 60);
-    const segundos = totalSegundos % 60;
-    if (horas > 0) return `${horas}h ${minutos}min ${segundos}s`;
-    if (minutos > 0) return `${minutos}min ${segundos}s`;
-    return `${segundos}s`;
-  }
-
-  /*
-  Reemplaza la columna "Taller/Campo" de la hoja imprimible (pedido del usuario, 2026-09-29): esa columna
-  mostraba `actividad.categoria`, un dato FIJO del catálogo (lo define el Asistente al crear la Actividad, no
-  algo que el Mecánico escriba por labor) - "Tiempo estimado" ya muestra la duración, pero nunca a qué hora
-  empezó/terminó cada labor. hora_inicio/hora_fin ya viven en cada RegistroActividad (ver Panel de Actividades).
-  */
-  rangoHorasLabor(reg: RegistroActividad): string {
-    const formato = (iso: string) => new Date(iso).toLocaleTimeString('es-EC', {
-      timeZone: 'America/Guayaquil', hour: '2-digit', minute: '2-digit', hour12: false,
-    });
-    return `${formato(reg.hora_inicio)} - ${reg.hora_fin ? formato(reg.hora_fin) : '—'}`;
-  }
-
-  // Hacienda a mostrar junto al nombre en la hoja imprimible (reemplaza el codigo_megued, que ya se repite en
-  // el carnet/QR - ver CLAUDE.md). Prioriza la hacienda de PRÉSTAMO de esa jornada puntual (si la asistencia la
-  // tiene, ver hacienda_prestamo_id) sobre la hacienda PERMANENTE del operador (vía su Supervisor).
-  private resolverHaciendaJornada(operador: Operador, asistencia?: Asistencia): string | null {
-    return asistencia?.haciendaPrestamo?.nombre
-      || operador.supervisor?.hacienda?.nombre
-      || null;
-  }
-
-  private abrirHojaActividades(
-    grupos: { operador: Operador; registros: RegistroActividad[]; haciendaNombre: string | null; fecha: string; observacionesSupervisor: string | null }[],
-    opciones: { autoImprimir: boolean }
-  ): void {
-    this.hojaGrupos = grupos;
-    this.mostrarModalHoja = true;
-    this.cdr.detectChanges();
-
-    // El print tiene que dispararse despues de que el modal ya este pintado en el DOM.
-    if (opciones.autoImprimir) {
-      setTimeout(() => this.imprimirHoja(), 150);
-    }
-  }
-
-  /*
-  window.print() no hace nada dentro del WebView de la app empaquetada - a diferencia de un navegador de
-  escritorio, el WebView de Android no trae integrado el dialogo de impresion (ni Chrome ni Capacitor lo
-  agregan solos), asi que los botones "Imprimir" quedaban sin efecto visible al tocarlos en el celular
-  (reportado probando el .apk real). En nativo se comparte un resumen en texto plano via el selector nativo
-  de Android en su lugar (enviar por WhatsApp/correo, o pegarlo en cualquier app) - la vista previa en pantalla
-  (el modal, que sí funciona igual en ambos) sigue siendo la forma real de "ver" la hoja.
-  */
-  imprimirHoja(): void {
-    if (Capacitor.isNativePlatform()) {
-      this.compartirHoja();
-      return;
-    }
-    window.print();
-  }
-
-  private async compartirHoja(): Promise<void> {
-    try {
-      await Share.share({
-        title: 'Reporte de labores',
-        dialogTitle: 'Compartir reporte',
-        text: this.generarTextoHoja(),
-      });
-    } catch (err) {
-      this.notificacionService.error('No se pudo compartir el reporte.');
-    }
-  }
-
-  private generarTextoHoja(): string {
-    const lineas: string[] = [];
-    for (const grupo of this.hojaGrupos) {
-      const esOperador = grupo.operador.rol === 'OPERADOR';
-      lineas.push(esOperador ? 'REPORTE DE LABORES MAQUINARIAS' : 'REPORTE DE LABORES DIARIOS');
-      lineas.push(
-        `${esOperador ? 'Operador' : 'Mecánico'}: ${grupo.operador.nombre_completo}` +
-          (grupo.haciendaNombre ? ` · ${grupo.haciendaNombre}` : '')
-      );
-      lineas.push(`Fecha: ${grupo.fecha}`);
-      lineas.push('');
-
-      if (grupo.registros.length === 0) {
-        lineas.push('Sin labores registradas.');
-      } else {
-        for (const reg of grupo.registros) {
-          const equipo = reg.equipo ? `${reg.equipo.codigo_megued} - ${reg.equipo.nombre_equipo}` : '—';
-          const detalle = esOperador
-            ? `Horómetro ${reg.horometro_inicio ?? '—'} → ${reg.horometro_final ?? '—'}`
-            : `OT ${reg.area || '—'}`;
-          const observaciones = reg.observaciones ? ` | ${reg.observaciones}` : '';
-          const horas = esOperador ? '' : ` | ${this.rangoHorasLabor(reg)}`;
-          lineas.push(`${equipo} | ${detalle} | ${this.duracionLabor(reg)}${horas}${observaciones}`);
-        }
-      }
-
-      lineas.push('');
-      lineas.push(`Observaciones del Supervisor: ${grupo.observacionesSupervisor || 'Sin observaciones.'}`);
-      lineas.push('');
-    }
-    return lineas.join('\n').trim();
-  }
-
-  cerrarModalHoja(): void {
-    this.mostrarModalHoja = false;
-    this.hojaGrupos = [];
-    this.cdr.detectChanges();
   }
 
   // ==================== MODAL "HISTORIAL DE ASISTENCIA" DE UN OPERADOR (Ficha) ====================

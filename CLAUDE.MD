@@ -266,7 +266,9 @@ manda a un `/dashboard` fijo, causaría loop para roles sin Dashboard), `homeRed
 - `escaner-menu` (`/escaner`, rol ESCANER) - un solo botón a propósito, lleva a `/asistencia/escanear`.
 - `escaneo-sesion` (`/asistencia/escanear`, ADMIN/SUPERVISOR/ESCANER) - escaneo autenticado del QR de sesión
   (Camino B), distinto del kiosco público (`marcacion-kiosco`, `/asistencia/marcacion`, público, sin guard).
-- `supervisor-panel` (`/asistencia/supervisor`) - validación diaria, O/X, Finalizar Día, botón Escanear.
+- `supervisor-panel` (`/asistencia/supervisor`) - validación diaria, O/X, Finalizar Día, botón Escanear,
+  columna "Acción" (Ver/Imprimir hoja de actividades por fila) e "Imprimir General"/"Exportar a Excel" del día
+  que se está viendo (ver "Exportar a Excel" más abajo).
 - `asistencia-panel` (`/asistencia/asistente`) - Directorio de Operadores, Historial, pestañas Equipo/Actividad/
   Términos (ver abajo).
 - `mi-jornada` (`/mi-jornada`, MECANICO/OPERADOR, pantalla cautiva sin botón Menú) - 3 fases: `codigo`, `qr`,
@@ -463,18 +465,23 @@ es una prueba con fecha de vencimiento.
 
 ## Ver/Imprimir hoja de actividades
 
-`abrirHojaActividades(grupos, opciones)` abre un modal en la misma pantalla (nunca `window.open`, la app va
-empaquetada) con el diseño de la hoja física real. Cada entrada de `grupos` es SIEMPRE un operador en UN solo
-día (`{operador, registros, haciendaNombre, fecha, observacionesSupervisor}`) - incluso "Imprimir Hojas del
-rango" (varios operadores/días) parte a cada operador en un grupo por día (`agruparPorDia`, asistencia-panel.ts)
-en vez de una sola tabla multi-día, porque `observacionesSupervisor` es un dato POR DÍA (`Asistencia.observaciones`,
-viaja en el include de `GET /api/registro-actividades/por-operador?operador_id&fecha_inicio&fecha_fin`, ver
-`obtenerRegistrosPorOperador`) - antes la impresión por rango no lo mostraba porque no había un único día al que
-atribuírselo (bug reportado por el usuario, 2026-10-01). Con esto, las dos entradas (fila del Historial o
-"Imprimir Hojas del rango") usan exactamente el mismo diseño de grupo, con su fecha junto al nombre y su propio
-pie de Observaciones del Supervisor - ya no hace falta distinguir "modo un día" vs "modo rango" en el template.
-Columnas según `operador.rol`: MECANICO ve Equipo/OT/Observaciones/Tiempo estimado/Hora; OPERADOR ve Horómetro
-inicio/fin en vez de OT/Hora.
+`HojaActividadesModal` (`features/asistencia/components/hoja-actividades-modal/`, standalone, extraído de
+asistencia-panel.ts el 2026-10-02): modal compartido en la misma pantalla (nunca `window.open`, la app va
+empaquetada) con el diseño de la hoja física real. El padre lo monta como `<app-hoja-actividades-modal
+#hojaModal>` y lo abre/cierra imperativamente vía `@ViewChild` (`this.hojaModal.abrir(grupos, {autoImprimir})`/
+`.cerrar()`) - lo usan tanto `asistencia-panel.ts` (Historial: fila puntual o "Imprimir Hojas del rango") como
+`supervisor-panel.ts` (fila puntual del día u "Imprimir General", ver abajo). Cada entrada de `grupos` es
+SIEMPRE un operador en UN solo día (`HojaGrupo = {operador, registros, haciendaNombre, fecha,
+observacionesSupervisor}`) - incluso un caller con varios operadores/días parte a cada operador en un grupo por
+día (`agruparPorDia`, asistencia-panel.ts) en vez de una sola tabla multi-día, porque `observacionesSupervisor`
+es un dato POR DÍA (`Asistencia.observaciones`, viaja en el include de `GET
+/api/registro-actividades/por-operador?operador_id&fecha_inicio&fecha_fin`, ver `obtenerRegistrosPorOperador`) -
+antes la impresión por rango no lo mostraba porque no había un único día al que atribuírselo (bug reportado por
+el usuario, 2026-10-01). `resolverHaciendaJornada(operador, asistencia?)` (exportada del mismo archivo) prioriza
+la hacienda de PRÉSTAMO de esa jornada puntual sobre la permanente del operador - requiere que el endpoint de
+origen incluya `operador.supervisor.hacienda` y `asistencia.haciendaPrestamo` (ver `obtenerHistorial` y, desde
+2026-10-02, también `obtenerAsistenciaHoy`). Columnas según `operador.rol`: MECANICO ve Equipo/OT/Observaciones/
+Tiempo estimado/Hora; OPERADOR ve Horómetro inicio/fin en vez de OT/Hora.
 
 **Mecanismo de impresión global** (`.imprimible`/`.no-imprimir`, `styles.css`): `body *:has(.imprimible) {
 display: revert !important; }` restaura toda la cadena de ancestros del nodo imprimible a cualquier profundidad
@@ -488,6 +495,31 @@ a la mitad - si no cabe completo en lo que queda de la hoja actual, se va entero
 anteriores fueran cortos y hubiera cabido uno más. La encapsulación de estilos de Angular (`[_ngcontent-xxx]`)
 sube la especificidad del CSS de componente por encima del global - cualquier override de impresión que no
 aplique necesita `!important` directo en el CSS del propio componente.
+
+## Exportar a Excel
+
+`ExportarExcelService` (`core/services/exportar-excel.service.ts`, extraído de asistencia-panel.ts el
+2026-10-02): genera el `.xlsx` calcando el diseño real "REGISTRO DE LABORES DIARIAS" (plantilla provista por
+el usuario) con ExcelJS (`@e965/xlsx`, usado para importar catálogos, no soporta combinar celdas/colores/
+fuentes en su versión gratuita). Reporte SIEMPRE de un solo día. Fuente base `Aptos Narrow` 12pt. El logo
+(`public/logo-excel.png`, el isotipo RECTANGULAR con el nombre al lado - NO `logo-source.png`, que es el ícono
+CUADRADO del PWA y se deforma si se fuerza a un recuadro ancho) se ancla con `tl`/`ext` (tamaño fijo en
+píxeles, 370x100) en vez de estirarlo a un rango de celdas - eso respeta su aspect ratio real (~3.7:1), al
+revés que un `addImage(id, 'A1:D6')` que lo estira sin importar la proporción. Nombre del archivo: `TALLER
+{HACIENDA} {ddmmaaaa}.xlsx`.
+
+Dos puntos de entrada, cada uno resuelve Hacienda+Supervisor de forma distinta:
+- **Historial** (`asistencia-panel.ts`, `exportarExcelDiario`): requiere que el ADMIN/ASISTENTE elija
+  explícitamente un rango Desde/Hasta de UN solo día + Hacienda + Supervisor puntuales (`puedeExportarExcel`) -
+  sin eso no habría un único RESPONSABLE para el encabezado, ni forma de evitar mezclar trabajadores de
+  haciendas distintas en la misma hoja.
+- **Panel de Supervisor** (`supervisor-panel.ts`, `exportarExcel`/`imprimirGeneral`, pedido del usuario
+  2026-10-02): la fecha ya está filtrada en pantalla (`fechaSeleccionada`, o "hoy"). Un SUPERVISOR real no
+  necesita elegir nada más - su propia hacienda (`miHacienda`) y su propio nombre (`authService.perfil()`) ya
+  se conocen de entrada. El ADMIN sí necesita elegir un Supervisor puntual arriba (`supervisorIdFiltro`,
+  `get puedeExportarGeneral`) - viendo "Todos los Supervisores" mezclados no hay un único RESPONSABLE ni una
+  sola hacienda a la que atribuirle el reporte. Ambos casos operan sobre `asistenciasHoy` (la página actual,
+  mismo criterio que "Imprimir Hojas del rango" del Historial) en vez de pedir todo el día sin paginar.
 
 ## Historial de Asistencia de un operador (modal desde la Ficha)
 
