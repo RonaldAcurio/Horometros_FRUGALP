@@ -7,18 +7,26 @@ import { Preferences } from '@capacitor/preferences';
 import { RegistroActividadService } from './registro-actividad.service';
 import { AsistenciaService } from './asistencia.service';
 import { Equipo, Actividad } from '../models/asistencia.model';
-import { OperacionCrearLabor, OperacionFinalizarLabor, OperacionPendiente } from '../models/offline.model';
+import {
+  OperacionCrearLabor,
+  OperacionFinalizarLabor,
+  OperacionSalidaOlvidada,
+  OperacionFinalizarDia,
+  OperacionPendiente,
+} from '../models/offline.model';
 
 const CLAVE_COLA = 'frugalp_cola_offline';
 const CLAVE_CACHE_EQUIPOS = 'frugalp_cache_equipos';
 const CLAVE_CACHE_ACTIVIDADES = 'frugalp_cache_actividades';
 
 /*
-Offline-first del Panel de Actividades (ver CLAUDE.md, diseño acordado: manual/periódico, no background sync
-automático - iOS no lo permite de forma confiable de todas formas). Cuando el trabajador crea o finaliza una
-labor sin señal, la operación se guarda acá (Preferences - sobrevive cierres de la app, a diferencia de
-localStorage en Android) y se reintenta sola apenas vuelve la conexión (escuchando @capacitor/network) o cuando
-el trabajador toca "Sincronizar ahora". mi-jornada.ts es el único consumidor hoy.
+Offline-first de las acciones que cierran una jornada (ver CLAUDE.md, diseño acordado: manual/periódico, no
+background sync automático - iOS no lo permite de forma confiable de todas formas). Cuando el trabajador crea o
+finaliza una labor, se autocierra (salida_olvidada) o un Supervisor cierra el día (finalizar_dia) sin señal, la
+operación se guarda acá (Preferences - sobrevive cierres de la app, a diferencia de localStorage en Android) con
+la hora del CLIC ya capturada, y se reintenta sola apenas vuelve la conexión (escuchando @capacitor/network) o
+cuando se toca "Sincronizar ahora". Consumidores: mi-jornada.ts (crear_labor/finalizar_labor/salida_olvidada) y
+supervisor-panel.ts (finalizar_dia).
 */
 @Injectable({ providedIn: 'root' })
 export class OfflineSyncService {
@@ -147,6 +155,32 @@ export class OfflineSyncService {
     await this.guardar();
   }
 
+  // Como mucho una "salida olvidada" pendiente a la vez: es autoservicio del propio trabajador sobre su única
+  // jornada abierta, no tiene sentido encolar dos (el usuario del boton no deja re-tocar mientras haya una).
+  tieneSalidaOlvidadaPendiente(): boolean {
+    return this.cola().some((op) => op.tipo === 'salida_olvidada');
+  }
+
+  async encolarSalidaOlvidada(horaSalida: string): Promise<void> {
+    const op: OperacionSalidaOlvidada = { tipo: 'salida_olvidada', horaSalida, creadoEn: new Date().toISOString() };
+    this.cola.update((c) => [...c, op]);
+    await this.guardar();
+  }
+
+  // Mismo criterio que arriba: evita que el Supervisor encole dos cierres del mismo día/alcance por tocar el
+  // botón más de una vez mientras el primero sigue sin sincronizar.
+  tieneFinalizarDiaPendiente(fecha?: string, supervisorId?: number): boolean {
+    return this.cola().some(
+      (op) => op.tipo === 'finalizar_dia' && op.fecha === fecha && op.supervisorId === supervisorId
+    );
+  }
+
+  async encolarFinalizarDia(horaCierre: string, fecha?: string, supervisorId?: number): Promise<void> {
+    const op: OperacionFinalizarDia = { tipo: 'finalizar_dia', fecha, supervisorId, horaCierre, creadoEn: new Date().toISOString() };
+    this.cola.update((c) => [...c, op]);
+    await this.guardar();
+  }
+
   async descartar(op: OperacionPendiente): Promise<void> {
     this.cola.update((c) => c.filter((o) => o !== op));
     await this.guardar();
@@ -167,10 +201,14 @@ export class OfflineSyncService {
         try {
           if (op.tipo === 'crear_labor') {
             await firstValueFrom(this.registroActividadService.crear(op.payload));
-          } else {
+          } else if (op.tipo === 'finalizar_labor') {
             await firstValueFrom(
               this.registroActividadService.finalizar(op.id, op.observaciones, op.horaFin, op.horometroFinal)
             );
+          } else if (op.tipo === 'salida_olvidada') {
+            await firstValueFrom(this.asistenciaService.marcarSalidaOlvidada(op.horaSalida));
+          } else {
+            await firstValueFrom(this.asistenciaService.finalizarDia(op.fecha, op.supervisorId, op.horaCierre));
           }
           this.cola.update((c) => c.filter((o) => o !== op));
           await this.guardar();

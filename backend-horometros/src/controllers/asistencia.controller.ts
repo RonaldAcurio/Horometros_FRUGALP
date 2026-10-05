@@ -1246,8 +1246,25 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
 // Cierre de jornada ejecutando por el Supervisor
 export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
     try{
-        const { fecha, supervisor_id } = req.body;
+        const { fecha, supervisor_id, hora_salida } = req.body;
         const fechaProcesar = fecha || getFetchLocalEcuador();
+
+        /*
+        hora_salida es OPCIONAL (pedido del usuario, 2026-10-05, caso offline-first): el Supervisor pudo tocar
+        "Cerrar Jornada" sin señal - el frontend captura la hora del CLIC en el celular y la reenvia aca cuando
+        recien vuelve la conexion, para no registrar la hora en que la peticion llego al servidor (que puede ser
+        horas despues) como si fuera la hora real del cierre. Si no se manda (llamadas viejas, o el caso online
+        normal) se usa el momento del clic en el servidor, igual que siempre.
+        */
+        let horaCierreFinal = new Date();
+        if(hora_salida){
+            const parseada = new Date(hora_salida);
+            if(isNaN(parseada.getTime())){
+                res.status(400).json({ message: 'hora_salida no es una fecha valida.'});
+                return;
+            }
+            horaCierreFinal = parseada;
+        }
 
         /*
         Alcance del cierre: antes este endpoint no filtraba por hacienda para nada - CUALQUIER Supervisor que
@@ -1365,9 +1382,15 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
             }
         );
 
-        // 2. Marcar operadores olvidados (se quedaron en EN_JORNADA) -> SALIDA_OLVIDADA
+        /*
+        2. Marcar operadores olvidados (se quedaron en EN_JORNADA) -> SALIDA_OLVIDADA. Bug real corregido junto
+        con lo de arriba (2026-10-05): este UPDATE nunca tocaba hora_salida, asi que un operador auto-cerrado
+        por este camino quedaba SIN hora de salida registrada. Ahora se usa horaCierreFinal (la hora del clic
+        del Supervisor, online u offline) como su hora de salida - es la mejor aproximacion disponible, ya que
+        estos operadores nunca marcaron su propia salida.
+        */
         const [olvidados] = await Asistencia.update(
-            {estado:'SALIDA_OLVIDADA'},
+            {estado:'SALIDA_OLVIDADA', hora_salida: horaCierreFinal},
             {
                 where:{
                     id: { [Op.in]: idsDelAlcance },
