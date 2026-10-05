@@ -168,10 +168,12 @@ export class AdminPanel implements OnInit, OnDestroy {
     this.nuevoUsuario = this.usuarioVacio();
     this.mostrarClaveNuevo.set(false);
     this.mostrarModalUsuario = true;
+    this.cdr.detectChanges();
   }
 
   cerrarModalUsuario(): void {
     this.mostrarModalUsuario = false;
+    this.cdr.detectChanges();
   }
 
   guardarNuevoUsuario(): void {
@@ -204,11 +206,13 @@ export class AdminPanel implements OnInit, OnDestroy {
     this.claveNueva = '';
     this.mostrarClaveReset.set(false);
     this.mostrarModalClave = true;
+    this.cdr.detectChanges();
   }
 
   cerrarModalClave(): void {
     this.mostrarModalClave = false;
     this.usuarioParaResetear = null;
+    this.cdr.detectChanges();
   }
 
   guardarClaveNueva(): void {
@@ -268,10 +272,12 @@ export class AdminPanel implements OnInit, OnDestroy {
   abrirModalHacienda(): void {
     this.nombreHaciendaNueva = '';
     this.mostrarModalHacienda = true;
+    this.cdr.detectChanges();
   }
 
   cerrarModalHacienda(): void {
     this.mostrarModalHacienda = false;
+    this.cdr.detectChanges();
   }
 
   guardarNuevaHacienda(): void {

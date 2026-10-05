@@ -338,10 +338,12 @@ export class AsistenciaPanel implements OnInit{
     this.claveResetOperador = '';
     this.mostrarClaveResetOperador.set(false);
     this.mostrarModalResetClaveOperador = true;
+    this.cdr.detectChanges();
   }
 
   cerrarModalResetClaveOperador(): void {
     this.mostrarModalResetClaveOperador = false;
+    this.cdr.detectChanges();
   }
 
   guardarClaveResetOperador(): void {
@@ -370,12 +372,14 @@ export class AsistenciaPanel implements OnInit{
     this.nuevoOperadorClave = '';
     this.mostrarClaveNuevoOperador.set(false);
     this.mostrarModalOperador = true;
+    this.cdr.detectChanges();
   }
 
   cerrarModalNuevoOperador(): void {
     this.mostrarModalOperador = false;
     this.nuevoOperador = this.operadorNuevoVacio();
     this.nuevoOperadorClave = '';
+    this.cdr.detectChanges();
   }
 
   guardarNuevoOperador(): void {
@@ -829,17 +833,20 @@ export class AsistenciaPanel implements OnInit{
     this.equipoEditando = null;
     this.formEquipo = { codigo_megued: '', nombre_equipo: '' };
     this.mostrarModalEquipo = true;
+    this.cdr.detectChanges();
   }
 
   abrirModalEditarEquipo(eq: Equipo): void {
     this.equipoEditando = eq;
     this.formEquipo = { codigo_megued: eq.codigo_megued, nombre_equipo: eq.nombre_equipo };
     this.mostrarModalEquipo = true;
+    this.cdr.detectChanges();
   }
 
   cerrarModalEquipo(): void {
     this.mostrarModalEquipo = false;
     this.equipoEditando = null;
+    this.cdr.detectChanges();
   }
 
   guardarEquipo(): void {
@@ -925,17 +932,20 @@ export class AsistenciaPanel implements OnInit{
     this.actividadEditando = null;
     this.formActividad = { codigo_megued: '', description: '', categoria: 'TALLER' };
     this.mostrarModalActividad = true;
+    this.cdr.detectChanges();
   }
 
   abrirModalEditarActividad(act: Actividad): void {
     this.actividadEditando = act;
     this.formActividad = { codigo_megued: act.codigo_megued, description: act.description, categoria: act.categoria || 'TALLER' };
     this.mostrarModalActividad = true;
+    this.cdr.detectChanges();
   }
 
   cerrarModalActividad(): void {
     this.mostrarModalActividad = false;
     this.actividadEditando = null;
+    this.cdr.detectChanges();
   }
 
   guardarActividad(): void {
@@ -1038,10 +1048,12 @@ export class AsistenciaPanel implements OnInit{
     this.filasParaImportarEquipo = [];
     this.resultadoImportarEquipo = null;
     this.errorImportarEquipo = '';
+    this.cdr.detectChanges();
   }
 
   cerrarModalImportarEquipo(): void {
     this.mostrarModalImportarEquipo = false;
+    this.cdr.detectChanges();
   }
 
   descargarPlantillaEquipos(): void {
@@ -1104,10 +1116,12 @@ export class AsistenciaPanel implements OnInit{
     this.filasParaImportarOperador = [];
     this.resultadoImportarOperador = null;
     this.errorImportarOperador = '';
+    this.cdr.detectChanges();
   }
 
   cerrarModalImportarOperador(): void {
     this.mostrarModalImportarOperador = false;
+    this.cdr.detectChanges();
   }
 
   descargarPlantillaOperadores(): void {
@@ -1169,10 +1183,12 @@ export class AsistenciaPanel implements OnInit{
     this.filasParaImportarActividad = [];
     this.resultadoImportarActividad = null;
     this.errorImportarActividad = '';
+    this.cdr.detectChanges();
   }
 
   cerrarModalImportarActividad(): void {
     this.mostrarModalImportarActividad = false;
+    this.cdr.detectChanges();
   }
 
   descargarPlantillaActividades(): void {
