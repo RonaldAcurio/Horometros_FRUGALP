@@ -16,6 +16,17 @@ faltante, es la respuesta real: "nadie identificado").
 Igual que registrarAuditoria (utils/registrar-auditoria.ts): un fallo ACA nunca tumba la respuesta real, que ya
 se le envio al cliente - solo se los deja en el log del servidor.
 */
+
+/*
+RUTAS_DE_ALTO_VOLUMEN (pedido del usuario, 2026-10-05, tras calcular que esto solo podia llegar a ~11GB/año):
+mi-jornada.ts sondea 'mi-estado' cada 5s MIENTRAS el trabajador tenga la pantalla abierta (iniciarPollingEstado)
+y 'mi-qr' cada 80s en el camino QR - juntas son >99% del volumen total de peticiones, pero no aportan nada para
+investigar un incidente real (no son una accion de nadie, son el "¿seguis ahi?" automatico del celular). Se
+siguen viendo en la consola (linea de abajo, 'console.log' corre SIEMPRE) para quien este mirando los logs de
+Railway en vivo - lo unico que se salta es el INSERT a la base de datos.
+*/
+const RUTAS_DE_ALTO_VOLUMEN = new Set(['/api/asistencia/mi-estado', '/api/asistencia/mi-qr']);
+
 export const registrarPeticion = (req: Request, res: Response, next: NextFunction): void => {
     const inicio = Date.now();
     /*
@@ -37,6 +48,8 @@ export const registrarPeticion = (req: Request, res: Response, next: NextFunctio
             `[peticion] ${req.method} ${ruta} -> ${res.statusCode} (${duracionMs}ms) `
             + `actor=${actorTipo ?? 'anonimo'}${actorRol ? `/${actorRol}` : ''}${actorId ? ` #${actorId}` : ''}`
         );
+
+        if (RUTAS_DE_ALTO_VOLUMEN.has(ruta)) return;
 
         RegistroPeticion.create({
             metodo: req.method,
