@@ -247,17 +247,6 @@ export class SupervisorPanel implements OnInit {
   }
 
   /*
-  Bug real (reportado por el usuario, 2026-10-05, en el .apk instalado en un celular real sin señal): confiar
-  solo en `err.status === 0` no alcanza para detectar toda falla de red en un dispositivo real - se amplia con
-  offlineSyncService.conectado() (el mismo signal que ya se usa en el banner "pendiente de sincronizar" de
-  arriba): si el celular YA sabe que esta sin señal, cualquier error de una peticion HTTP es casi seguro de red,
-  no una respuesta real del servidor.
-  */
-  private esFalloDeRed(err: any): boolean {
-    return err?.status === 0 || !this.offlineSyncService.conectado();
-  }
-
-  /*
   Offline-first (pedido del usuario, 2026-10-05): se captura la hora del CLIC antes de intentar la peticion y se
   manda siempre como hora_salida - si no hay señal, el cierre queda encolado (OfflineSyncService) con esa misma
   hora, y al sincronizar horas despues el backend la usa para los operadores que quedaron "olvidados" (ver
@@ -291,7 +280,7 @@ export class SupervisorPanel implements OnInit {
         this.cargarAsistencias();
       },
       error: (err) => {
-        if (this.esFalloDeRed(err)) {
+        if (this.offlineSyncService.esFalloDeRed(err)) {
           this.offlineSyncService
             .encolarFinalizarDia(horaClick, this.fechaSeleccionada || undefined, this.supervisorIdFiltro || undefined)
             .then(() => {

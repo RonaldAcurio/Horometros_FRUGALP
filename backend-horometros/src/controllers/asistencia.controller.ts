@@ -12,22 +12,18 @@ import { generarTokenQrJornada, verificarTokenQrJornada, PayloadToken } from '..
 import { tokenHaciendaVigente } from '../utils/token-hacienda';
 import { registrarAuditoria } from '../utils/registrar-auditoria';
 import { cifrarDeterministico } from '../utils/cifrado';
+import { obtenerFechaLocalEcuador } from '../utils/fecha-ecuador';
 import { subirFoto, obtenerFotoBase64, r2EstaConfigurado } from '../services/r2.service';
 
 /*
 Columnas que excluimos de los LISTADOS (hoy/historial): la foto pesa decenas/cientos de KB en Base64, y si el supervisor tiene
-70 registros en pantalla no tiene sentido bajarlas todas de una. 
+70 registros en pantalla no tiene sentido bajarlas todas de una.
 En su lugar mandamos "tiene_fot" (un booleano liviano) y la foto real se pide aparte, solo cuando el usuario hace clic en "ver-Evidencia"
 (ver obtenerFotoAsistencia).
 */
 const ATRIBUTOS_SIN_FOTO = {
     exclude: ['foto_ingreso', 'foto_r2_key'],
     include: [[literal('"foto_ingreso" IS NOT NULL OR "foto_r2_key" IS NOT NULL'), 'tiene_foto']] as any,
-};
-
-//funcion auxiliar para obtener la decha 'YYYY-MM-DD' en la zona horario de Ecuador
-const getFetchLocalEcuador = ():string => {
-    return new Date().toLocaleDateString('sv-SE',{timeZone: 'America/Guayaquil'});
 };
 
 const ROLES_OPERADOR_VALIDOS = ['MECANICO', 'OPERADOR'];
@@ -511,7 +507,7 @@ interface ContextoMarcacion {
     permiteAutoDecidirJornadaAnterior?: boolean;
 }
 
-// Diferencia en DIAS CALENDARIO entre 2 fechas 'YYYY-UU-MM' (ambas ya vienen de getFetchLocalEcuador, mismo
+// Diferencia en DIAS CALENDARIO entre 2 fechas 'YYYY-UU-MM' (ambas ya vienen de obtenerFechaLocalEcuador, mismo
 // formato) - Date() parsea 'YYYY-MM-DD' como medianoche UTC, asi que restar y dividir por 1 dia da un entero
 // exacto sin arrastrar horas/minutos de por medio.
 const diferenciaEnDiasCalendario = (fechaAnterior: string, fechaActual: string): number => {
@@ -560,7 +556,7 @@ const procesarMarcacion = async(
     contexto: ContextoMarcacion = {}
 ): Promise<{ status: number; body: any }> => {
     const ahora = new Date();
-    const hoy = getFetchLocalEcuador();
+    const hoy = obtenerFechaLocalEcuador();
 
     /*
     Pasa 1= tienes una jornada ABIERTA(EN_JORNADA), sin importar la fecha en que empezo?
@@ -995,7 +991,7 @@ export const obtenerMiEstado = async(req:Request, res:Response):Promise<void> =>
             res.status(403).json({ message: 'Solo un Operador/Mecanico puede consultar su propio estado.'});
             return;
         }
-        const hoy = getFetchLocalEcuador();
+        const hoy = obtenerFechaLocalEcuador();
         const asistenciaHoy = await Asistencia.findOne({
             where: { operador_id: req.auth.id, fecha: hoy },
             attributes: ['id', 'estado', 'hacienda_prestamo_id'],
@@ -1153,7 +1149,7 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
     try{
         //Si viene fecha por query la usamos de lo contrario usamos la fecha local
         const fechaQuery = req.query['fecha'] as string;
-        const hoy = fechaQuery || getFetchLocalEcuador();
+        const hoy = fechaQuery || obtenerFechaLocalEcuador();
         //Paginacion: misma logica que el Historial, para que el Supervisor tampoco le llegue de golpe toda la lista del dia
         const paginaActual = Math.max(1, Number(req.query['pagina']) || 1);
         const limitePagina = Math.min(100, Math.max(1, Number(req.query['limite']) || 30));
@@ -1247,7 +1243,7 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
 export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
     try{
         const { fecha, supervisor_id, hora_salida } = req.body;
-        const fechaProcesar = fecha || getFetchLocalEcuador();
+        const fechaProcesar = fecha || obtenerFechaLocalEcuador();
 
         /*
         hora_salida es OPCIONAL (pedido del usuario, 2026-10-05, caso offline-first): el Supervisor pudo tocar
@@ -1485,7 +1481,7 @@ export const deshacerCierreJornada = async(req:Request, res:Response):Promise<vo
             res.status(400).json({ message: 'supervisor_id es obligatorio: hay que elegir una hacienda puntual para deshacer su cierre.' });
             return;
         }
-        const fechaProcesar = fecha || getFetchLocalEcuador();
+        const fechaProcesar = fecha || obtenerFechaLocalEcuador();
 
         const supervisor = await Usuario.findByPk(Number(supervisor_id), { attributes: ['id', 'hacienda_id'] });
         if(!supervisor?.hacienda_id){
@@ -1774,7 +1770,7 @@ export const admitirTrabajadorExterno = async(req:Request, res:Response):Promise
         }
 
         //El trabajador debe haber marcado su ingreso de hoy antes de poder admitirlo.
-        const hoy= getFetchLocalEcuador();
+        const hoy= obtenerFechaLocalEcuador();
         const asistenciaHoy = await Asistencia.findOne({
             where : { operador_id: operador.id, fecha:hoy},
         });

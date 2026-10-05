@@ -10,6 +10,7 @@ import { Usuario } from "./usuario";
 import { RegistroAuditoria } from "./registro_auditoria";
 import { RegistroDispositivo } from "./registro_dispositivo";
 import { CierreJornada } from "./cierre_jornada";
+import { RegistroPeticion } from "./registro_peticion";
 
 Asistencia.belongsTo(Operador, { foreignKey:'operador_id' ,as:'operador'});
 Asistencia.belongsTo(Actividad,{ foreignKey: 'actividad_id', as:'actividad'});
@@ -76,4 +77,5 @@ export{
     RegistroAuditoria,
     RegistroDispositivo,
     CierreJornada,
+    RegistroPeticion,
 };
