@@ -199,22 +199,6 @@ export class MiJornada implements OnInit, OnDestroy {
     if (this.intervaloEstado) clearInterval(this.intervaloEstado);
   }
 
-  /*
-  Bug real (reportado por el usuario, 2026-10-05, en el .apk instalado en un celular real sin señal): el único
-  chequeo `err.status === 0` no alcanza para detectar TODA falla de red en un dispositivo real - en el navegador
-  (y en el emulador offline de Playwright, ver las pruebas de esta sesión) una desconexión limpia siempre da
-  status 0, pero en una señal real débil/intermitente Android puede devolver otro tipo de error que no es un
-  rechazo real del backend (el backend ni siquiera llegó a verlo). Como resultado, "Iniciar labor" mostraba
-  "Error al registrar la labor." en vez de guardarlo localmente, y el trabajador perdía lo que estaba cargando.
-  Ahora, ADEMÁS de status 0, también se trata como fallo de red si el propio celular YA sabe que está sin señal
-  (offlineSyncService.conectado() es false, el mismo signal que pinta el banner "Sin conexión" de arriba) - si
-  el dispositivo cree que no hay señal, cualquier error de una petición HTTP casi seguro es de red, no una
-  respuesta real del servidor (que ni pudo ser contactado).
-  */
-  private esFalloDeRed(err: any): boolean {
-    return err?.status === 0 || !this.offlineSyncService.conectado();
-  }
-
   // --- FASE CODIGO ---
   /*
   Misma acción para ENTRADA y SALIDA - el backend decide cuál es según si el trabajador ya tenía una jornada
@@ -285,7 +269,7 @@ export class MiJornada implements OnInit, OnDestroy {
         mostrando el texto crudo del error de red del WebView (ej. "Failed to fetch") tal cual - probado por el
         usuario en el .apk real con el internet apagado.
         */
-        this.errorCodigo = this.esFalloDeRed(err)
+        this.errorCodigo = this.offlineSyncService.esFalloDeRed(err)
           ? 'Sin conexión a internet. Conéctate e intenta de nuevo.'
           : (err.error?.message || 'No se pudo procesar el código.');
         this.cdr.detectChanges();
@@ -542,7 +526,7 @@ export class MiJornada implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.guardandoRegistro = false;
-        if (this.esFalloDeRed(err)) {
+        if (this.offlineSyncService.esFalloDeRed(err)) {
           const equipoSel = this.offlineSyncService.catalogoEquipos().find((e) => e.id === payload.equipo_id);
           const actividadSel = this.offlineSyncService.catalogoActividades().find((a) => a.id === payload.actividad_id);
           this.offlineSyncService.encolarCrearLabor(payload, equipoSel, actividadSel).then(() => {
@@ -602,7 +586,7 @@ export class MiJornada implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.guardandoFinalizacion = false;
-        if (this.esFalloDeRed(err)) {
+        if (this.offlineSyncService.esFalloDeRed(err)) {
           this.offlineSyncService.encolarFinalizarLabor(id, undefined, horaFin, horometroFinal).then(() => {
             this.notificacionService.exito('Sin señal: el cierre quedó guardado en el celular y se sincroniza solo cuando vuelva la conexión.');
             this.registroFinalizandoId = null;
@@ -724,7 +708,7 @@ export class MiJornada implements OnInit, OnDestroy {
         this.cdr.detectChanges();
       },
       error: (err) => {
-        if (this.esFalloDeRed(err)) {
+        if (this.offlineSyncService.esFalloDeRed(err)) {
           this.offlineSyncService.encolarSalidaOlvidada(horaClick).then(() => {
             this.mensajeFinal = 'Sin señal: tu salida quedó guardada con la hora de este momento y se sincroniza sola cuando vuelva la conexión.';
             this.fase = 'terminado';

@@ -4,6 +4,8 @@ import { Asistencia } from "../models/asistencias";
 import { Usuario } from "../models/usuario";
 import { Operador } from "../models/operador";
 import { sesionFueInvalidada } from "../utils/sesion-revocada";
+import { obtenerFechaLocalEcuador } from "../utils/fecha-ecuador";
+import { ESTADOS_JORNADA_CERRADA } from "../utils/estados-jornada-cerrada";
 
 declare global {
     namespace Express{
@@ -69,13 +71,6 @@ export const requireRol = (...rolesPermitidos:string[]) => {
     };
 };
 
-const getFechaLocalEcuador = ():string => {
-    return new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Guayaquil' });
-};
-
-// Mismos estados que auth.controller.ts (login) considera "hoy ya no hay nada mas que hacer".
-const ESTADOS_JORNADA_CERRADA = ['PENDIENTE_REVISION', 'FINALIZADO', 'SALIDA_OLVIDADA', 'OBSERVANDO'];
-
 /*
 Login bloquea la emision de un token NUEVO cuando la jornada de hoy ya esta cerrada (ver auth.controller.ts), pero un
 token YA EMITIDO esta mañana sigue firmando valido por sus 8h de JWT hasta que se revise aqui. Este middleware es el
@@ -94,7 +89,7 @@ export const verificarJornadaOperadorActiva = async(req:Request, res:Response, n
         return;
     }
     try{
-        const hoy = getFechaLocalEcuador();
+        const hoy = obtenerFechaLocalEcuador();
         const asistenciaHoy = await Asistencia.findOne({
             where: { operador_id: req.auth.id, fecha: hoy },
         });

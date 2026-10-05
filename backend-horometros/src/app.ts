@@ -9,6 +9,8 @@ import haciendaRoutes from './routes/hacienda.rutes';
 import usuarioRoutes from './routes/usuario.rutes';
 import equipoRoutes from './routes/equipo.rutes';
 import auditoriaRoutes from './routes/auditoria.rutes';
+import registroPeticionRoutes from './routes/registro_peticion.rutes';
+import { registrarPeticion } from './middlewares/registrar-peticion.middleware';
 
 const app: Application = express();
 
@@ -43,6 +45,9 @@ app.use(helmet());
 app.use(cors({ origin: origenesPermitidos }));
 app.use(express.json({ limit: '10mb' })); //permite recibir el string Base64 de la foto en el JSON
 app.use(express.urlencoded({ limit:'10mb', extended:true }));
+// Historial de peticiones (ver registrar-peticion.middleware.ts) - montado ACA, antes de las rutas, para que
+// cubra cada peticion de cada ruta/rol sin que cada controller tenga que acordarse de llamarlo.
+app.use(registrarPeticion);
 
 //Rutas
 app.use('/api/asistencia',asistenciaRoutes);
@@ -53,6 +58,7 @@ app.use('/api/haciendas',haciendaRoutes);
 app.use('/api/usuarios',usuarioRoutes);
 app.use('/api/equipos',equipoRoutes);
 app.use('/api/auditoria',auditoriaRoutes);
+app.use('/api/peticiones',registroPeticionRoutes);
 
 //Ruta de comprobacion de estado (Healthcheck)
 app.get('/api/health', (_req,res)=>{

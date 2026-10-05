@@ -8,10 +8,8 @@ import { Hacienda } from '../models/hacienda';
 import { RegistroDispositivo } from '../models/registro_dispositivo';
 import { generarToken } from '../services/jwt.service';
 import { tokenHaciendaVigente } from '../utils/token-hacienda';
-
-const getFechaLocalEcuador = ():string => {
-    return new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Guayaquil' });
-};
+import { obtenerFechaLocalEcuador } from '../utils/fecha-ecuador';
+import { ESTADOS_JORNADA_CERRADA } from '../utils/estados-jornada-cerrada';
 
 /*
 Estados que significan "hoy ya no hay nada mas que hacer para este trabajador": ya marco su salida (PENDIENTE_REVISION),
@@ -19,7 +17,6 @@ el supervisor ya cerro el dia (FINALIZADO/SALIDA_OLVIDADA), o el supervisor lo m
 ver confirmarAsistencia). En cualquiera de estos casos NO se emite un token nuevo: esto es lo que evita que alguien
 vuelva a loguearse el mismo dia para "cubrir" a un companero que ya se fue o que nunca llego.
 */
-const ESTADOS_JORNADA_CERRADA = ['PENDIENTE_REVISION', 'FINALIZADO', 'SALIDA_OLVIDADA', 'OBSERVANDO'];
 
 /*
 Login unico (pantalla unica ver en el frontend, en CLAUDE.md): un mismo usuario no puede existit a la vez en 'usuarios' Y en 'operadores' (se valida al crear
@@ -103,7 +100,7 @@ export const login = async(req: Request, res: Response):Promise<void> => {
             o el Supervisor ya cerro el dia, o el Supervisor lo marco como NO presente, no le damos un token nuevo -
             asi evitamos que sus credenciales "cubran" a un companero que ya se fue o que nunca llego.
             */
-            const hoyLogin = getFechaLocalEcuador();
+            const hoyLogin = obtenerFechaLocalEcuador();
             const asistenciaHoy = await Asistencia.findOne({
                 where: { operador_id: cuentaOperador.id, fecha: hoyLogin },
             });

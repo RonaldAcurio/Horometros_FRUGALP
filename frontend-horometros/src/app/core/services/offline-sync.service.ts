@@ -40,6 +40,17 @@ export class OfflineSyncService {
   conectado = signal(true);
 
   /*
+  Antes vivia duplicado, metodo por metodo identico, en mi-jornada.ts y supervisor-panel.ts (cada uno con su
+  propio 'esFalloDeRed' privado). Bug real (2026-10-05): el chequeo `err.status === 0` solo no alcanza para
+  detectar toda falla de red en un dispositivo real - se amplia con este mismo signal 'conectado' (el que ya
+  pinta el banner "Sin conexión"): si el celular YA sabe que esta sin señal, cualquier error de una peticion
+  HTTP es casi seguro de red, no una respuesta real del servidor.
+  */
+  esFalloDeRed(err: any): boolean {
+    return err?.status === 0 || !this.conectado();
+  }
+
+  /*
   Catalogo COMPLETO de Equipo/Actividad, cacheado en el celular (Preferences, igual que la cola) para que el
   autocompletar del Panel de Actividades pueda buscar sin señal. Arranca con lo que haya quedado guardado de la
   ultima vez que hubo conexion (ver cargar()); se refresca solo cada vez que se detecta señal (ver
