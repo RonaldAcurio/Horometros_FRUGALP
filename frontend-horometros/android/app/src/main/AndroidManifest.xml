@@ -38,4 +38,16 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!--
+    Sin este permiso, el WebView NUNCA puede conceder getUserMedia() a las pantallas de escaneo QR
+    (marcacion-kiosco, escaneo-sesion, via @zxing/ngx-scanner) - sin importar lo que responda el usuario en
+    cualquier dialogo, porque Android ni siquiera deja pedir en tiempo de ejecucion un permiso que la app no
+    declaro aca. Esto hacia que la camara se quedara siempre en el video vacio del navegador (bug real
+    reportado por el usuario, 2026-10-05: funcionaba distinto segun probara desde el navegador o desde el .apk
+    instalado - el navegador maneja su propio permiso de sitio, el .apk dependia de este permiso que faltaba).
+    android.hardware.camera required=false: el .apk se distribuye por descarga directa, no por Play Store, pero
+    sigue siendo buena practica no excluir dispositivos sin camara de poder instalarlo igual.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 </manifest>
