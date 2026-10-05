@@ -69,10 +69,12 @@ export class AsistenciaService {
     POST -> /api/asistencia/finalizar-dia (Cierre diario por supervisor). supervisorId: solo lo usa ADMIN,
     para cerrar la hacienda puntual que tenga filtrada en el panel (mismo filtro que obtenerAsistenciasHoy) -
     el backend lo ignora para un SUPERVISOR real, que siempre queda acotado a su propia hacienda sin importar
-    lo que se mande acá (ver asistencia.controller.ts).
+    lo que se mande acá (ver asistencia.controller.ts). horaCierre: opcional, la hora del CLIC capturada en el
+    celular (offline-first, ver OfflineSyncService) - así el cierre usa esa hora para los operadores
+    auto-cerrados (olvidados) en vez de la hora en que la petición recién llegó al servidor, si fue encolada.
     */
-    finalizarDia(fecha?: string, supervisorId?: number): Observable<any> {
-        return this.http.post(`${this.baseUrl}/finalizar-dia`, { fecha, supervisor_id: supervisorId });
+    finalizarDia(fecha?: string, supervisorId?: number, horaCierre?: string): Observable<any> {
+        return this.http.post(`${this.baseUrl}/finalizar-dia`, { fecha, supervisor_id: supervisorId, hora_salida: horaCierre });
     }
 
     /*

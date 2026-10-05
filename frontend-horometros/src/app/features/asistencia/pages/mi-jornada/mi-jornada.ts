@@ -680,16 +680,32 @@ export class MiJornada implements OnInit, OnDestroy {
   Autoservicio: cuando el trabajador ya no va a poder volver a un punto de escaneo ni reingresar el codigo (se le
   hizo tarde y ya se fue a su casa), cierra su propia jornada como SALIDA_OLVIDADA - antes solo el Supervisor
   podia hacerlo, en bloque, al cerrar el dia (ver CLAUDE.md).
+
+  Offline-first (pedido del usuario, 2026-10-05): se captura la hora del CLIC ANTES de intentar la petición y se
+  manda siempre como hora_salida - así, si no hay señal (status 0), queda encolada (OfflineSyncService) con esa
+  misma hora exacta, y cuando recién sincroniza horas después, el servidor registra la hora en que el trabajador
+  de verdad tocó el botón, no la hora en que la petición pudo viajar. La jornada se da por terminada en pantalla
+  de inmediato en los dos casos (online o encolada) - no tiene sentido dejar al trabajador esperando una
+  confirmación del servidor que puede tardar horas en llegar.
   */
   async marcarMiSalidaOlvidada(): Promise<void> {
+    // Guarda defensiva (caso borde offline): si la app se reabrió con la salida ya encolada pero aún sin
+    // sincronizar, y mientras tanto volvió la señal justo antes de que la cola se vaciara sola, mi-estado del
+    // servidor todavía diría "en jornada" y volvería a mostrar este botón - evita encolar una segunda vez.
+    if (this.offlineSyncService.tieneSalidaOlvidadaPendiente()) {
+      this.notificacionService.advertencia('Tu salida ya quedó guardada y está pendiente de sincronizar.');
+      return;
+    }
+
     const confirmado = await this.confirmacionService.preguntar(
       'Vas a cerrar tu jornada de hoy sin haber sido escaneado. Tu supervisor la revisará después. ¿Confirmas?',
       'Marcar salida olvidada'
     );
     if (!confirmado) return;
 
+    const horaClick = new Date().toISOString();
     this.marcandoSalidaOlvidada = true;
-    this.asistenciaService.marcarSalidaOlvidada().subscribe({
+    this.asistenciaService.marcarSalidaOlvidada(horaClick).subscribe({
       next: (res) => {
         this.mensajeFinal = res.message || 'Tu salida quedó marcada.';
         this.fase = 'terminado';
@@ -697,6 +713,15 @@ export class MiJornada implements OnInit, OnDestroy {
         this.cdr.detectChanges();
       },
       error: (err) => {
+        if (err.status === 0) {
+          this.offlineSyncService.encolarSalidaOlvidada(horaClick).then(() => {
+            this.mensajeFinal = 'Sin señal: tu salida quedó guardada con la hora de este momento y se sincroniza sola cuando vuelva la conexión.';
+            this.fase = 'terminado';
+            this.detenerIntervalos();
+            this.cdr.detectChanges();
+          });
+          return;
+        }
         this.notificacionService.error(err.error?.message || 'No se pudo marcar tu salida.');
         this.marcandoSalidaOlvidada = false;
         this.cdr.detectChanges();

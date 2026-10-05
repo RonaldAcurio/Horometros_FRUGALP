@@ -17,6 +17,7 @@ import { VisorFoto } from '../../components/visor-foto/visor-foto';
 import { HojaActividadesModal, HojaGrupo, resolverHaciendaJornada } from '../../components/hoja-actividades-modal/hoja-actividades-modal';
 import { NotificacionService } from '../../../../core/services/notificacion.service';
 import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
+import { OfflineSyncService } from '../../../../core/services/offline-sync.service';
 import { timeoutDeLista, mensajeErrorCarga } from '../../../../core/utils/peticion-lista.util';
 
 @Component({
@@ -102,7 +103,8 @@ export class SupervisorPanel implements OnInit {
     protected authService: AuthService,
     private cdr: ChangeDetectorRef,
     private notificacionService: NotificacionService,
-    private confirmacionService: ConfirmacionService
+    private confirmacionService: ConfirmacionService,
+    protected offlineSyncService: OfflineSyncService
   ) {}
 
   ngOnInit(): void {
@@ -231,12 +233,35 @@ export class SupervisorPanel implements OnInit {
   }
  }
 
+  // Botón manual "Sincronizar ahora" (mismo patrón que mi-jornada.ts) - también se dispara solo al volver la
+  // señal, esto es por si el Supervisor prefiere forzarlo antes.
+  sincronizarAhora(): void {
+    this.offlineSyncService.sincronizar();
+  }
+
+  // Cierre pendiente de sincronizar (ver cierrePendienteDeSincronizar/OfflineSyncService): el boton de la
+  // plantilla se deshabilita con esto para que no se pueda encolar un segundo cierre del mismo dia/alcance
+  // mientras el primero todavia no viajo al servidor.
+  get cierrePendienteDeSincronizar(): boolean {
+    return this.offlineSyncService.tieneFinalizarDiaPendiente(this.fechaSeleccionada || undefined, this.supervisorIdFiltro || undefined);
+  }
+
+  /*
+  Offline-first (pedido del usuario, 2026-10-05): se captura la hora del CLIC antes de intentar la peticion y se
+  manda siempre como hora_salida - si no hay señal (status 0), el cierre queda encolado (OfflineSyncService) con
+  esa misma hora, y al sincronizar horas despues el backend la usa para los operadores que quedaron "olvidados"
+  (ver finalizarDia), en vez de la hora en que la peticion recien pudo viajar.
+  */
   async ejecutarCierreDiario(): Promise<void> {
 
     //Guarda defensiva: el boton ya se deshabilita en el HTML cuando el dia esta cerrado,
     //pero validamos aca tambien por si se llega a disparar el click de otra forma.
     if(this.diaCerrado){
       this.notificacionService.advertencia('Esta jornada ya fue cerrada anteriormente.');
+      return;
+    }
+    if(this.cierrePendienteDeSincronizar){
+      this.notificacionService.advertencia('El cierre de esta jornada ya quedó guardado y está pendiente de sincronizar.');
       return;
     }
 
@@ -246,15 +271,27 @@ export class SupervisorPanel implements OnInit {
       `¿Desea realizar el cierre diario de ${etiquetaFEcha}? Los datos quedaran congelados y no se podran modificar.`,
       'Cerrar jornada'
     );
-    if (confirmado) {
-      this.asistenciaService.finalizarDia(this.fechaSeleccionada || undefined, this.supervisorIdFiltro || undefined).subscribe({
-        next: (res) => {
-          this.notificacionService.exito(res.message || 'Cierre de jornada completado.');
-          this.cargarAsistencias();
-        },
-        error: (err) => this.notificacionService.error(err.error?.message || 'Error procesando el cierre de día.')
-      });
-    }
+    if (!confirmado) return;
+
+    const horaClick = new Date().toISOString();
+    this.asistenciaService.finalizarDia(this.fechaSeleccionada || undefined, this.supervisorIdFiltro || undefined, horaClick).subscribe({
+      next: (res) => {
+        this.notificacionService.exito(res.message || 'Cierre de jornada completado.');
+        this.cargarAsistencias();
+      },
+      error: (err) => {
+        if (err.status === 0) {
+          this.offlineSyncService
+            .encolarFinalizarDia(horaClick, this.fechaSeleccionada || undefined, this.supervisorIdFiltro || undefined)
+            .then(() => {
+              this.notificacionService.exito('Sin señal: el cierre quedó guardado con la hora de este momento y se enviará solo cuando vuelva la conexión.');
+              this.cdr.detectChanges();
+            });
+          return;
+        }
+        this.notificacionService.error(err.error?.message || 'Error procesando el cierre de día.');
+      },
+    });
   }
 
   deshaciendoCierre = false;

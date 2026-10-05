@@ -28,8 +28,8 @@
         [(ngModel)]="fechaSeleccionada"
         (change)="onCambioFecha()"
       />
-      <button class="btn btn-warning" (click)="ejecutarCierreDiario()" [disabled]="diaCerrado">
-        {{ diaCerrado ? '🔒 Jornada Cerrada' : '🔒 Cerrar Jornada' }}
+      <button class="btn btn-warning" (click)="ejecutarCierreDiario()" [disabled]="diaCerrado || cierrePendienteDeSincronizar">
+        {{ diaCerrado ? '🔒 Jornada Cerrada' : cierrePendienteDeSincronizar ? '⏳ Cierre sin sincronizar' : '🔒 Cerrar Jornada' }}
       </button>
       <!-- Solo ADMIN, y solo con una hacienda puntual elegida y ya cerrada (ver puedeDeshacerCierre) - deshace
       un cierre hecho por error (pedido real del usuario, 2026-10-02). -->
@@ -45,6 +45,22 @@
       }
     </div>
   </div>
+
+  <!-- Offline-first (ver OfflineSyncService): si "Cerrar Jornada" se tocó sin señal, queda guardado con la hora
+  del clic y se sincroniza solo cuando vuelva la conexión, o al tocar "Sincronizar ahora". -->
+  @if (offlineSyncService.cola().length > 0) {
+    <div class="alert-pendientes">
+      🔄 {{ cierrePendienteDeSincronizar ? 'El cierre de esta jornada está' : 'Hay cambios' }} pendiente{{ cierrePendienteDeSincronizar ? '' : 's' }} de sincronizar.
+      <button
+        type="button"
+        class="btn-link-sincronizar"
+        [disabled]="offlineSyncService.sincronizando()"
+        (click)="sincronizarAhora()"
+      >
+        {{ offlineSyncService.sincronizando() ? 'Sincronizando...' : 'Sincronizar ahora' }}
+      </button>
+    </div>
+  }
 
   <!-- Token de MI Hacienda: cada Supervisor solo ve y genera el de la suya, no la de otros -->
   @if (miHacienda) {
