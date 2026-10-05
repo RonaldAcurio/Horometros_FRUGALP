@@ -85,6 +85,21 @@ export class EscaneoSesion implements OnDestroy {
     }
   }
 
+  // Mismo aviso de permiso/camara que marcacion-kiosco.ts (ver ahi el detalle) - antes se quedaba en silencio
+  // para siempre si el permiso se negaba o no habia camara disponible.
+  onPermisoCamara(concedido: boolean): void {
+    if (concedido) return;
+    this.mensajeEscaneo = 'No se pudo acceder a la cámara. Revisa que la app/el navegador tenga permiso de cámara y vuelve a intentar.';
+    this.tipoMensaje = 'error';
+    this.cdr.detectChanges();
+  }
+
+  onCamarasNoEncontradas(): void {
+    this.mensajeEscaneo = 'No se encontró ninguna cámara en este dispositivo.';
+    this.tipoMensaje = 'error';
+    this.cdr.detectChanges();
+  }
+
   // Captura el video COMPLETO (100%, no solo la zona activa) y lo redimensiona - mismo motivo que
   // marcacion-kiosco.ts (capturarFotoEvidencia).
   private capturarFotoEvidencia(): string | null {

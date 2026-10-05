@@ -88,6 +88,25 @@ export class MarcacionKiosco implements OnDestroy {
   }
 
   /*
+  Antes esto se quedaba en silencio para siempre (el video vacio del navegador, sin ningun aviso) si el permiso
+  de camara se negaba o no habia ninguna camara disponible - el usuario no tenia forma de saber si era un
+  problema real o solo que la camara tardaba en cargar (bug real reportado, 2026-10-05). zxing-scanner SI avisa
+  estos 2 casos via eventos propios (ver marcacion-kiosco.html) - antes no estaban conectados a nada.
+  */
+  onPermisoCamara(concedido: boolean): void {
+    if (concedido) return;
+    this.mensajeEscaneo = 'No se pudo acceder a la cámara. Revisa que la app/el navegador tenga permiso de cámara y vuelve a intentar.';
+    this.tipoMensaje = 'error';
+    this.cdr.detectChanges();
+  }
+
+  onCamarasNoEncontradas(): void {
+    this.mensajeEscaneo = 'No se encontró ninguna cámara en este dispositivo.';
+    this.tipoMensaje = 'error';
+    this.cdr.detectChanges();
+  }
+
+  /*
   Toma el stream real de la camara desde el <video> y detiene cada pista (track).
   ESto apaga la camara a nivel de navegador, sin depender de la limpieza interna de zxing
   */

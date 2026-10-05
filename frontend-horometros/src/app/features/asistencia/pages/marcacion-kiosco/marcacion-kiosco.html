@@ -13,6 +13,8 @@
           <zxing-scanner
             [videoConstraints]="{ width: { ideal: 1280 }, height: { ideal: 720 } }"
             (scanComplete)="onCodeResult($event)"
+            (permissionResponse)="onPermisoCamara($event)"
+            (camerasNotFound)="onCamarasNoEncontradas()"
           ></zxing-scanner>
           <!-- Solo visual: marca la zona donde SI se acepta un QR (ver zona-captura.util.ts, onCodeResult). El
           margen oscurecido de afuera no se recorta de la foto de evidencia, solo deja de ser zona de escaneo. -->
