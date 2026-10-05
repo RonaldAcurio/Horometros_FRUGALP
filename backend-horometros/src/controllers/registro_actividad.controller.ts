@@ -174,8 +174,17 @@ export const finalizarRegistroActividad = async(req:Request, res:Response):Promi
                 res.status(400).json({ message: 'hora_fin no es una fecha valida.'});
                 return;
             }
-            if(parseada.getTime() <= registro.hora_inicio.getTime()){
-                res.status(400).json({ message: 'hora_fin debe ser posterior a la hora de inicio de la labor.'});
+            /*
+            SOLO rechaza si queda ANTES de hora_inicio (<), nunca si cae en el mismo instante (bug real
+            encontrado en pruebas e2e, 2026-10-05): el frontend arma estas horas con dos inputs HH/MM, sin
+            segundos (ver horaComponentesAIso, mi-jornada.ts) - una labor corta que arranca y se cierra dentro
+            del MISMO minuto de reloj llega aca con hora_inicio y hora_fin truncadas al mismo segundo exacto
+            (:00), aunque en el tiempo real hora_fin si vino despues. Con <= (antes) esto se rechazaba siempre
+            con "hora_fin debe ser posterior", bloqueando cualquier labor de menos de un minuto - un caso
+            perfectamente valido (ej. una tarea rapida), no un error de captura.
+            */
+            if(parseada.getTime() < registro.hora_inicio.getTime()){
+                res.status(400).json({ message: 'hora_fin no puede ser anterior a la hora de inicio de la labor.' });
                 return;
             }
             horaFinFinal = parseada;
