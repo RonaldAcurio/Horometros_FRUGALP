@@ -552,10 +552,22 @@ Devuelve {status, body} en vez de escribir directo en 'res': quien la llama deci
 */
 const procesarMarcacion = async(
     operador: Operador,
-    datos: { actividades_ids?: unknown; foto_ingreso?: string | null; accion_jornada_anterior?: 'cerrar' | 'iniciar_nuevo' },
+    datos: {
+        actividades_ids?: unknown; foto_ingreso?: string | null; accion_jornada_anterior?: 'cerrar' | 'iniciar_nuevo';
+        /*
+        Offline-first de la SALIDA por código (pedido del usuario, 2026-10-06, mismo patrón que
+        marcarSalidaOlvidada/finalizarDia): cuando esto viene puesto, es la hora en que el trabajador de verdad
+        tocó "Marcar salida" en su celular, capturada ANTES de encolar la petición sin señal - se usa en vez de
+        `ahora` solo en el bloque de SALIDA de abajo, para que el registro quede con la hora real y no con la
+        hora en que la petición recién pudo sincronizar (horas después). Nunca aplica a una ENTRADA nueva: esa
+        siempre necesita señal (ver CLAUDE.md), así que este camino jamás la encola.
+        */
+        hora_salida?: Date | undefined;
+    },
     contexto: ContextoMarcacion = {}
 ): Promise<{ status: number; body: any }> => {
     const ahora = new Date();
+    const horaSalidaEfectiva = datos.hora_salida ?? ahora;
     const hoy = obtenerFechaLocalEcuador();
 
     /*
@@ -643,7 +655,7 @@ const procesarMarcacion = async(
             }
         }
 
-        await asistencia.update({ hora_salida:ahora, estado:'PENDIENTE_REVISION' });
+        await asistencia.update({ hora_salida: horaSalidaEfectiva, estado:'PENDIENTE_REVISION' });
 
         //Insertamos el detalle de actividades en la tabla pivote (relacion muchos a muchos)
         await AsistenciaActividad.bulkCreate(
@@ -657,7 +669,7 @@ const procesarMarcacion = async(
             status: 200,
             body: {
                 tipo: 'SALIDA',
-                message:`Hasta Luego! Salida registrada a las ${ahora.toLocaleTimeString('es-EC', { timeZone: 'America/Guayaquil' })}`,
+                message:`Hasta Luego! Salida registrada a las ${horaSalidaEfectiva.toLocaleTimeString('es-EC', { timeZone: 'America/Guayaquil' })}`,
                 operador: operador.nombre_completo,
                 asistencia,
             },
@@ -842,7 +854,7 @@ export const marcarConMiCodigo = async(req:Request, res:Response):Promise<void> 
             res.status(403).json({ message: 'Solo un Operador/Mecanico puede marcar con su codigo.'});
             return;
         }
-        const { token_hacienda, actividades_ids, foto_ingreso, accion_jornada_anterior } = req.body;
+        const { token_hacienda, actividades_ids, foto_ingreso, accion_jornada_anterior, hora_salida } = req.body;
         if(!token_hacienda){
             res.status(400).json({ message: 'token_hacienda es obligatorio.'});
             return;
@@ -850,6 +862,18 @@ export const marcarConMiCodigo = async(req:Request, res:Response):Promise<void> 
         if(!req.auth.hacienda_id){
             res.status(400).json({ message: 'Tu cuenta todavia no tiene una hacienda asignada.'});
             return;
+        }
+
+        // hora_salida es OPCIONAL (ver comentario de procesarMarcacion) - solo la manda el frontend cuando esto
+        // es una SALIDA que se encoló sin señal y recién ahora se sincroniza (ver OfflineSyncService).
+        let horaSalidaParseada: Date | undefined;
+        if(hora_salida){
+            const parseada = new Date(hora_salida);
+            if(isNaN(parseada.getTime())){
+                res.status(400).json({ message: 'hora_salida no es una fecha valida.'});
+                return;
+            }
+            horaSalidaParseada = parseada;
         }
 
         const hacienda = await Hacienda.findByPk(req.auth.hacienda_id);
@@ -890,7 +914,7 @@ export const marcarConMiCodigo = async(req:Request, res:Response):Promise<void> 
         */
         const { status, body } = await procesarMarcacion(
             operador,
-            { actividades_ids: actividadesIdsFinal, foto_ingreso, accion_jornada_anterior },
+            { actividades_ids: actividadesIdsFinal, foto_ingreso, accion_jornada_anterior, hora_salida: horaSalidaParseada },
             { omitirActividadRequerida: true }
         );
         res.status(status).json(body);

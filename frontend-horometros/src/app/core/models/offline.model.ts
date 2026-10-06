@@ -69,8 +69,25 @@ export interface OperacionFinalizarDia {
   error?: string;
 }
 
+/*
+Marcar salida por Token de Hacienda (Camino A, mi-jornada.ts/marcarSalida) sin señal - mismo patrón que
+OperacionSalidaOlvidada (hora del CLIC capturada antes de intentar la petición). Guarda el token que ya se
+confirmó como válido (el mismo que usó la entrada, ver tokenHaciendaUsado) para reenviarlo tal cual al
+sincronizar; si para entonces el Supervisor ya generó un token nuevo, el backend lo rechaza igual que
+rechazaría ese mismo token vencido en una llamada online directa (no es un caso nuevo, ya pasa hoy). El Camino
+B (QR) queda afuera a propósito: necesita que alguien más lo escanee, no se puede encolar solo.
+*/
+export interface OperacionSalidaConCodigo {
+  tipo: 'salida_con_codigo';
+  tokenHacienda: string;
+  horaSalida: string;
+  creadoEn: string;
+  error?: string;
+}
+
 export type OperacionPendiente =
   | OperacionCrearLabor
   | OperacionFinalizarLabor
   | OperacionSalidaOlvidada
-  | OperacionFinalizarDia;
+  | OperacionFinalizarDia
+  | OperacionSalidaConCodigo;

@@ -12,6 +12,7 @@ import {
   OperacionFinalizarLabor,
   OperacionSalidaOlvidada,
   OperacionFinalizarDia,
+  OperacionSalidaConCodigo,
   OperacionPendiente,
 } from '../models/offline.model';
 
@@ -22,11 +23,12 @@ const CLAVE_CACHE_ACTIVIDADES = 'frugalp_cache_actividades';
 /*
 Offline-first de las acciones que cierran una jornada (ver CLAUDE.md, diseño acordado: manual/periódico, no
 background sync automático - iOS no lo permite de forma confiable de todas formas). Cuando el trabajador crea o
-finaliza una labor, se autocierra (salida_olvidada) o un Supervisor cierra el día (finalizar_dia) sin señal, la
-operación se guarda acá (Preferences - sobrevive cierres de la app, a diferencia de localStorage en Android) con
-la hora del CLIC ya capturada, y se reintenta sola apenas vuelve la conexión (escuchando @capacitor/network) o
-cuando se toca "Sincronizar ahora". Consumidores: mi-jornada.ts (crear_labor/finalizar_labor/salida_olvidada) y
-supervisor-panel.ts (finalizar_dia).
+finaliza una labor, se autocierra (salida_olvidada), marca su SALIDA por Token (salida_con_codigo) o un
+Supervisor cierra el día (finalizar_dia) sin señal, la operación se guarda acá (Preferences - sobrevive cierres
+de la app, a diferencia de localStorage en Android) con la hora del CLIC ya capturada, y se reintenta sola apenas
+vuelve la conexión (escuchando @capacitor/network) o cuando se toca "Sincronizar ahora". Consumidores:
+mi-jornada.ts (crear_labor/finalizar_labor/salida_olvidada/salida_con_codigo) y supervisor-panel.ts
+(finalizar_dia).
 */
 @Injectable({ providedIn: 'root' })
 export class OfflineSyncService {
@@ -178,6 +180,18 @@ export class OfflineSyncService {
     await this.guardar();
   }
 
+  // Misma idea que tieneSalidaOlvidadaPendiente: autoservicio sobre la única jornada abierta del trabajador,
+  // no tiene sentido encolar una SALIDA por código dos veces.
+  tieneSalidaConCodigoPendiente(): boolean {
+    return this.cola().some((op) => op.tipo === 'salida_con_codigo');
+  }
+
+  async encolarSalidaConCodigo(tokenHacienda: string, horaSalida: string): Promise<void> {
+    const op: OperacionSalidaConCodigo = { tipo: 'salida_con_codigo', tokenHacienda, horaSalida, creadoEn: new Date().toISOString() };
+    this.cola.update((c) => [...c, op]);
+    await this.guardar();
+  }
+
   // Mismo criterio que arriba: evita que el Supervisor encole dos cierres del mismo día/alcance por tocar el
   // botón más de una vez mientras el primero sigue sin sincronizar.
   tieneFinalizarDiaPendiente(fecha?: string, supervisorId?: number): boolean {
@@ -218,6 +232,8 @@ export class OfflineSyncService {
             );
           } else if (op.tipo === 'salida_olvidada') {
             await firstValueFrom(this.asistenciaService.marcarSalidaOlvidada(op.horaSalida));
+          } else if (op.tipo === 'salida_con_codigo') {
+            await firstValueFrom(this.asistenciaService.marcarConMiCodigo(op.tokenHacienda, undefined, undefined, undefined, op.horaSalida));
           } else {
             await firstValueFrom(this.asistenciaService.finalizarDia(op.fecha, op.supervisorId, op.horaCierre));
           }

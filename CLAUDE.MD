@@ -486,10 +486,15 @@ el mismo README - es una operación que sobreescribe datos reales, nunca hacerla
   for use in production") aunque probablemente funcione bien para un piloto chico - alternativa es una
   herramienta de actualización OTA dedicada (Capgo, open source, o Ionic Live Updates), el camino que Capacitor
   sí soporta oficialmente.
-- **Offline-first**: solo el Panel de Actividades (crear/finalizar labor) - la ENTRADA/SALIDA siempre necesita
-  señal (el código lo valida el backend contra el Token vigente, el QR lo genera el servidor). Cola en
-  `@capacitor/preferences`, sincroniza sola al detectar conexión (`@capacitor/network`) o manual. Un fallo de
-  red (`status 0`) corta el recorrido de la cola sin perder lo pendiente; un error real del servidor marca ese
+- **Offline-first**: Panel de Actividades (crear/finalizar labor), Salida Olvidada (autoservicio), Cerrar
+  Jornada (Supervisor) y SALIDA por Token/Camino A (`salida_con_codigo`, mi-jornada.ts/marcarSalida) - en los 4
+  se guarda la hora del CLIC antes de encolar, para que al sincronizar quede la hora real y no la de la
+  sincronización. La ENTRADA (por Token o por QR) y el Camino B (QR) siguen necesitando señal sí o sí (el
+  código lo valida el backend contra el Token vigente, el QR lo genera el servidor o lo tiene que escanear
+  alguien más - no hay nada que encolar solo). Cola en `@capacitor/preferences` (nunca `localStorage`: Android
+  puede limpiarlo bajo presión de almacenamiento, Preferences no - doc oficial de Capacitor), sincroniza sola
+  al detectar conexión (`@capacitor/network`) o manual. Un fallo de red (`status 0`) corta el recorrido de la
+  cola sin perder lo pendiente; un error real del servidor marca ese
   ítem y sigue con el resto.
 
 ## Pendiente
