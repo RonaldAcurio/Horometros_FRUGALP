@@ -2,6 +2,7 @@ import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
+import { Preferences } from '@capacitor/preferences';
 import * as QRCode from 'qrcode';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 import { RegistroActividadService } from '../../../../core/services/registro-actividad.service';
@@ -49,9 +50,58 @@ export class MiJornada implements OnInit, OnDestroy {
   mano al marcar salida es puro trámite (pedido explícito del usuario, 2026-09-28). Con esto guardado,
   marcarSalida() lo reenvía solo sin mostrarle el formulario; si el backend lo rechaza (cambió/venció mientras
   tanto) recién ahí se le pide escribirlo de nuevo (ver intentandoSalidaAutomatica).
+
+  Bug real (pedido del usuario, 2026-10-06): esto vivía solo en memoria (un simple campo de la clase) - si la
+  app se cerraba entre la entrada y la salida (muy común en Android: el sistema mata apps en segundo plano para
+  liberar memoria, o el trabajador la cierra sin querer), el valor se perdía y volvía a pedirle el token a
+  mano, justo lo que esto existe para evitar. Se guarda con @capacitor/preferences (igual que la cola de
+  OfflineSyncService), NUNCA localStorage: el propio OfflineSyncService ya documenta por qué (Android puede
+  limpiar el localStorage del WebView bajo presión de almacenamiento, Preferences no corre ese riesgo - doc
+  oficial de Capacitor), así que usar localStorage aquí habría dejado el mismo hueco a medio resolver. Se
+  guarda con la FECHA de Ecuador de cuando se guardó - así nunca se reintenta con el token de un día anterior
+  (el de hoy ya seguro cambió), evitando un reintento automático condenado a fallar antes de caer en el
+  formulario manual. La clave incluye el id del operador, por si el mismo celular lo usa mas de un trabajador
+  (dispositivo compartido).
   */
   private tokenHaciendaUsado = '';
   intentandoSalidaAutomatica = false;
+
+  private claveTokenHaciendaUsado(): string {
+    return `frugalp_token_hacienda_usado_${this.authService.perfil()?.id}`;
+  }
+
+  private async guardarTokenHaciendaUsado(token: string): Promise<void> {
+    this.tokenHaciendaUsado = token;
+    try {
+      const hoyEcuador = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Guayaquil' });
+      await Preferences.set({ key: this.claveTokenHaciendaUsado(), value: JSON.stringify({ token, fecha: hoyEcuador }) });
+    } catch {
+      // Preferences puede fallar (almacenamiento lleno, etc) - no es grave, solo se pierde la comodidad de
+      // recordarlo entre reinicios de la app, el campo en memoria sigue funcionando igual en esta sesión.
+    }
+  }
+
+  private async leerTokenHaciendaUsado(): Promise<string> {
+    if (this.tokenHaciendaUsado) return this.tokenHaciendaUsado;
+    try {
+      const { value: crudo } = await Preferences.get({ key: this.claveTokenHaciendaUsado() });
+      if (!crudo) return '';
+      const { token, fecha } = JSON.parse(crudo);
+      const hoyEcuador = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Guayaquil' });
+      return fecha === hoyEcuador ? token : '';
+    } catch {
+      return '';
+    }
+  }
+
+  private async borrarTokenHaciendaUsado(): Promise<void> {
+    this.tokenHaciendaUsado = '';
+    try {
+      await Preferences.remove({ key: this.claveTokenHaciendaUsado() });
+    } catch {
+      // ver guardarTokenHaciendaUsado - no es grave si falla.
+    }
+  }
 
   // --- Fase qr ---
   qrCodeUrl = '';
@@ -214,6 +264,9 @@ export class MiJornada implements OnInit, OnDestroy {
 
     this.procesandoCodigo = true;
     this.errorCodigo = '';
+    // Hora del CLIC, capturada ANTES de intentar la petición (ver comentario de procesarMarcacion en el
+    // backend) - solo se usa si esto termina siendo una SALIDA sin señal (ver el catch de abajo).
+    const horaClick = new Date().toISOString();
     this.asistenciaService.marcarConMiCodigo(this.codigoIngresado.trim(), undefined, undefined, accionJornadaAnterior).subscribe({
       next: (res) => {
         this.procesandoCodigo = false;
@@ -221,7 +274,7 @@ export class MiJornada implements OnInit, OnDestroy {
         this.intentandoSalidaAutomatica = false;
         // Se guarda el token que acaba de funcionar (entrada o salida) para no volver a pedirlo la próxima vez
         // que este trabajador marque salida (ver tokenHaciendaUsado/marcarSalida).
-        this.tokenHaciendaUsado = this.codigoIngresado.trim();
+        this.guardarTokenHaciendaUsado(this.codigoIngresado.trim());
         /*
         La ENTRADA por código lleva al Panel de Actividades, igual que el camino QR - el código solo reemplaza
         la forma de marcar presencia, no le quita al trabajador la posibilidad de registrar sus labores del día.
@@ -235,6 +288,8 @@ export class MiJornada implements OnInit, OnDestroy {
           this.mensajeFinal = res.message || 'Marcación registrada.';
           this.fase = 'terminado';
           this.detenerIntervalos();
+          // La jornada ya terminó - no tiene sentido seguir recordando este token para una próxima salida.
+          this.borrarTokenHaciendaUsado();
         }
         this.cdr.detectChanges();
       },
@@ -253,21 +308,44 @@ export class MiJornada implements OnInit, OnDestroy {
           return;
         }
         /*
+        Offline-first de la SALIDA por código (pedido del usuario, 2026-10-06): un fallo de RED real en un
+        intento de SALIDA (ya había una jornada abierta - asistenciaId conocido, el único caso en que
+        confirmarCodigo() se llama con una jornada abierta, ver marcarSalida) se encola con la hora del CLIC
+        (ver OfflineSyncService/encolarSalidaConCodigo) y se sincroniza sola cuando vuelva la señal - no tiene
+        sentido mostrarle el formulario pidiéndole reescribir un token que ya escribió bien, solo porque no hay
+        señal en este instante. La ENTRADA queda afuera a propósito (asistenciaId es null en ese caso):
+        siempre necesita confirmación del servidor, el trabajador recién está entrando (ver CLAUDE.md,
+        "offline-first solo cubre Panel de Actividades" + lo que ya cierra una jornada abierta).
+        */
+        const esIntentoDeSalida = this.asistenciaId !== null;
+        if (esIntentoDeSalida && this.offlineSyncService.esFalloDeRed(err)) {
+          this.offlineSyncService.encolarSalidaConCodigo(this.codigoIngresado.trim(), horaClick).then(() => {
+            this.intentandoSalidaAutomatica = false;
+            this.mensajeFinal = 'Sin señal: tu salida quedó guardada con la hora de este momento y se sincroniza sola cuando vuelva la conexión.';
+            this.fase = 'terminado';
+            this.detenerIntervalos();
+            // La jornada ya se dio por terminada en pantalla - no tiene sentido seguir recordando este token.
+            this.borrarTokenHaciendaUsado();
+            this.cdr.detectChanges();
+          });
+          return;
+        }
+        /*
         Reintento automático de salida con el token ya conocido (ver tokenHaciendaUsado/marcarSalida): si
-        FALLA por lo que sea (el Supervisor generó un token nuevo, se venció, sin conexión), no tiene caso
-        seguir mostrando "Cerrando tu jornada..." sin que nada pase - se revela el formulario normal con el
-        error puesto, para que el trabajador vea qué pasó y pueda escribir el token vigente a mano.
+        FALLA por un rechazo REAL del servidor (el Supervisor generó un token nuevo, se venció - no por falta
+        de señal, ya cubierto arriba), no tiene caso seguir mostrando "Cerrando tu jornada..." sin que nada
+        pase - se revela el formulario normal con el error puesto, para que el trabajador vea qué pasó y pueda
+        escribir el token vigente a mano.
         */
         if (this.intentandoSalidaAutomatica) {
           this.intentandoSalidaAutomatica = false;
           this.codigoIngresado = '';
         }
         /*
-        Fallo de RED real (sin señal, ver esFalloDeRed), no el backend rechazando el código - la ENTRADA
-        siempre necesita conexión (ver CLAUDE.md, "offline-first solo cubre Panel de Actividades"), así que acá
-        no se encola nada, solo se avisa con un mensaje claro. Sin este chequeo, `err.error?.message` termina
-        mostrando el texto crudo del error de red del WebView (ej. "Failed to fetch") tal cual - probado por el
-        usuario en el .apk real con el internet apagado.
+        Fallo de RED real en una ENTRADA (sin señal, ver esFalloDeRed) - esa siempre necesita conexión (ver
+        CLAUDE.md), así que acá no se encola nada, solo se avisa con un mensaje claro. Sin este chequeo,
+        `err.error?.message` termina mostrando el texto crudo del error de red del WebView (ej. "Failed to
+        fetch") tal cual - probado por el usuario en el .apk real con el internet apagado.
         */
         this.errorCodigo = this.offlineSyncService.esFalloDeRed(err)
           ? 'Sin conexión a internet. Conéctate e intenta de nuevo.'
@@ -618,20 +696,22 @@ export class MiJornada implements OnInit, OnDestroy {
   - Si no requiere código (QR normal, sin préstamo): vuelve a mostrar el QR flotante de siempre.
   Las actividades se derivan solas de lo ya cargado en el Panel, sin checklist, en los 3 casos.
   */
-  marcarSalida(): void {
+  async marcarSalida(): Promise<void> {
     if (this.requiereCodigo && !this.esPrestamoHoy) {
       this.fase = 'codigo';
       this.errorCodigo = '';
       this.preguntandoJornadaAmbigua = false;
-      if (this.tokenHaciendaUsado) {
-        this.codigoIngresado = this.tokenHaciendaUsado;
+      const tokenRecordado = await this.leerTokenHaciendaUsado();
+      if (tokenRecordado) {
+        this.codigoIngresado = tokenRecordado;
         this.intentandoSalidaAutomatica = true;
         this.confirmarCodigo();
       } else {
-        // No hay token guardado en memoria (ej. refrescó la página después de entrar, o volvió más tarde) -
-        // se le pide escribirlo una vez, como antes.
+        // Ni en memoria ni en Preferences hay un token de HOY guardado (primer uso del celular, o pasó a un
+        // día distinto) - se le pide escribirlo una vez, como antes.
         this.codigoIngresado = '';
       }
+      this.cdr.detectChanges();
     } else {
       // Si está saliendo de un préstamo (esPrestamoHoy), el subtítulo del QR también lo aclara.
       this.enOtraHacienda = this.esPrestamoHoy;
