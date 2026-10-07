@@ -20,6 +20,7 @@ const ETIQUETAS_ACCION: Record<AccionAuditoria, string> = {
   CAMBIAR_CREDENCIALES_OPERADOR: 'Cambió el usuario/clave de',
   GENERAR_TOKEN_HACIENDA: 'Generó el Token de',
   INVALIDAR_TOKEN_HACIENDA: 'Invalidó el Token de',
+  ELIMINAR_USUARIO: 'Eliminó la cuenta de',
 };
 
 // SUPERVISOR y ESCANER necesitan una hacienda fija desde su creacion (ver CLAUDE.md) - ADMIN/ASISTENTE no.
@@ -226,6 +227,28 @@ export class AdminPanel implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.notificacionService.error(err.error?.message || 'Error al resetear la clave.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  // Eliminar (soft-delete) una cuenta de oficina - desaparece de esta lista, pero su historial de auditoria
+  // se conserva (mismo patron que eliminarOperadorSeleccionado en asistencia-panel.ts).
+  async eliminarUsuario(usuario: Usuario): Promise<void> {
+    const confirmado = await this.confirmacionService.preguntar(
+      `¿Eliminar la cuenta de ${usuario.nombre_completo}? Ya no va a poder iniciar sesión ni aparecer en esta lista.`,
+      'Eliminar usuario'
+    );
+    if (!confirmado) return;
+
+    this.usuarioService.eliminarUsuario(usuario.id).subscribe({
+      next: () => {
+        this.notificacionService.exito('Usuario eliminado correctamente.');
+        this.cargarUsuarios();
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.notificacionService.error(err.error?.message || 'Error al eliminar el usuario.');
         this.cdr.detectChanges();
       },
     });

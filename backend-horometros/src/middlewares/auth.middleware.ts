@@ -42,7 +42,10 @@ export const verificarAutenticacion = async(req:Request, res:Response, next:Next
             ? await Usuario.findByPk(payload.id, { attributes: ['sesion_valida_desde'] })
             : await Operador.findByPk(payload.id, { attributes: ['sesion_valida_desde'] });
         if(sesionFueInvalidada(payload.iat, cuenta?.sesion_valida_desde)){
-            res.status(401).json({ message: 'Tu sesion fue invalidada (se cambio la clave). Vuelve a iniciar sesion.'});
+            // Mensaje generico a proposito: sesion_valida_desde se pisa en mas de un caso (cambio de clave,
+            // cuenta eliminada - ver resetearClaveUsuario/eliminarUsuario, usuario.controller.ts) - nombrar
+            // "se cambio la clave" aqui seria enganoso para los demas casos.
+            res.status(401).json({ message: 'Tu sesion ya no es valida. Vuelve a iniciar sesion.'});
             return;
         }
 
