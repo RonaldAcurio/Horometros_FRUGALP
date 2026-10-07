@@ -70,11 +70,14 @@
                   <button class="btn btn-secondary btn-sm" (click)="abrirModalClave(u)">
                     🔑 Resetear clave
                   </button>
-                  @if (u.id !== authService.perfil()?.id) {
-                    <button class="btn btn-danger btn-sm" (click)="eliminarUsuario(u)">
-                      🗑️ Eliminar
-                    </button>
-                  }
+                  <button
+                    class="btn btn-danger btn-sm"
+                    [disabled]="u.id === authService.perfil()?.id"
+                    [title]="u.id === authService.perfil()?.id ? 'No puedes eliminar tu propia cuenta.' : ''"
+                    (click)="eliminarUsuario(u)"
+                  >
+                    🗑️ Eliminar
+                  </button>
                 </td>
               </tr>
             }
