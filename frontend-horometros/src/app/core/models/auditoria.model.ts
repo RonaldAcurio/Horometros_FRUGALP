@@ -5,7 +5,9 @@ export type AccionAuditoria =
   | 'CAMBIAR_CREDENCIALES_OPERADOR'
   | 'GENERAR_TOKEN_HACIENDA'
   | 'INVALIDAR_TOKEN_HACIENDA'
-  | 'ELIMINAR_USUARIO';
+  | 'ELIMINAR_USUARIO'
+  | 'CERRAR_JORNADA'
+  | 'DESHACER_CIERRE_JORNADA';
 
 export interface RegistroAuditoria {
   id: number;
