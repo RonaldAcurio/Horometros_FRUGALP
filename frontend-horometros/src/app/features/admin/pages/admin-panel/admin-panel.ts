@@ -21,6 +21,8 @@ const ETIQUETAS_ACCION: Record<AccionAuditoria, string> = {
   GENERAR_TOKEN_HACIENDA: 'Generó el Token de',
   INVALIDAR_TOKEN_HACIENDA: 'Invalidó el Token de',
   ELIMINAR_USUARIO: 'Eliminó la cuenta de',
+  CERRAR_JORNADA: 'Cerró la jornada de',
+  DESHACER_CIERRE_JORNADA: 'Deshizo el cierre de jornada de',
 };
 
 // SUPERVISOR y ESCANER necesitan una hacienda fija desde su creacion (ver CLAUDE.md) - ADMIN/ASISTENTE no.
