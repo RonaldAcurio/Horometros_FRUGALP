@@ -21,4 +21,9 @@ export class UsuarioService {
   resetearClave(id: number, clave: string): Observable<{ message: string }> {
     return this.http.put<{ message: string }>(`${this.baseUrl}/${id}/clave`, { clave });
   }
+
+  // Soft-delete (pone activo:false) - mismo patron que eliminarOperador (asistencia.service.ts).
+  eliminarUsuario(id: number): Observable<{ message: string }> {
+    return this.http.delete<{ message: string }>(`${this.baseUrl}/${id}`);
+  }
 }

@@ -91,9 +91,14 @@ export const crearUsuario = async(req:Request, res:Response):Promise<void> => {
     }
 };
 
+// where: { activo: true } - una vez eliminada (soft-delete, ver eliminarUsuario abajo) una cuenta deja de
+// aparecer aqui, igual que un Operador eliminado deja de aparecer en el Directorio (mismo patron, pero sin
+// 'paranoid' porque Usuario ya tenia el campo 'activo' desde antes, usado por el login para bloquear el acceso -
+// agregar deletedAt hubiera sido una segunda forma de decir lo mismo).
 export const obtenerUsuarios = async(_req:Request, res:Response):Promise<void> => {
     try{
         const usuarios = await Usuario.findAll({
+            where: { activo: true },
             attributes: { exclude: ['clave_hash'] },
             include: [{ model: Hacienda, as: 'hacienda' }],
             order: [['nombre_completo', 'ASC']],
@@ -145,5 +150,50 @@ export const resetearClaveUsuario = async(req:Request, res:Response):Promise<voi
         console.error('Error al rescatar la clave del usuario.', err);
         res.status(500).json({ message: 'Error al rescatar la clave del usuario.' });
 
+    }
+};
+
+/*
+Eliminar (soft-delete) una cuenta de oficina (ADMIN/ASISTENTE/SUPERVISOR/ESCANER) - mismo boton y misma idea que
+ya existe para Mecanicos/Operadores (ver eliminarOperador, asistencia.controller.ts), pero usando el campo
+'activo' que Usuario ya tenia desde el principio (el login YA lo revisa, ver auth.controller.ts) en vez de
+agregar un 'deletedAt'/paranoid nuevo - serian 2 formas de decir lo mismo. Al "eliminarla": deja de aparecer en
+obtenerUsuarios (arriba), el login la rechaza, y cualquier sesion YA ABIERTA de esa cuenta tambien se corta al
+instante (sesion_valida_desde, mismo mecanismo que resetearClaveUsuario) - no tiene sentido desactivar una
+cuenta y que su JWT ya emitido siga sirviendo hasta que expire solo. Al igual que eliminarOperador, no hay forma
+de "deshacerlo" desde el panel (si hace falta, se crea una cuenta nueva).
+*/
+export const eliminarUsuario = async(req:Request, res:Response):Promise<void> => {
+    try{
+        const { id } = req.params;
+        const idNumero = Number(id);
+
+        // Nadie puede eliminar su propia cuenta desde aqui - se quedaria sin sesion (sesion_valida_desde) y sin
+        // poder volver a entrar (activo:false) en el mismo clic, sin que haya forma de deshacerlo desde el panel.
+        if(req.auth?.tipo === 'usuario' && req.auth.id === idNumero){
+            res.status(400).json({ message: 'No puedes eliminar tu propia cuenta.' });
+            return;
+        }
+
+        const usuario = await Usuario.findByPk(idNumero);
+        if(!usuario){
+            res.status(404).json({ message: 'Usuario no encontrado.' });
+            return;
+        }
+
+        await usuario.update({ activo: false, sesion_valida_desde: new Date() });
+
+        await registrarAuditoria({
+            actorUsuarioId: req.auth!.id,
+            accion: 'ELIMINAR_USUARIO',
+            objetivoTipo: 'usuario',
+            objetivoId: usuario.id,
+            objetivoNombre: usuario.nombre_completo,
+        });
+
+        res.json({ message: 'Usuario eliminado correctamente.' });
+    }catch(err){
+        console.error('Error al eliminar el usuario.', err);
+        res.status(500).json({ message: 'Error al eliminar el usuario.' });
     }
 };

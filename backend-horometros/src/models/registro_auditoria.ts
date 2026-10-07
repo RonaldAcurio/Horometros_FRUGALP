@@ -9,7 +9,8 @@ export type AccionAuditoria =
     | 'GENERAR_TOKEN_HACIENDA'
     | 'INVALIDAR_TOKEN_HACIENDA'
     | 'CERRAR_JORNADA'
-    | 'DESHACER_CIERRE_JORNADA';
+    | 'DESHACER_CIERRE_JORNADA'
+    | 'ELIMINAR_USUARIO';
 
 export type ObjetivoAuditoria = 'usuario' | 'operador' | 'hacienda';
 
