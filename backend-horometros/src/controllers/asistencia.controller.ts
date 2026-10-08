@@ -1440,18 +1440,34 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
                 where: { id: { [Op.in]: haciendaIdsAInvalidar } },
                 attributes: ['id', 'nombre'],
             });
-            await Hacienda.update(
-                { token_actual: null, token_expira_en: null },
-                { where: { id: { [Op.in]: haciendaIdsAInvalidar } } },
-            );
+
+            /*
+            Bug real (reportado 2026-10-08): el Token de Hacienda (token_actual/token_expira_en) es un dato DE
+            LA HACIENDA, "el token que sirve ahora mismo" - no esta atado a ninguna fecha puntual. Cerrar un dia
+            ATRASADO (fechaProcesar distinto de hoy, backlog normal: el ADMIN puede cerrar cualquier dia viejo
+            pendiente, ver 'fecha' en el body) invalidaba igual el token COMO SI fuera el cierre de HOY -
+            borrando sin querer un token de HOY que seguia vigente y en uso real (el Supervisor ya lo habia
+            generado y los trabajadores ya habian marcado con el esa misma mañana). Esta invalidacion solo tiene
+            sentido para el cierre de HOY (ver el comentario de arriba: evitar que alguien siga marcando DESPUES
+            de que se dio el dia por cerrado) - cerrar un dia pasado no debe poder tocar el token de hoy.
+            */
+            const esHoy = fechaProcesar === obtenerFechaLocalEcuador();
+            if (esHoy) {
+                await Hacienda.update(
+                    { token_actual: null, token_expira_en: null },
+                    { where: { id: { [Op.in]: haciendaIdsAInvalidar } } },
+                );
+                for (const hda of haciendasAInvalidar) {
+                    await registrarAuditoria({
+                        actorUsuarioId: req.auth!.id,
+                        accion: 'INVALIDAR_TOKEN_HACIENDA',
+                        objetivoTipo: 'hacienda',
+                        objetivoId: hda.id,
+                        objetivoNombre: hda.nombre,
+                    });
+                }
+            }
             for (const hda of haciendasAInvalidar) {
-                await registrarAuditoria({
-                    actorUsuarioId: req.auth!.id,
-                    accion: 'INVALIDAR_TOKEN_HACIENDA',
-                    objetivoTipo: 'hacienda',
-                    objetivoId: hda.id,
-                    objetivoNombre: hda.nombre,
-                });
                 await CierreJornada.findOrCreate({
                     where: { hacienda_id: hda.id, fecha: fechaProcesar },
                     defaults: { hacienda_id: hda.id, fecha: fechaProcesar, cerrado_por_usuario_id: req.auth!.id },
