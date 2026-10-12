@@ -148,12 +148,21 @@
                 </div>
                 <div class="form-group">
                   <label class="form-label">Supervisor (hacienda permanente)</label>
-                  <select class="input-control" [(ngModel)]="supervisorIdSeleccionado">
+                  <select class="input-control" [(ngModel)]="supervisorIdSeleccionado" (ngModelChange)="onCambiarSupervisorFicha()">
                     <option [ngValue]="null">Sin asignar</option>
                     @for (sup of supervisores; track sup) {
                       <option [ngValue]="sup.id">
                         {{ sup.nombre_completo }} — {{ sup.hacienda?.nombre }}
                       </option>
+                    }
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Área (sección de la hacienda)</label>
+                  <select class="input-control" [(ngModel)]="seccionIdSeleccionada" [disabled]="!supervisorIdSeleccionado">
+                    <option [ngValue]="null">Sin asignar</option>
+                    @for (sec of seccionesFicha; track sec) {
+                      <option [ngValue]="sec.id">{{ sec.nombre }}</option>
                     }
                   </select>
                 </div>
@@ -774,12 +783,27 @@
               [(ngModel)]="nuevoOperador.supervisor_id"
               name="supervisor_id"
               class="input-control w-full"
+              (ngModelChange)="onCambiarSupervisorNuevo()"
             >
               <option [ngValue]="null">Sin asignar</option>
               @for (sup of supervisores; track sup) {
                 <option [ngValue]="sup.id">
                   {{ sup.nombre_completo }} — {{ sup.hacienda?.nombre }}
                 </option>
+              }
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Área (sección de la hacienda)</label>
+            <select
+              [(ngModel)]="nuevoOperador.seccion_id"
+              name="seccion_id"
+              class="input-control w-full"
+              [disabled]="!nuevoOperador.supervisor_id"
+            >
+              <option [ngValue]="null">Sin asignar</option>
+              @for (sec of seccionesNuevoOperador; track sec) {
+                <option [ngValue]="sec.id">{{ sec.nombre }}</option>
               }
             </select>
           </div>

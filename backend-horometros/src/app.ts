@@ -10,6 +10,7 @@ import usuarioRoutes from './routes/usuario.rutes';
 import equipoRoutes from './routes/equipo.rutes';
 import auditoriaRoutes from './routes/auditoria.rutes';
 import registroPeticionRoutes from './routes/registro_peticion.rutes';
+import seccionRoutes from './routes/seccion.rutes';
 import { registrarPeticion } from './middlewares/registrar-peticion.middleware';
 
 const app: Application = express();
@@ -59,6 +60,7 @@ app.use('/api/usuarios',usuarioRoutes);
 app.use('/api/equipos',equipoRoutes);
 app.use('/api/auditoria',auditoriaRoutes);
 app.use('/api/peticiones',registroPeticionRoutes);
+app.use('/api/secciones',seccionRoutes);
 
 //Ruta de comprobacion de estado (Healthcheck)
 app.get('/api/health', (_req,res)=>{

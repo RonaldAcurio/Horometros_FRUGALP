@@ -9,6 +9,8 @@ import { AsistenciaService } from '../../../../core/services/asistencia.service'
 import { UsuarioService } from '../../../../core/services/usuario.service';
 import { RegistroActividadService } from '../../../../core/services/registro-actividad.service';
 import { HaciendaService } from '../../../../core/services/hacienda.service';
+import { SeccionService } from '../../../../core/services/seccion.service';
+import { Seccion } from '../../../../core/models/seccion.model';
 import { ExportarExcelService } from '../../../../core/services/exportar-excel.service';
 import { Usuario } from '../../../../core/models/usuario.model';
 import { Hacienda } from '../../../../core/models/hacienda.model';
@@ -59,6 +61,10 @@ export class AsistenciaPanel implements OnInit{
   direccion: string = '';
   // A que Supervisor (y por lo tanto hacienda) pertenece de forma permanente este trabajador.
   supervisorIdSeleccionado: number | null = null;
+  // Area/Seccion fija DENTRO de esa hacienda (ver seccion.model.ts) - las opciones dependen de que hacienda
+  // tenga el Supervisor elegido arriba, por eso se recargan cada vez que ese select cambia.
+  seccionIdSeleccionada: number | null = null;
+  seccionesFicha: Seccion[] = [];
   rolSeleccionado: 'MECANICO' | 'OPERADOR' = 'MECANICO';
   // Credenciales: solo se usan para ASIGNAR por primera vez (si el operador ya tiene usuario, se resetea
   // la clave aparte, ver abrirModalResetClaveOperador - usuario+clave van siempre juntos).
@@ -83,10 +89,12 @@ export class AsistenciaPanel implements OnInit{
     telefono: '',
     direccion: '',
     supervisor_id: null,
+    seccion_id: null,
     usuario: '',
     rol: 'MECANICO',
   };
   nuevoOperadorClave: string = '';
+  seccionesNuevoOperador: Seccion[] = [];
 
   //Historial de ASISTENCIA
   tabActual: 'directorio' | 'historial' | 'equipos' | 'actividades' | 'terminos' = 'directorio';
@@ -204,6 +212,7 @@ export class AsistenciaPanel implements OnInit{
     private usuarioService: UsuarioService,
     private registroActividadService: RegistroActividadService,
     private haciendaService: HaciendaService,
+    private seccionService: SeccionService,
     private exportarExcelService: ExportarExcelService,
     private cdr: ChangeDetectorRef,
     private notificacionService: NotificacionService,
@@ -276,6 +285,42 @@ export class AsistenciaPanel implements OnInit{
     }
   }
 
+  // Resuelve la hacienda de un Supervisor a partir de la lista ya cargada (ver cargarSupervisores) - Usuario.hacienda
+  // viene anidado en la respuesta (ver usuario.model.ts), hacienda_id es el respaldo si no vino incluido.
+  private haciendaIdDeSupervisor(supervisorId: number | null): number | null {
+    const sup = this.supervisores.find((s) => s.id === supervisorId);
+    return sup?.hacienda?.id ?? sup?.hacienda_id ?? null;
+  }
+
+  private cargarSeccionesPara(haciendaId: number | null, destino: 'ficha' | 'nuevo'): void {
+    if (!haciendaId) {
+      if (destino === 'ficha') this.seccionesFicha = [];
+      else this.seccionesNuevoOperador = [];
+      this.cdr.detectChanges();
+      return;
+    }
+    this.seccionService.obtenerSecciones(haciendaId).subscribe({
+      next: (data) => {
+        if (destino === 'ficha') this.seccionesFicha = data;
+        else this.seccionesNuevoOperador = data;
+        this.cdr.detectChanges();
+      },
+      error: (err) => console.error('Error cargando secciones:', err),
+    });
+  }
+
+  // Se llama cuando el select de Supervisor cambia (ficha de edición) - la hacienda puede haber cambiado, asi
+  // que la Seccion elegida antes ya no necesariamente aplica.
+  onCambiarSupervisorFicha(): void {
+    this.seccionIdSeleccionada = null;
+    this.cargarSeccionesPara(this.haciendaIdDeSupervisor(this.supervisorIdSeleccionado), 'ficha');
+  }
+
+  onCambiarSupervisorNuevo(): void {
+    this.nuevoOperador.seccion_id = null;
+    this.cargarSeccionesPara(this.haciendaIdDeSupervisor(this.nuevoOperador.supervisor_id ?? null), 'nuevo');
+  }
+
   // SELECCIÓN Y EDICIÓN
   async seleccionarOperador(op: Operador): Promise<void> {
     this.operadorSeleccionado = op;
@@ -283,6 +328,10 @@ export class AsistenciaPanel implements OnInit{
     this.telefono = op.telefono || '';
     this.direccion = op.direccion || '';
     this.supervisorIdSeleccionado = op.supervisor_id ?? null;
+    // A diferencia de onCambiarSupervisorFicha, aca SI se conserva la Seccion ya asignada (no se resetea) -
+    // solo se recarga la lista de opciones para poder mostrarla seleccionada.
+    this.seccionIdSeleccionada = op.seccion_id ?? null;
+    this.cargarSeccionesPara(this.haciendaIdDeSupervisor(this.supervisorIdSeleccionado), 'ficha');
     this.rolSeleccionado = op.rol || 'MECANICO';
     this.credencialesOperador = { usuario: '', clave: '' };
     this.mostrarClaveCredenciales.set(false);
@@ -307,6 +356,7 @@ export class AsistenciaPanel implements OnInit{
       telefono: this.telefono,
       direccion: this.direccion,
       supervisor_id: this.supervisorIdSeleccionado,
+      seccion_id: this.seccionIdSeleccionada,
       rol: this.rolSeleccionado,
     };
 
@@ -364,12 +414,13 @@ export class AsistenciaPanel implements OnInit{
 
   // MODAL NUEVO OPERADOR
   private operadorNuevoVacio(): Partial<Operador> {
-    return { nombre_completo: '', codigo_megued: '', cedula: '', telefono: '', direccion: '', supervisor_id: null, usuario: '', rol: 'MECANICO' };
+    return { nombre_completo: '', codigo_megued: '', cedula: '', telefono: '', direccion: '', supervisor_id: null, seccion_id: null, usuario: '', rol: 'MECANICO' };
   }
 
   abrirModalNuevoOperador(): void {
     this.nuevoOperador = this.operadorNuevoVacio();
     this.nuevoOperadorClave = '';
+    this.seccionesNuevoOperador = [];
     this.mostrarClaveNuevoOperador.set(false);
     this.mostrarModalOperador = true;
     this.cdr.detectChanges();
@@ -379,6 +430,7 @@ export class AsistenciaPanel implements OnInit{
     this.mostrarModalOperador = false;
     this.nuevoOperador = this.operadorNuevoVacio();
     this.nuevoOperadorClave = '';
+    this.seccionesNuevoOperador = [];
     this.cdr.detectChanges();
   }
 
@@ -393,6 +445,7 @@ export class AsistenciaPanel implements OnInit{
       delete datos.usuario;
     }
     if (!datos.supervisor_id) delete datos.supervisor_id;
+    if (!datos.seccion_id) delete datos.seccion_id;
 
     this.asistenciaService.crearOperador(datos).subscribe({
       next: () => {

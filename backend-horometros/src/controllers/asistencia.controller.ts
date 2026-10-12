@@ -7,6 +7,7 @@ import { Op, literal } from 'sequelize';
 import { AsistenciaActividad, RegistroActividad, CierreJornada } from '../models';
 import { Usuario } from '../models/usuario';
 import { Hacienda } from '../models/hacienda';
+import { Seccion } from '../models/seccion';
 import bcrypt from 'bcryptjs';
 import { generarTokenQrJornada, verificarTokenQrJornada, PayloadToken } from '../services/jwt.service';
 import { tokenHaciendaVigente } from '../utils/token-hacienda';
@@ -134,11 +135,37 @@ const mensajeDuplicadoGenerico = (err: any): string | null => {
     return 'Ese dato ya está en uso por otro registro.';
 };
 
+/*
+Area fija del trabajador (seccion_id, ver models/operador.ts): valida que la Seccion elegida pertenezca a la
+MISMA hacienda que el Supervisor del Operador (via Usuario.hacienda_id) - sin esto, por error de UI/API se
+podria dejar a un trabajador de la Hacienda A con una Seccion de la Hacienda B. seccion_id===null/undefined
+("sin asignar") siempre es valido, no requiere Supervisor.
+*/
+const validarSeccionDeOperador = async (
+    seccionId: number | string | null | undefined,
+    supervisorId: number | null,
+): Promise<string | null> => {
+    if(seccionId === undefined || seccionId === null || seccionId === '') return null;
+
+    const seccion = await Seccion.findByPk(Number(seccionId));
+    if(!seccion){
+        return 'La sección indicada no existe.';
+    }
+    if(!supervisorId){
+        return 'Para asignar una Sección, el trabajador debe tener un Supervisor asignado primero.';
+    }
+    const supervisor = await Usuario.findByPk(supervisorId, { attributes: ['hacienda_id'] });
+    if(!supervisor?.hacienda_id || supervisor.hacienda_id !== seccion.hacienda_id){
+        return 'La sección elegida no pertenece a la hacienda del supervisor seleccionado.';
+    }
+    return null;
+};
+
 //Crear un Nuevo Operador
 export const crearOperador = async (req:Request, res:Response):Promise<void> => {
     try{
 
-        const { nombre_completo, codigo_megued, cedula, telefono, direccion, rol } = req.body;
+        const { nombre_completo, codigo_megued, cedula, telefono, direccion, rol, seccion_id } = req.body;
         if(!nombre_completo || !codigo_megued){
             res.status(400).json({message:'El nombre completo y el codigo son obligatorios'});
             return;
@@ -169,6 +196,12 @@ export const crearOperador = async (req:Request, res:Response):Promise<void> => 
         const credenciales = await validarCredencialesOperador(req, res);
         if(!credenciales) return; // ya se respondio el error adentro
 
+        const errorSeccion = await validarSeccionDeOperador(seccion_id, credenciales.supervisor_id);
+        if(errorSeccion){
+            res.status(400).json({ message: errorSeccion });
+            return;
+        }
+
         const nuevoOperador = await Operador.create({
             nombre_completo,
             codigo_megued,
@@ -181,6 +214,7 @@ export const crearOperador = async (req:Request, res:Response):Promise<void> => 
             // Sin 'rol' en el body, se queda con el default de la BD ('MECANICO').
             ...(rol ? { rol } : {}),
             supervisor_id: credenciales.supervisor_id,
+            seccion_id: seccion_id ? Number(seccion_id) : null,
             usuario: credenciales.usuario,
             clave_hash: credenciales.clave_hash,
         });
@@ -341,7 +375,7 @@ export const importarOperadores = async (req: Request, res: Response): Promise<v
 export const actualizarOperador = async (req:Request, res:Response):Promise<void> => {
     try{
         const { id } = req.params;
-        const { cedula, telefono, direccion, rol } = req.body;
+        const { cedula, telefono, direccion, rol, seccion_id } = req.body;
 
         if(rol && !ROLES_OPERADOR_VALIDOS.includes(rol)){
             res.status(400).json({message: `rol debe ser uno de: ${ROLES_OPERADOR_VALIDOS.join(', ')}.`});
@@ -363,6 +397,17 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
         const credenciales = await validarCredencialesOperador(req, res, operador.id);
         if(!credenciales) return;
 
+        // Validar contra el Supervisor FINAL (el nuevo si lo mandaron, si no el que ya tenia) - un cambio de
+        // Supervisor sin cambiar la Seccion podria dejar una combinacion invalida si no se revalida aca.
+        const supervisorFinal = credenciales.supervisor_id ?? operador.supervisor_id;
+        if(seccion_id !== undefined){
+            const errorSeccion = await validarSeccionDeOperador(seccion_id, supervisorFinal);
+            if(errorSeccion){
+                res.status(400).json({ message: errorSeccion });
+                return;
+            }
+        }
+
         // Si esta edicion incluyo una clave nueva, invalida cualquier JWT de este Operador emitido antes de
         // ahora (mismo motivo que resetearClaveOperador) - si no cambio la clave, no toca la sesion vigente.
         const claveCambio = credenciales.clave_hash !== null;
@@ -374,6 +419,7 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
             // ?? en vez de || : si no mandan un dato nuevo, conservamos el que ya tenia (no lo borramos).
             rol: rol ?? operador.rol,
             supervisor_id: credenciales.supervisor_id ?? operador.supervisor_id,
+            seccion_id: seccion_id !== undefined ? (seccion_id ? Number(seccion_id) : null) : operador.seccion_id,
             usuario: credenciales.usuario ?? operador.usuario,
             clave_hash: credenciales.clave_hash ?? operador.clave_hash,
             sesion_valida_desde: claveCambio ? new Date() : operador.sesion_valida_desde,

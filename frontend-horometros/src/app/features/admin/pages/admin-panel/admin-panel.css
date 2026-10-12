@@ -61,3 +61,42 @@
   color: #b91c1c;
   font-weight: 600;
 }
+
+.input-control-sm {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+  width: auto;
+}
+
+/* Fila expandida con las Secciones de una Hacienda (ver toggleSecciones en admin-panel.ts) */
+.secciones-fila {
+  background: #f4f8f1;
+}
+
+.secciones-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.5rem 0.25rem;
+}
+
+.secciones-lista {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+}
+
+.secciones-lista li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.secciones-nueva {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}

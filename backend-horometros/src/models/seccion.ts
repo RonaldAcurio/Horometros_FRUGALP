@@ -5,6 +5,10 @@ export class Seccion extends Model<InferAttributes<Seccion>, InferCreationAttrib
     declare id: CreationOptional<number>;
     declare nombre: string;
     declare hacienda_id: number;
+    // deletedAt SI se declara (igual que Equipo/Actividad/Operador) porque crearSeccion la necesita leer con
+    // paranoid:false antes de insertar - el UNIQUE(hacienda_id, nombre) de la migracion sigue viendo ocupado
+    // el nombre de una Seccion eliminada, aunque un findAll() normal no la muestre.
+    declare deletedAt: CreationOptional<Date | null>;
 }
 
 Seccion.init(
@@ -25,6 +29,10 @@ Seccion.init(
                 model: 'haciendas',
                 key:'id',
             },
+        },
+        deletedAt: {
+            type: DataTypes.DATE,
+            allowNull: true,
         },
     },
     {
