@@ -136,17 +136,23 @@ const mensajeDuplicadoGenerico = (err: any): string | null => {
 };
 
 /*
-Area fija del trabajador (seccion_id, ver models/operador.ts): valida que la Seccion elegida pertenezca a la
-MISMA hacienda que el Supervisor del Operador (via Usuario.hacienda_id) - sin esto, por error de UI/API se
-podria dejar a un trabajador de la Hacienda A con una Seccion de la Hacienda B. seccion_id===null/undefined
-("sin asignar") siempre es valido, no requiere Supervisor.
+Area fija del trabajador (seccion_id, ver models/operador.ts): exclusiva de rol OPERADOR (mismo criterio ya
+documentado en el comentario del modelo RegistroActividad - MECANICO usa 'area'/OT en texto libre, nunca
+Seccion). Ademas valida que la Seccion elegida pertenezca a la MISMA hacienda que el Supervisor del Operador
+(via Usuario.hacienda_id) - sin esto, por error de UI/API se podria dejar a un trabajador de la Hacienda A con
+una Seccion de la Hacienda B. seccion_id===null/undefined ("sin asignar") siempre es valido, no requiere
+Supervisor ni importa el rol.
 */
 const validarSeccionDeOperador = async (
     seccionId: number | string | null | undefined,
     supervisorId: number | null,
+    rolFinal: string,
 ): Promise<string | null> => {
     if(seccionId === undefined || seccionId === null || seccionId === '') return null;
 
+    if(rolFinal !== 'OPERADOR'){
+        return 'El Área (Sección) solo aplica a trabajadores con rol Operador.';
+    }
     const seccion = await Seccion.findByPk(Number(seccionId));
     if(!seccion){
         return 'La sección indicada no existe.';
@@ -196,7 +202,7 @@ export const crearOperador = async (req:Request, res:Response):Promise<void> => 
         const credenciales = await validarCredencialesOperador(req, res);
         if(!credenciales) return; // ya se respondio el error adentro
 
-        const errorSeccion = await validarSeccionDeOperador(seccion_id, credenciales.supervisor_id);
+        const errorSeccion = await validarSeccionDeOperador(seccion_id, credenciales.supervisor_id, rol || 'MECANICO');
         if(errorSeccion){
             res.status(400).json({ message: errorSeccion });
             return;
@@ -397,16 +403,25 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
         const credenciales = await validarCredencialesOperador(req, res, operador.id);
         if(!credenciales) return;
 
-        // Validar contra el Supervisor FINAL (el nuevo si lo mandaron, si no el que ya tenia) - un cambio de
-        // Supervisor sin cambiar la Seccion podria dejar una combinacion invalida si no se revalida aca.
+        // Validar contra el Supervisor y el ROL FINALES (el nuevo si lo mandaron, si no el que ya tenia) - un
+        // cambio de Supervisor o de Rol sin cambiar la Seccion podria dejar una combinacion invalida si no se
+        // revalida aca.
         const supervisorFinal = credenciales.supervisor_id ?? operador.supervisor_id;
+        const rolFinal = rol ?? operador.rol;
         if(seccion_id !== undefined){
-            const errorSeccion = await validarSeccionDeOperador(seccion_id, supervisorFinal);
+            const errorSeccion = await validarSeccionDeOperador(seccion_id, supervisorFinal, rolFinal);
             if(errorSeccion){
                 res.status(400).json({ message: errorSeccion });
                 return;
             }
         }
+        // Si el ROL final deja de ser OPERADOR (cambio ahora mismo, o ya lo era antes), la Seccion queda
+        // SIEMPRE en null - aunque esta edicion ni siquiera haya tocado seccion_id. Sin esto, cambiar de
+        // OPERADOR a MECANICO sin mandar seccion_id dejaria al trabajador con una Seccion "fantasma" que ya
+        // no deberia poder tener.
+        const seccionIdFinal = rolFinal !== 'OPERADOR'
+            ? null
+            : (seccion_id !== undefined ? (seccion_id ? Number(seccion_id) : null) : operador.seccion_id);
 
         // Si esta edicion incluyo una clave nueva, invalida cualquier JWT de este Operador emitido antes de
         // ahora (mismo motivo que resetearClaveOperador) - si no cambio la clave, no toca la sesion vigente.
@@ -419,7 +434,7 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
             // ?? en vez de || : si no mandan un dato nuevo, conservamos el que ya tenia (no lo borramos).
             rol: rol ?? operador.rol,
             supervisor_id: credenciales.supervisor_id ?? operador.supervisor_id,
-            seccion_id: seccion_id !== undefined ? (seccion_id ? Number(seccion_id) : null) : operador.seccion_id,
+            seccion_id: seccionIdFinal,
             usuario: credenciales.usuario ?? operador.usuario,
             clave_hash: credenciales.clave_hash ?? operador.clave_hash,
             sesion_valida_desde: claveCambio ? new Date() : operador.sesion_valida_desde,

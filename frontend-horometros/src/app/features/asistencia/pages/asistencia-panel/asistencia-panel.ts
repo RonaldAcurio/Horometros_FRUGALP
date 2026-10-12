@@ -321,6 +321,17 @@ export class AsistenciaPanel implements OnInit{
     this.cargarSeccionesPara(this.haciendaIdDeSupervisor(this.nuevoOperador.supervisor_id ?? null), 'nuevo');
   }
 
+  // Área/Sección es EXCLUSIVA de rol OPERADOR (ver seccion.model.ts) - un MECANICO usa 'area'/OT en texto libre
+  // en cada labor, nunca esto. Al pasar a MECANICO se limpia la seleccion para no guardar un valor que el
+  // backend va a rechazar (ver validarSeccionDeOperador, asistencia.controller.ts).
+  onCambiarRolFicha(): void {
+    if (this.rolSeleccionado !== 'OPERADOR') this.seccionIdSeleccionada = null;
+  }
+
+  onCambiarRolNuevo(): void {
+    if (this.nuevoOperador.rol !== 'OPERADOR') this.nuevoOperador.seccion_id = null;
+  }
+
   // SELECCIÓN Y EDICIÓN
   async seleccionarOperador(op: Operador): Promise<void> {
     this.operadorSeleccionado = op;
