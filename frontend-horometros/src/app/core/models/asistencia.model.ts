@@ -9,6 +9,9 @@ export interface Operador {
     // Credenciales de acceso (opcionales, van siempre juntas usuario+clave). 'usuario' se puede leer (para
     // mostrarlo), la clave nunca viaja de vuelta del backend - solo se manda al crear/resetear.
     supervisor_id?: number | null;
+    // Area/Seccion fija del trabajador dentro de la hacienda de su Supervisor (ver seccion.model.ts) - elegida
+    // al crearlo, igual que supervisor_id. null/undefined = sin asignar.
+    seccion_id?: number | null;
     usuario?: string | null;
     // Solo viene en obtenerHistorial (hoja imprimible, asistencia-panel.ts) - la hacienda PERMANENTE del
     // trabajador, via su Supervisor.

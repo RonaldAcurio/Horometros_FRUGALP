@@ -148,7 +148,7 @@
                 </div>
                 <div class="form-group">
                   <label class="form-label">Supervisor (hacienda permanente)</label>
-                  <select class="input-control" [(ngModel)]="supervisorIdSeleccionado">
+                  <select class="input-control" [(ngModel)]="supervisorIdSeleccionado" (ngModelChange)="onCambiarSupervisorFicha()">
                     <option [ngValue]="null">Sin asignar</option>
                     @for (sup of supervisores; track sup) {
                       <option [ngValue]="sup.id">
@@ -157,9 +157,21 @@
                     }
                   </select>
                 </div>
+                <!-- Área (Sección): exclusiva de rol OPERADOR - un MECANICO usa el campo "OT" (area libre) de cada labor, nunca esto. -->
+                @if (rolSeleccionado === 'OPERADOR') {
+                  <div class="form-group">
+                    <label class="form-label">Área (sección de la hacienda)</label>
+                    <select class="input-control" [(ngModel)]="seccionIdSeleccionada" [disabled]="!supervisorIdSeleccionado">
+                      <option [ngValue]="null">Sin asignar</option>
+                      @for (sec of seccionesFicha; track sec) {
+                        <option [ngValue]="sec.id">{{ sec.nombre }}</option>
+                      }
+                    </select>
+                  </div>
+                }
                 <div class="form-group">
                   <label class="form-label">Rol</label>
-                  <select class="input-control" [(ngModel)]="rolSeleccionado">
+                  <select class="input-control" [(ngModel)]="rolSeleccionado" (ngModelChange)="onCambiarRolFicha()">
                     <option value="MECANICO">Mecánico</option>
                     <option value="OPERADOR">Operador</option>
                   </select>
@@ -774,6 +786,7 @@
               [(ngModel)]="nuevoOperador.supervisor_id"
               name="supervisor_id"
               class="input-control w-full"
+              (ngModelChange)="onCambiarSupervisorNuevo()"
             >
               <option [ngValue]="null">Sin asignar</option>
               @for (sup of supervisores; track sup) {
@@ -783,6 +796,23 @@
               }
             </select>
           </div>
+          <!-- Área (Sección): exclusiva de rol OPERADOR - un MECANICO usa el campo "OT" (area libre) de cada labor, nunca esto. -->
+          @if (nuevoOperador.rol === 'OPERADOR') {
+            <div>
+              <label class="form-label">Área (sección de la hacienda)</label>
+              <select
+                [(ngModel)]="nuevoOperador.seccion_id"
+                name="seccion_id"
+                class="input-control w-full"
+                [disabled]="!nuevoOperador.supervisor_id"
+              >
+                <option [ngValue]="null">Sin asignar</option>
+                @for (sec of seccionesNuevoOperador; track sec) {
+                  <option [ngValue]="sec.id">{{ sec.nombre }}</option>
+                }
+              </select>
+            </div>
+          }
           <div>
             <label class="form-label">Rol *</label>
             <select
@@ -790,6 +820,7 @@
               name="rol"
               required
               class="input-control w-full"
+              (ngModelChange)="onCambiarRolNuevo()"
             >
               <option value="MECANICO">Mecánico</option>
               <option value="OPERADOR">Operador</option>

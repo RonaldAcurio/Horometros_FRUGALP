@@ -51,6 +51,9 @@ Hacienda.hasMany(Seccion, { foreignKey: 'hacienda_id', as: 'secciones' });
 Operador.belongsTo(Usuario, { foreignKey: 'supervisor_id', as: 'supervisor' });
 Usuario.hasMany(Operador, { foreignKey: 'supervisor_id', as: 'operadores' });
 
+Operador.belongsTo(Seccion, { foreignKey: 'seccion_id', as: 'seccion' });
+Seccion.hasMany(Operador, { foreignKey: 'seccion_id', as: 'operadores' });
+
 Asistencia.belongsTo(Hacienda, { foreignKey: 'hacienda_prestamo_id', as: 'haciendaPrestamo' });
 Asistencia.belongsTo(Usuario, { foreignKey: 'admitido_por_usuario_id', as: 'admitidoPor' });
 

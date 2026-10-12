@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { UsuarioService } from '../../../../core/services/usuario.service';
 import { HaciendaService } from '../../../../core/services/hacienda.service';
+import { SeccionService } from '../../../../core/services/seccion.service';
+import { Seccion } from '../../../../core/models/seccion.model';
 import { NotificacionService } from '../../../../core/services/notificacion.service';
 import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
 import { AuthService } from '../../../../core/services/auth.service';
@@ -38,6 +40,7 @@ const CARGOS_CON_HACIENDA: CargoUsuario[] = ['SUPERVISOR', 'ESCANER'];
 export class AdminPanel implements OnInit, OnDestroy {
   private usuarioService = inject(UsuarioService);
   private haciendaService = inject(HaciendaService);
+  private seccionService = inject(SeccionService);
   private notificacionService = inject(NotificacionService);
   private confirmacionService = inject(ConfirmacionService);
   private auditoriaService = inject(AuditoriaService);
@@ -79,6 +82,20 @@ export class AdminPanel implements OnInit, OnDestroy {
   // Modal: Nueva Hacienda
   mostrarModalHacienda = false;
   nombreHaciendaNueva = '';
+
+  /*
+  Secciones/Áreas de cada Hacienda (pedido del usuario, 2026-10-12): se gestionan expandiendo la fila de esa
+  hacienda en esta misma pestaña (no hay pestaña propia, a diferencia de Equipo/Actividad en el Panel de
+  Asistente - una Sección pertenece a UNA hacienda puntual, no es un catálogo global). Se cargan recién al
+  expandir, por hacienda, y se cachean en seccionesPorHacienda para no volver a pedirlas si se colapsa/expande
+  la misma fila varias veces.
+  */
+  haciendaExpandidaId: number | null = null;
+  seccionesPorHacienda: Record<number, Seccion[]> = {};
+  cargandoSecciones = false;
+  nuevaSeccionNombre = '';
+  seccionEditandoId: number | null = null;
+  nombreSeccionEditando = '';
 
   ngOnInit(): void {
     this.cargarUsuarios();
@@ -317,6 +334,107 @@ export class AdminPanel implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.notificacionService.error(err.error?.message || 'Error al crear la hacienda.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  // --- Secciones/Áreas de una Hacienda ---
+  toggleSecciones(hacienda: Hacienda): void {
+    if (this.haciendaExpandidaId === hacienda.id) {
+      this.haciendaExpandidaId = null;
+      this.cdr.detectChanges();
+      return;
+    }
+
+    this.haciendaExpandidaId = hacienda.id;
+    this.nuevaSeccionNombre = '';
+    this.seccionEditandoId = null;
+    if (!this.seccionesPorHacienda[hacienda.id]) {
+      this.cargandoSecciones = true;
+      this.seccionService.obtenerSecciones(hacienda.id).subscribe({
+        next: (data) => {
+          this.seccionesPorHacienda[hacienda.id] = data;
+          this.cargandoSecciones = false;
+          this.cdr.detectChanges();
+        },
+        error: (err) => {
+          this.notificacionService.error(err.error?.message || 'Error al cargar las secciones.');
+          this.cargandoSecciones = false;
+          this.cdr.detectChanges();
+        },
+      });
+    }
+    this.cdr.detectChanges();
+  }
+
+  agregarSeccion(hacienda: Hacienda): void {
+    const nombre = this.nuevaSeccionNombre.trim();
+    if (!nombre) return;
+
+    this.seccionService.crearSeccion(nombre, hacienda.id).subscribe({
+      next: (seccion) => {
+        this.seccionesPorHacienda[hacienda.id] = [...(this.seccionesPorHacienda[hacienda.id] || []), seccion]
+          .sort((a, b) => a.nombre.localeCompare(b.nombre));
+        this.nuevaSeccionNombre = '';
+        this.notificacionService.exito(`Sección "${nombre}" creada correctamente.`);
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.notificacionService.error(err.error?.message || 'Error al crear la sección.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  iniciarEdicionSeccion(seccion: Seccion): void {
+    this.seccionEditandoId = seccion.id;
+    this.nombreSeccionEditando = seccion.nombre;
+    this.cdr.detectChanges();
+  }
+
+  cancelarEdicionSeccion(): void {
+    this.seccionEditandoId = null;
+    this.cdr.detectChanges();
+  }
+
+  guardarEdicionSeccion(hacienda: Hacienda): void {
+    const nombre = this.nombreSeccionEditando.trim();
+    if (!nombre || this.seccionEditandoId === null) return;
+    const id = this.seccionEditandoId;
+
+    this.seccionService.actualizarSeccion(id, nombre).subscribe({
+      next: (res) => {
+        this.seccionesPorHacienda[hacienda.id] = (this.seccionesPorHacienda[hacienda.id] || [])
+          .map((s) => (s.id === id ? res.seccion : s))
+          .sort((a, b) => a.nombre.localeCompare(b.nombre));
+        this.seccionEditandoId = null;
+        this.notificacionService.exito('Sección actualizada correctamente.');
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.notificacionService.error(err.error?.message || 'Error al actualizar la sección.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  async eliminarSeccion(hacienda: Hacienda, seccion: Seccion): Promise<void> {
+    const confirmado = await this.confirmacionService.preguntar(
+      `¿Eliminar la sección "${seccion.nombre}"? Los trabajadores que la tengan asignada quedarán sin área hasta que les asignes otra.`,
+      'Eliminar sección'
+    );
+    if (!confirmado) return;
+
+    this.seccionService.eliminarSeccion(seccion.id).subscribe({
+      next: () => {
+        this.seccionesPorHacienda[hacienda.id] = (this.seccionesPorHacienda[hacienda.id] || [])
+          .filter((s) => s.id !== seccion.id);
+        this.notificacionService.exito('Sección eliminada correctamente.');
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.notificacionService.error(err.error?.message || 'Error al eliminar la sección.');
         this.cdr.detectChanges();
       },
     });

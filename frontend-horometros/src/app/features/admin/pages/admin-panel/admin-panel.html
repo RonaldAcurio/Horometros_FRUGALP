@@ -147,8 +147,59 @@
                   >
                     ✕ Invalidar
                   </button>
+                  <button class="btn btn-secondary btn-sm" (click)="toggleSecciones(h)">
+                    🗂️ {{ haciendaExpandidaId === h.id ? 'Ocultar secciones' : 'Secciones' }}
+                  </button>
                 </td>
               </tr>
+              @if (haciendaExpandidaId === h.id) {
+                <tr>
+                  <td colspan="4" class="secciones-fila">
+                    <div class="secciones-panel">
+                      <strong>Secciones de {{ h.nombre }}</strong>
+                      @if (cargandoSecciones) {
+                        <span class="text-muted-sm">Cargando…</span>
+                      }
+                      @if (!cargandoSecciones) {
+                        <ul class="secciones-lista">
+                          @for (sec of seccionesPorHacienda[h.id] || []; track sec.id) {
+                            <li>
+                              @if (seccionEditandoId === sec.id) {
+                                <input
+                                  type="text"
+                                  class="input-control input-control-sm"
+                                  [(ngModel)]="nombreSeccionEditando"
+                                  (keyup.enter)="guardarEdicionSeccion(h)"
+                                />
+                                <button class="btn btn-primary btn-sm" (click)="guardarEdicionSeccion(h)">Guardar</button>
+                                <button class="btn btn-secondary btn-sm" (click)="cancelarEdicionSeccion()">Cancelar</button>
+                              }
+                              @if (seccionEditandoId !== sec.id) {
+                                <span>{{ sec.nombre }}</span>
+                                <button class="btn btn-secondary btn-sm" (click)="iniciarEdicionSeccion(sec)">✏️ Editar</button>
+                                <button class="btn btn-secondary btn-sm" (click)="eliminarSeccion(h, sec)">🗑️ Eliminar</button>
+                              }
+                            </li>
+                          }
+                          @if ((seccionesPorHacienda[h.id] || []).length === 0) {
+                            <li class="text-muted-sm">Esta hacienda todavía no tiene secciones.</li>
+                          }
+                        </ul>
+                        <div class="secciones-nueva">
+                          <input
+                            type="text"
+                            class="input-control input-control-sm"
+                            placeholder="Nombre de la nueva sección"
+                            [(ngModel)]="nuevaSeccionNombre"
+                            (keyup.enter)="agregarSeccion(h)"
+                          />
+                          <button class="btn btn-primary btn-sm" (click)="agregarSeccion(h)">➕ Agregar sección</button>
+                        </div>
+                      }
+                    </div>
+                  </td>
+                </tr>
+              }
             }
             @if (haciendas.length === 0) {
               <tr>

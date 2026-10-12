@@ -16,6 +16,9 @@ export class Operador extends Model <InferAttributes<Operador>, InferCreationAtt
     declare firma_url: CreationOptional<string>;
     //A que SUPERVISOR (y por lo lo tanto que hacienda) pertenece este trabajador de forma permanente
     declare supervisor_id: CreationOptional<number | null>;
+    // Area/Seccion fija del trabajador DENTRO de la hacienda de su Supervisor (ver seccion.ts) - se elige al
+    // crearlo, igual que supervisor_id. null = sin asignar todavia (cuentas creadas antes de este campo).
+    declare seccion_id: CreationOptional<number | null>;
     //Usuario+clave propios, ademas del QR fisico, Ambor juntos: o los datos o ninguno
     declare usuario: CreationOptional<string | null>;
     declare clave_hash: CreationOptional<string | null>;
@@ -111,6 +114,14 @@ Operador.init(
             allowNull: true,
             references:{
                 model:'usuarios',
+                key: 'id',
+            },
+        },
+        seccion_id:{
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            references:{
+                model:'secciones',
                 key: 'id',
             },
         },

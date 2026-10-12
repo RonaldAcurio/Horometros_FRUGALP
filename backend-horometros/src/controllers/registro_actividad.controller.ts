@@ -99,12 +99,23 @@ export const crearRegistroActividad = async(req:Request, res:Response):Promise<v
             return;
         }
 
+        /*
+        Si no viene seccion_id en el body, se hereda la Seccion FIJA del propio trabajador (Operador.seccion_id,
+        pedido del usuario 2026-10-12) - asi no se le pide elegirla en cada labor, solo una vez al crear su
+        cuenta. Si tampoco la tiene asignada (cuenta vieja, de antes de este cambio), queda en null, igual que
+        siempre.
+        */
+        let seccionIdFinal: number | null = null;
         if(seccion_id){
             const seccion = await Seccion.findByPk(Number(seccion_id));
             if(!seccion){
                 res.status(404).json({ message:'La seccion indicada no existe.'});
                 return;
             }
+            seccionIdFinal = seccion.id;
+        } else {
+            const operador = await Operador.findByPk(asistencia.operador_id, { attributes: ['seccion_id'] });
+            seccionIdFinal = operador?.seccion_id ?? null;
         }
 
         /*
@@ -128,7 +139,7 @@ export const crearRegistroActividad = async(req:Request, res:Response):Promise<v
             equipo_id: equipo.id,
             actividad_id: actividad.id,
             area: area || null,
-            seccion_id: seccion_id ? Number(seccion_id) : null,
+            seccion_id: seccionIdFinal,
             horometro_inicio: horometro_inicio !== undefined && horometro_inicio !== null && horometro_inicio !== '' ? Number(horometro_inicio) : null,
             observaciones: observaciones || null,
             hora_inicio: horaInicioFinal,
