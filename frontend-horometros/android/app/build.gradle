@@ -44,8 +44,17 @@ android {
     }
     buildTypes {
         release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            /*
+            Compresion del .apk de release (pedido del usuario, 2026-10-13: el .apk automatico llego a pesar
+            mas de 100MB, el limite de GitHub por archivo). minifyEnabled activa R8 (quita codigo/clases que
+            la app nunca usa y lo compacta); shrinkResources quita recursos (imagenes, strings) sin referencia
+            real en el codigo - shrinkResources SOLO funciona junto con minifyEnabled, no por separado.
+            Ver proguard-rules.pro para las reglas que evitan que R8 rompa el puente nativo<->JS de Capacitor
+            (usa reflexion para encontrar las clases de los plugins, R8 no lo detecta solo sin esas reglas).
+            */
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             if (firmaDisponible) {
                 signingConfig signingConfigs.release
             }
