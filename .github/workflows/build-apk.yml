@@ -57,6 +57,13 @@ jobs:
         working-directory: frontend-horometros
         run: npx cap sync android
 
+      - name: Quitar el frugalp.apk auto-incrustado (bug de raiz del peso del .apk)
+        # El link de descarga web (/frugalp.apk) se sirve desde frontend-horometros/public/, pero Angular copia
+        # TODO public/ a dist/ al compilar, y 'cap sync' copia TODO dist/ a los assets de la app Android - asi
+        # la app nativa termina empaquetando una copia completa de su propio instalador (ver commit que agrega
+        # este paso: sin esto el .apk crecia solo, build tras build, porque cada copia incluye la anterior).
+        run: rm -f frontend-horometros/android/app/src/main/assets/public/frugalp.apk
+
       - name: Verificar que los 4 secretos de firma esten configurados
         id: firma
         run: |
