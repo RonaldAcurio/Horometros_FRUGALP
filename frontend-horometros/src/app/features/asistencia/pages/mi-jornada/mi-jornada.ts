@@ -685,6 +685,29 @@ export class MiJornada implements OnInit, OnDestroy {
   }
 
   /*
+  PRUEBA (2026-10-13, rama test/salida-exige-cerrar-labores): labores del Panel de Actividades que todavía no
+  tienen hora_fin Y que tampoco tienen ya un cierre encolado sin señal (offlineSyncService.tieneFinalizacionPendiente -
+  esas ya están resueltas desde el punto de vista del trabajador, solo falta que viaje al servidor). El bloqueo
+  de salida tiene que pasar ACÁ, en el celular, antes de intentar la petición - si solo viviera en el backend,
+  una salida encolada sin señal (ver OfflineSyncService) le diría "listo" al trabajador al instante y recién
+  fallaría en silencio horas después al sincronizar, con el trabajador ya fuera del alcance de arreglarlo.
+  */
+  private laboresAbiertas(): RegistroActividad[] {
+    return this.registros.filter(
+      (reg) => !reg.hora_fin && !this.offlineSyncService.tieneFinalizacionPendiente(reg.id)
+    );
+  }
+
+  private bloquearSiHayLaboresAbiertas(): boolean {
+    if (this.laboresAbiertas().length === 0) return false;
+    this.notificacionService.advertencia(
+      'Tienes labores sin finalizar en tu Panel de Actividades. Ciérralas (hora final) antes de marcar tu salida.'
+    );
+    this.cdr.detectChanges();
+    return true;
+  }
+
+  /*
   Termina la jornada desde el Panel de Actividades - el camino depende de cómo entró el trabajador:
   - Si la jornada de hoy es de PRÉSTAMO (esPrestamoHoy, entró vía "¿Hoy trabajas en otra hacienda?" más abajo),
     SIEMPRE vuelve a mostrar el QR, aunque su hacienda propia use código - tiene que salir por donde entró (que
@@ -697,6 +720,7 @@ export class MiJornada implements OnInit, OnDestroy {
   Las actividades se derivan solas de lo ya cargado en el Panel, sin checklist, en los 3 casos.
   */
   async marcarSalida(): Promise<void> {
+    if (this.bloquearSiHayLaboresAbiertas()) return;
     if (this.requiereCodigo && !this.esPrestamoHoy) {
       this.fase = 'codigo';
       this.errorCodigo = '';
@@ -764,6 +788,8 @@ export class MiJornada implements OnInit, OnDestroy {
   confirmación del servidor que puede tardar horas en llegar.
   */
   async marcarMiSalidaOlvidada(): Promise<void> {
+    if (this.bloquearSiHayLaboresAbiertas()) return;
+
     // Guarda defensiva (caso borde offline): si la app se reabrió con la salida ya encolada pero aún sin
     // sincronizar, y mientras tanto volvió la señal justo antes de que la cola se vaciara sola, mi-estado del
     // servidor todavía diría "en jornada" y volvería a mostrar este botón - evita encolar una segunda vez.

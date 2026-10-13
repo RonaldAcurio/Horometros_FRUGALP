@@ -708,6 +708,26 @@ const procesarMarcacion = async(
             };
         }
 
+        /*
+        PRUEBA (2026-10-13, rama test/salida-exige-cerrar-labores): exigir que toda labor del Panel de
+        Actividades (RegistroActividad) ya tenga hora_fin antes de dejar cerrar la jornada - antes se podia
+        marcar salida con labores todavia abiertas. El bloqueo REAL para el trabajador debe pasar en el celular
+        (mi-jornada.ts, antes de intentar la peticion, para no chocar con el encolado offline-first) - esto es
+        una segunda capa de seguridad en el servidor, por si ese chequeo del cliente fallara o quedara desactualizado.
+        */
+        const laboresAbiertas = await RegistroActividad.count({
+            where: { asistencia_id: asistencia.id, hora_fin: null },
+        });
+        if(laboresAbiertas > 0){
+            return {
+                status: 400,
+                body: {
+                    message: 'Tienes labores sin finalizar en tu Panel de Actividades. Ciérralas antes de marcar tu salida.',
+                    labores_pendientes: true,
+                },
+            };
+        }
+
         // Validar que la actividad exista y NO este eliminada(Soft Delete) - solo si vino alguna que validar.
         if(actividadesIds.length > 0){
             const actividadExistente = await Actividad.findAll({where: { id: actividadesIds}});
@@ -1017,6 +1037,19 @@ export const marcarSalidaOlvidada = async(req:Request, res:Response):Promise<voi
                 return;
             }
             horaSalidaFinal = parseada;
+        }
+
+        // PRUEBA (2026-10-13, rama test/salida-exige-cerrar-labores): mismo chequeo que procesarMarcacion -
+        // tambien aplica a la salida olvidada, no solo a la salida normal.
+        const laboresAbiertas = await RegistroActividad.count({
+            where: { asistencia_id: asistencia.id, hora_fin: null },
+        });
+        if(laboresAbiertas > 0){
+            res.status(400).json({
+                message: 'Tienes labores sin finalizar en tu Panel de Actividades. Ciérralas antes de marcar tu salida.',
+                labores_pendientes: true,
+            });
+            return;
         }
 
         await asistencia.update({ estado: 'SALIDA_OLVIDADA', hora_salida: horaSalidaFinal });
