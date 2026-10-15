@@ -166,7 +166,7 @@ export class ExportarExcelService {
     const filaFirma1 = filaActual + 1;
     const filaFirma2 = filaFirma1 + 1;
     ws.mergeCells(`A${filaFirma1}:D${filaFirma1}`); celda(`A${filaFirma1}`, 'FIRMA DEL RESPONSABLE', { bold: true });
-    ws.mergeCells(`I${filaFirma1}:J${filaFirma1}`); celda(`I${filaFirma1}`, 'AUTORIZADO POR:', { bold: true });
+    ws.mergeCells(`I${filaFirma1}:J${filaFirma1}`); celda(`I${filaFirma1}`, 'FIRMA SUPERVISOR', { bold: true });
     ws.mergeCells(`M${filaFirma1}:O${filaFirma1}`); celda(`M${filaFirma1}`, 'FIRMA DE TTHH', { bold: true });
     ws.mergeCells(`A${filaFirma2}:D${filaFirma2}`); celda(`A${filaFirma2}`, 'NOMBRE:');
     ws.mergeCells(`M${filaFirma2}:O${filaFirma2}`); celda(`M${filaFirma2}`, 'DIGITADO POR:');

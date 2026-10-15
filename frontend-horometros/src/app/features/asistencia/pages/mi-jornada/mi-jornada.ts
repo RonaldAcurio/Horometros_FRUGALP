@@ -132,6 +132,10 @@ export class MiJornada implements OnInit, OnDestroy {
   // OfflineSyncService/recalcularVistaRegistros). Las pendientes de crear tienen id NEGATIVO a propósito.
   registros: RegistroActividad[] = [];
   private registrosServidor: RegistroActividad[] = [];
+  // Arranca en true a proposito (ver bloquearSiHayLaboresAbiertas): mientras no sepamos de verdad si hay
+  // labores abiertas, es mas seguro bloquear la salida que dejarla pasar por una lista todavia vacia. Publico
+  // (no private) porque el boton "Marcar salida" del HTML tambien lo usa para deshabilitarse mientras carga.
+  cargandoRegistros = true;
   private subCambiosOffline?: Subscription;
 
   /*
@@ -535,11 +539,19 @@ export class MiJornada implements OnInit, OnDestroy {
 
   private cargarRegistros(): void {
     if (!this.asistenciaId) return;
+    this.cargandoRegistros = true;
     this.registroActividadService.obtenerPorAsistencia(this.asistenciaId).subscribe({
-      next: (data) => { this.registrosServidor = data; this.recalcularVistaRegistros(); this.cdr.detectChanges(); },
+      next: (data) => {
+        this.registrosServidor = data;
+        this.cargandoRegistros = false;
+        this.recalcularVistaRegistros();
+        this.cdr.detectChanges();
+      },
       error: (err) => {
         console.error('Error cargando registros de actividad:', err);
-        // Sin señal: igual mostramos lo que ya tengamos guardado localmente sin sincronizar.
+        // Sin señal: igual mostramos lo que ya tengamos guardado localmente sin sincronizar - ya sabemos lo
+        // que hay (aunque desactualizado), así que dejamos de considerarlo "cargando".
+        this.cargandoRegistros = false;
         this.recalcularVistaRegistros();
         this.cdr.detectChanges();
       },
@@ -699,6 +711,17 @@ export class MiJornada implements OnInit, OnDestroy {
   }
 
   private bloquearSiHayLaboresAbiertas(): boolean {
+    /*
+    REFUERZO (2026-10-15): mientras cargarRegistros() todavia no responde, 'registros' puede estar vacio sin
+    que eso signifique de verdad "no hay labores abiertas" - es solo que todavia no sabemos. Bloquear aca
+    tambien (en vez de dejar pasar por una lista momentaneamente vacia) cierra la ventana de milisegundos entre
+    abrir el Panel de Actividades y que termine de cargar.
+    */
+    if (this.cargandoRegistros) {
+      this.notificacionService.advertencia('Espera un momento, estamos cargando tus labores de hoy...');
+      this.cdr.detectChanges();
+      return true;
+    }
     if (this.laboresAbiertas().length === 0) return false;
     this.notificacionService.advertencia(
       'Tienes labores sin finalizar en tu Panel de Actividades. Ciérralas (hora final) antes de marcar tu salida.'
