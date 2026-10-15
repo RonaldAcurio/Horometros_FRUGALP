@@ -22,6 +22,7 @@ import { NotificacionService } from '../../../../core/services/notificacion.serv
 import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
 import { leerFilasExcel, descargarPlantillaExcel } from '../../../../core/utils/excel-importar.util';
 import { timeoutDeLista, mensajeErrorCarga } from '../../../../core/utils/peticion-lista.util';
+import { formatearHorasTrabajadas } from '../../../../core/utils/horas-trabajadas.util';
 
 // Respuesta de los endpoints /equipos/importar y /actividad/importar (ver equipo.controller.ts/actividades.controller.ts).
 interface ResultadoImportacion {
@@ -38,6 +39,9 @@ interface ResultadoImportacion {
 })
 export class AsistenciaPanel implements OnInit{
   @ViewChild('hojaModal') hojaModal!: HojaActividadesModal;
+
+  // Referencia directa a la funcion pura (ver horas-trabajadas.util.ts) para poder llamarla desde la plantilla.
+  formatearHorasTrabajadas = formatearHorasTrabajadas;
 
   operadores: Operador[] = [];
 

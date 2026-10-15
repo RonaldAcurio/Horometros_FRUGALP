@@ -323,7 +323,7 @@
                       <span class="text-muted-sm">Sin salida</span>
                     }
                   </td>
-                  <td>{{ reg.total_horas != null ? reg.total_horas + ' h' : '—' }}</td>
+                  <td>{{ formatearHorasTrabajadas(reg.total_horas) }}</td>
                   <td>
                     <div class="flex gap-1">
                       <button
@@ -1378,7 +1378,7 @@ Historial general, ya filtrado a este operador (reutiliza GET /historial con ope
                       <span class="text-muted-sm">Sin salida</span>
                     }
                   </td>
-                  <td>{{ reg.total_horas != null ? reg.total_horas + ' h' : '—' }}</td>
+                  <td>{{ formatearHorasTrabajadas(reg.total_horas) }}</td>
                   <td>
                     <div class="flex gap-1">
                       <button

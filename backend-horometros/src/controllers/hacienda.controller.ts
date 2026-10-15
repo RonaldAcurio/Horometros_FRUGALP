@@ -33,25 +33,33 @@ export const obtenerHaciendas = async(req:Request, res:Response):Promise<void> =
 
         /*
         FASE B (ver MEMORY.md): token_actual/token_expira_en de la respuesta ya NO salen de Hacienda (Fase A
-        sigue escribiendo ahi, pero deja de ser lo que se LEE) - se reemplazan por la fila de HOY en
+        sigue escribiendo ahi, pero deja de ser lo que se LEE) - se reemplazan por la fila de esa fecha en
         tokens_hacienda, coherente con que una ENTRADA nueva solo acepta el codigo de hoy. Una sola consulta
         para todas las haciendas, en vez de una por hacienda.
+
+        PENDIENTE 1 (calendario de tokens, ver MEMORY.md): admite un ?fecha= opcional en la query para que el
+        Supervisor pueda consultar el estado del token de un dia DISTINTO a hoy (ej. navego el calendario al
+        sabado - quiere ver si ya tiene token generado para ese dia, no el de hoy). Sin 'fecha', se comporta
+        exactamente como antes (el token de hoy).
         */
-        const tokensHoy = await TokenHacienda.findAll({
-            where: { fecha: obtenerFechaLocalEcuador(), activo: true, expira_en: { [Op.gt]: new Date() } },
+        const fechaConsulta = typeof req.query.fecha === 'string' && req.query.fecha
+            ? req.query.fecha
+            : obtenerFechaLocalEcuador();
+        const tokensDeFecha = await TokenHacienda.findAll({
+            where: { fecha: fechaConsulta, activo: true, expira_en: { [Op.gt]: new Date() } },
         });
-        const tokenPorHacienda = new Map(tokensHoy.map((t) => [t.hacienda_id, t]));
+        const tokenPorHacienda = new Map(tokensDeFecha.map((t) => [t.hacienda_id, t]));
 
         const resultado = haciendas.map((h) => {
             if(!esAdmin && h.id !== propiaHaciendaId){
                 const { token_actual, token_expira_en, ...resto } = h.toJSON();
                 return resto;
             }
-            const tokenHoy = tokenPorHacienda.get(h.id);
+            const tokenDeFecha = tokenPorHacienda.get(h.id);
             return {
                 ...h.toJSON(),
-                token_actual: tokenHoy?.token ?? null,
-                token_expira_en: tokenHoy?.expira_en ?? null,
+                token_actual: tokenDeFecha?.token ?? null,
+                token_expira_en: tokenDeFecha?.expira_en ?? null,
             };
         });
 
@@ -101,12 +109,18 @@ sabado+domingo+lunes, ya que el no trabaja fin de semana pero sus trabajadores s
 sirve hasta que llegue su fecha (ver el chequeo en procesarMarcacion, Paso 3) - los dias futuros reciben 48h de
 vigencia contadas desde su propia medianoche Ecuador (cubre el dia completo mas un turno nocturno hacia el
 dia siguiente), en vez de depender de cuando se genero.
+
+PENDIENTE 1 (calendario de tokens, ver MEMORY.md): tambien admite un body.fecha opcional (YYYY-MM-DD) para
+generar el codigo de UN dia puntual (no necesariamente corrido desde hoy) - el Supervisor Panel ya tiene un
+selector de fecha para navegar el Historial del dia (fechaSeleccionada); este mismo selector ahora tambien
+decide para que dia se genera el token. Si viene 'fecha', 'dias' se ignora (un solo dia a la vez).
 */
 export const generarTokenHacienda = async(req:Request, res:Response):Promise<void> => {
     try{
         const { id } = req.params;
         const haciendaId = Number(id);
-        const diasSolicitados = Math.min(3, Math.max(1, Number(req.body?.dias) || 1));
+        const fechaExplicita = typeof req.body?.fecha === 'string' && req.body.fecha ? req.body.fecha : null;
+        const diasSolicitados = fechaExplicita ? 1 : Math.min(3, Math.max(1, Number(req.body?.dias) || 1));
 
         if(req.auth?.rol === 'SUPERVISOR' && req.auth.hacienda_id !== haciendaId){
             res.status(403).json({ message:'No puedes generar el token de una hacienda que no es la tuya.'});
@@ -119,24 +133,24 @@ export const generarTokenHacienda = async(req:Request, res:Response):Promise<voi
             return;
         }
 
-        const token = crypto.randomBytes(20).toString('hex');
-        const expiraEn = new Date(Date.now() + TOKEN_VIGENCIA_MS);
-
-        await hacienda.update({
-            token_actual: token,
-            token_expira_en: expiraEn,
-        });
+        const hoy = obtenerFechaLocalEcuador();
 
         /*
-        FASE A (doble escritura, hoy sigue intacto) + FASE B (dias futuros, recien utiles porque las lecturas
-        ya respetan la fecha): un UPSERT por cada dia solicitado, hoy incluido. Regenerar el mismo dia sigue
-        actualizando esa misma fila (UNIQUE hacienda_id+fecha), nunca crea una fila de sobra.
+        FASE A (doble escritura) + FASE B (dias futuros/puntuales, recien utiles porque las lecturas ya
+        respetan la fecha): un UPSERT por cada dia solicitado. Regenerar el mismo dia sigue actualizando esa
+        misma fila (UNIQUE hacienda_id+fecha), nunca crea una fila de sobra. Los campos viejos de Hacienda
+        (token_actual/token_expira_en) SOLO representaron "el token de HOY" - se tocan unicamente si alguno de
+        los dias generados es hoy (si el Supervisor genero un dia futuro puntual, no se tocan).
         */
         const generados: { fecha: string; token: string; expira_en: Date }[] = [];
+        let tokenDeHoy: { token: string; expira_en: Date } | null = null;
         for(let i = 0; i < diasSolicitados; i++){
-            const fechaDia = obtenerFechaLocalEcuador(new Date(Date.now() + i * 24 * 60 * 60 * 1000));
-            const tokenDia = i === 0 ? token : crypto.randomBytes(20).toString('hex');
-            const expiraEnDia = i === 0 ? expiraEn : new Date(medianocheEcuador(fechaDia).getTime() + 48 * 60 * 60 * 1000);
+            const fechaDia = fechaExplicita ?? obtenerFechaLocalEcuador(new Date(Date.now() + i * 24 * 60 * 60 * 1000));
+            const esHoy = fechaDia === hoy;
+            const tokenDia = crypto.randomBytes(20).toString('hex');
+            const expiraEnDia = esHoy
+                ? new Date(Date.now() + TOKEN_VIGENCIA_MS)
+                : new Date(medianocheEcuador(fechaDia).getTime() + 48 * 60 * 60 * 1000);
             await TokenHacienda.upsert({
                 hacienda_id: hacienda.id,
                 fecha: fechaDia,
@@ -146,6 +160,14 @@ export const generarTokenHacienda = async(req:Request, res:Response):Promise<voi
                 generado_por_usuario_id: req.auth!.id,
             });
             generados.push({ fecha: fechaDia, token: tokenDia, expira_en: expiraEnDia });
+            if(esHoy) tokenDeHoy = { token: tokenDia, expira_en: expiraEnDia };
+        }
+
+        if(tokenDeHoy){
+            await hacienda.update({
+                token_actual: tokenDeHoy.token,
+                token_expira_en: tokenDeHoy.expira_en,
+            });
         }
 
         await registrarAuditoria({
@@ -153,15 +175,19 @@ export const generarTokenHacienda = async(req:Request, res:Response):Promise<voi
             accion: 'GENERAR_TOKEN_HACIENDA',
             objetivoTipo: 'hacienda',
             objetivoId: hacienda.id,
-            objetivoNombre: diasSolicitados > 1 ? `${hacienda.nombre} (${diasSolicitados} dias)` : hacienda.nombre,
+            objetivoNombre: fechaExplicita
+                ? `${hacienda.nombre} (${fechaExplicita})`
+                : diasSolicitados > 1 ? `${hacienda.nombre} (${diasSolicitados} dias)` : hacienda.nombre,
         });
 
         res.json({
-            message: diasSolicitados > 1
+            message: fechaExplicita
+                ? `Token de hacienda generado para el ${fechaExplicita}.`
+                : diasSolicitados > 1
                 ? `Token de hacienda generado para los próximos ${diasSolicitados} días.`
                 : 'Token de hacienda generado correctamente',
-            token_actual: token,
-            token_expira_en: expiraEn,
+            token_actual: tokenDeHoy?.token ?? hacienda.token_actual,
+            token_expira_en: tokenDeHoy?.expira_en ?? hacienda.token_expira_en,
             // Nuevo, informativo - el frontend de hoy lo ignora sin romperse (sigue leyendo solo los 2 de arriba).
             tokens_generados: generados,
         });

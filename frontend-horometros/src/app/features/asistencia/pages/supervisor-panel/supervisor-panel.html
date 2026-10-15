@@ -62,15 +62,20 @@
     </div>
   }
 
-  <!-- Token de MI Hacienda: cada Supervisor solo ve y genera el de la suya, no la de otros -->
+  <!-- Token de MI Hacienda: cada Supervisor solo ve y genera el de la suya, no la de otros. El selector de
+  fecha de arriba (fechaSeleccionada) ahora tambien decide PARA QUE DIA se genera/invalida/consulta este token
+  (ver PENDIENTE 1 en MEMORY.md) - asi el Supervisor se mueve al sabado en el mismo calendario que ya usa para
+  ver el Historial, y genera el token de ese dia puntual, sin un control nuevo separado. -->
   @if (miHacienda) {
     <div class="card mt-section">
       <div class="card-header">
-        <h5 class="card-title">🔑 Token de {{ miHacienda.nombre }}</h5>
+        <h5 class="card-title">
+          🔑 Token de {{ miHacienda.nombre }} — {{ fechaSeleccionada ? fechaSeleccionada : 'Hoy' }}
+        </h5>
       </div>
       <div class="card-body-grid" style="grid-template-columns: 1fr">
         <div class="flex items-center gap-3 flex-wrap">
-          @if (miHacienda.token_actual && tokenCorrespondeAFechaVista) {
+          @if (miHacienda.token_actual) {
             <span class="code-badge token-valor">{{ miHacienda.token_actual }}</span>
             <button
               class="btn btn-secondary btn-sm"
@@ -84,12 +89,14 @@
               >Vigente hasta {{ miHacienda.token_expira_en | date: 'short' }}</span
             >
           } @else {
-            <span class="text-muted-sm">Sin token activo.</span>
+            <span class="text-muted-sm">Sin token activo para este día.</span>
           }
-          <button class="btn btn-primary btn-sm" (click)="generarMiToken()">🔄 Generar</button>
+          <button class="btn btn-primary btn-sm" (click)="generarMiToken()">
+            🔄 {{ fechaSeleccionada ? 'Generar para este día' : 'Generar' }}
+          </button>
           <button
             class="btn btn-secondary btn-sm"
-            [disabled]="!miHacienda.token_actual || !tokenCorrespondeAFechaVista"
+            [disabled]="!miHacienda.token_actual"
             (click)="invalidarMiToken()"
           >
             ✕ Invalidar
