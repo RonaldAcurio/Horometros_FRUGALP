@@ -58,24 +58,15 @@ export class SupervisorPanel implements OnInit {
   miHacienda: Hacienda | null = null;
 
   /*
-  "Token de hoy" solamente (pedido real del usuario, 2026-10-04): antes esta tarjeta mostraba SIEMPRE el
-  token_actual de la hacienda tal cual, sin importar qué fecha estuviera viendo el Supervisor - si lo generaba
-  el lunes (vigente 24h, hasta el martes), seguía apareciendo como "activo" el martes, el miércoles, etc.,
-  confundiendo a más de un Supervisor ("ya tenía token generado" cuando en realidad era el de días atrás).
-  token_expira_en siempre es exactamente +24h desde que se generó (TOKEN_VIGENCIA_MS, ver hacienda.controller.ts),
-  así que restando esas 24h se recupera el DÍA en que ese token nació - si no coincide con el día que se está
-  viendo (la fecha filtrada arriba, o "hoy" si no hay filtro), se trata como si no hubiera token: aunque
-  técnicamente le quedaran horas de vigencia hasta la madrugada del día siguiente, es una "mentira" a propósito
-  para que cada día el Supervisor genere el suyo sin depender de a qué hora exacta lo generó el día anterior.
+  PENDIENTE 1 (calendario de tokens, ver MEMORY.md): antes esta tarjeta mostraba SIEMPRE el token_actual de la
+  hacienda tal cual (el de HOY, sin importar qué fecha estuviera viendo el Supervisor en el selector de arriba),
+  y este getter "corregía" eso a mano comparando contra la fecha de generación del token. Ya no hace falta: con
+  obtenerHaciendas(fecha) pidiendo la fecha vista (ver cargarMiHacienda), el backend devuelve directamente el
+  token de ESE día - miHacienda.token_actual ya queda correcto para la fecha que se está mirando, no solo hoy.
+  Se deja este getter como alias de solo lectura para no tocar la plantilla.
   */
   get tokenCorrespondeAFechaVista(): boolean {
-    if (!this.miHacienda?.token_actual || !this.miHacienda.token_expira_en) return false;
-    const hoyEcuador = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Guayaquil' });
-    const fechaVista = this.fechaSeleccionada || hoyEcuador;
-    const fechaGeneracionToken = new Date(
-      new Date(this.miHacienda.token_expira_en).getTime() - 24 * 60 * 60 * 1000
-    ).toLocaleDateString('sv-SE', { timeZone: 'America/Guayaquil' });
-    return fechaVista === fechaGeneracionToken;
+    return !!this.miHacienda?.token_actual;
   }
 
   // Filtro por Supervisor: solo tiene sentido para ADMIN (ver esAdmin abajo) - un Supervisor real ya ve todo
@@ -132,7 +123,7 @@ export class SupervisorPanel implements OnInit {
     const haciendaId = this.authService.perfil()?.hacienda_id;
     if (!haciendaId) return;
 
-    this.haciendaService.obtenerHaciendas().pipe(timeoutDeLista()).subscribe({
+    this.haciendaService.obtenerHaciendas(this.fechaSeleccionada || undefined).pipe(timeoutDeLista()).subscribe({
       next: (haciendas) => {
         this.miHacienda = haciendas.find((h) => h.id === haciendaId) || null;
         this.cdr.detectChanges();
@@ -148,11 +139,23 @@ export class SupervisorPanel implements OnInit {
   generarMiToken(): void {
     if (!this.miHacienda) return;
 
-    this.haciendaService.generarToken(this.miHacienda.id).subscribe({
+    this.haciendaService.generarToken(this.miHacienda.id, this.fechaSeleccionada || undefined).subscribe({
       next: (res) => {
-        this.miHacienda!.token_actual = res.token_actual;
-        this.miHacienda!.token_expira_en = res.token_expira_en;
-        this.notificacionService.exito('Token generado. Vigente 24h.');
+        /*
+        PENDIENTE 1 (calendario de tokens): res.token_actual/token_expira_en son un campo heredado que SOLO
+        representa el token de HOY (ver generarTokenHacienda en el backend) - si fechaSeleccionada es un dia
+        futuro, esos 2 campos vienen null y pisarian mal la tarjeta. res.tokens_generados SI trae el dia que
+        realmente se acaba de generar (esta llamada desde el Supervisor Panel siempre pide un solo dia a la
+        vez, nunca manda 'dias', asi que siempre viene con exactamente 1 elemento).
+        */
+        const generado = res.tokens_generados?.[0];
+        this.miHacienda!.token_actual = generado?.token ?? res.token_actual;
+        this.miHacienda!.token_expira_en = generado?.expira_en ?? res.token_expira_en;
+        this.notificacionService.exito(
+          this.fechaSeleccionada
+            ? `Token generado para el ${this.fechaSeleccionada}.`
+            : 'Token generado. Vigente 24h.'
+        );
         this.cdr.detectChanges();
       },
       error: (err) => {
@@ -182,12 +185,14 @@ export class SupervisorPanel implements OnInit {
     if (!this.miHacienda) return;
 
     const confirmado = await this.confirmacionService.preguntar(
-      '¿Invalidar el token actual? Los puntos de control que lo usen dejarán de poder marcar hasta que generes uno nuevo.',
+      this.fechaSeleccionada
+        ? `¿Invalidar el token del ${this.fechaSeleccionada}? Los puntos de control que lo usen dejarán de poder marcar ese día hasta que generes uno nuevo.`
+        : '¿Invalidar el token actual? Los puntos de control que lo usen dejarán de poder marcar hasta que generes uno nuevo.',
       'Invalidar token'
     );
     if (!confirmado) return;
 
-    this.haciendaService.invalidarToken(this.miHacienda.id).subscribe({
+    this.haciendaService.invalidarToken(this.miHacienda.id, this.fechaSeleccionada || undefined).subscribe({
       next: () => {
         this.miHacienda!.token_actual = null;
         this.miHacienda!.token_expira_en = null;
@@ -224,6 +229,9 @@ export class SupervisorPanel implements OnInit {
   onCambioFecha():void{
     this.paginaHoy = 1;
     this.cargarAsistencias();
+    // PENDIENTE 1 (calendario de tokens): la tarjeta de Token de Hacienda tambien pasa a reflejar la fecha
+    // recien elegida (ver cargarMiHacienda), no solo la tabla de abajo.
+    this.cargarMiHacienda();
   }
 
  cambiarPaginaHoy(nuevaPagina:number): void{
