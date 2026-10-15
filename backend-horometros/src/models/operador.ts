@@ -12,7 +12,6 @@ export class Operador extends Model <InferAttributes<Operador>, InferCreationAtt
     declare direccion: CreationOptional<string>;
     // ------- NUEVOS CAMPOS --------------
     declare rol: CreationOptional<'MECANICO' | 'OPERADOR'>;
-    declare area: CreationOptional<string>;
     declare firma_url: CreationOptional<string>;
     //A que SUPERVISOR (y por lo lo tanto que hacienda) pertenece este trabajador de forma permanente
     declare supervisor_id: CreationOptional<number | null>;
@@ -99,11 +98,6 @@ Operador.init(
             type: DataTypes.STRING(20),
             defaultValue: 'MECANICO',
             allowNull: true,
-        },
-        area:{
-            type: DataTypes.STRING(100),
-            defaultValue: 'TALLER',
-            allowNull: true
         },
         firma_url:{
             type: DataTypes.TEXT,

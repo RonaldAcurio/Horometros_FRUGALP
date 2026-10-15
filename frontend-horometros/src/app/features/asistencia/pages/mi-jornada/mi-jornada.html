@@ -154,12 +154,12 @@
             <button
               type="button"
               class="btn-link-salida"
-              [disabled]="marcandoSalidaOlvidada"
+              [disabled]="marcandoSalidaOlvidada || cargandoRegistros"
               (click)="marcarMiSalidaOlvidada()"
             >
               No podré registrar mi salida hoy
             </button>
-            <button class="btn btn-warning btn-sm" (click)="marcarSalida()">
+            <button class="btn btn-warning btn-sm" [disabled]="cargandoRegistros" (click)="marcarSalida()">
               🔚 Marcar salida
             </button>
           </div>

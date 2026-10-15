@@ -11,6 +11,7 @@ import { RegistroAuditoria } from "./registro_auditoria";
 import { RegistroDispositivo } from "./registro_dispositivo";
 import { CierreJornada } from "./cierre_jornada";
 import { RegistroPeticion } from "./registro_peticion";
+import { TokenHacienda } from "./token_hacienda";
 
 Asistencia.belongsTo(Operador, { foreignKey:'operador_id' ,as:'operador'});
 Asistencia.belongsTo(Actividad,{ foreignKey: 'actividad_id', as:'actividad'});
@@ -67,6 +68,11 @@ RegistroAuditoria.belongsTo(Usuario, { foreignKey: 'actor_usuario_id', as: 'acto
 CierreJornada.belongsTo(Hacienda, { foreignKey: 'hacienda_id', as: 'hacienda' });
 CierreJornada.belongsTo(Usuario, { foreignKey: 'cerrado_por_usuario_id', as: 'cerradoPor' });
 
+// Token de Hacienda, Fase A (ver MEMORY.md) - todavia nadie lee de aca, solo se escribe en doble escritura.
+TokenHacienda.belongsTo(Hacienda, { foreignKey: 'hacienda_id', as: 'hacienda' });
+Hacienda.hasMany(TokenHacienda, { foreignKey: 'hacienda_id', as: 'tokens' });
+TokenHacienda.belongsTo(Usuario, { foreignKey: 'generado_por_usuario_id', as: 'generadoPor' });
+
 export{
     Equipo,
     Operador,
@@ -81,4 +87,5 @@ export{
     RegistroDispositivo,
     CierreJornada,
     RegistroPeticion,
+    TokenHacienda,
 };

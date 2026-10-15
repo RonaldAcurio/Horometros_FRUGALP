@@ -132,6 +132,10 @@ export class MiJornada implements OnInit, OnDestroy {
   // OfflineSyncService/recalcularVistaRegistros). Las pendientes de crear tienen id NEGATIVO a propósito.
   registros: RegistroActividad[] = [];
   private registrosServidor: RegistroActividad[] = [];
+  // Arranca en true a proposito (ver bloquearSiHayLaboresAbiertas): mientras no sepamos de verdad si hay
+  // labores abiertas, es mas seguro bloquear la salida que dejarla pasar por una lista todavia vacia. Publico
+  // (no private) porque el boton "Marcar salida" del HTML tambien lo usa para deshabilitarse mientras carga.
+  cargandoRegistros = true;
   private subCambiosOffline?: Subscription;
 
   /*
@@ -535,11 +539,19 @@ export class MiJornada implements OnInit, OnDestroy {
 
   private cargarRegistros(): void {
     if (!this.asistenciaId) return;
+    this.cargandoRegistros = true;
     this.registroActividadService.obtenerPorAsistencia(this.asistenciaId).subscribe({
-      next: (data) => { this.registrosServidor = data; this.recalcularVistaRegistros(); this.cdr.detectChanges(); },
+      next: (data) => {
+        this.registrosServidor = data;
+        this.cargandoRegistros = false;
+        this.recalcularVistaRegistros();
+        this.cdr.detectChanges();
+      },
       error: (err) => {
         console.error('Error cargando registros de actividad:', err);
-        // Sin señal: igual mostramos lo que ya tengamos guardado localmente sin sincronizar.
+        // Sin señal: igual mostramos lo que ya tengamos guardado localmente sin sincronizar - ya sabemos lo
+        // que hay (aunque desactualizado), así que dejamos de considerarlo "cargando".
+        this.cargandoRegistros = false;
         this.recalcularVistaRegistros();
         this.cdr.detectChanges();
       },
@@ -685,6 +697,40 @@ export class MiJornada implements OnInit, OnDestroy {
   }
 
   /*
+  PRUEBA (2026-10-13, rama test/salida-exige-cerrar-labores): labores del Panel de Actividades que todavía no
+  tienen hora_fin Y que tampoco tienen ya un cierre encolado sin señal (offlineSyncService.tieneFinalizacionPendiente -
+  esas ya están resueltas desde el punto de vista del trabajador, solo falta que viaje al servidor). El bloqueo
+  de salida tiene que pasar ACÁ, en el celular, antes de intentar la petición - si solo viviera en el backend,
+  una salida encolada sin señal (ver OfflineSyncService) le diría "listo" al trabajador al instante y recién
+  fallaría en silencio horas después al sincronizar, con el trabajador ya fuera del alcance de arreglarlo.
+  */
+  private laboresAbiertas(): RegistroActividad[] {
+    return this.registros.filter(
+      (reg) => !reg.hora_fin && !this.offlineSyncService.tieneFinalizacionPendiente(reg.id)
+    );
+  }
+
+  private bloquearSiHayLaboresAbiertas(): boolean {
+    /*
+    REFUERZO (2026-10-15): mientras cargarRegistros() todavia no responde, 'registros' puede estar vacio sin
+    que eso signifique de verdad "no hay labores abiertas" - es solo que todavia no sabemos. Bloquear aca
+    tambien (en vez de dejar pasar por una lista momentaneamente vacia) cierra la ventana de milisegundos entre
+    abrir el Panel de Actividades y que termine de cargar.
+    */
+    if (this.cargandoRegistros) {
+      this.notificacionService.advertencia('Espera un momento, estamos cargando tus labores de hoy...');
+      this.cdr.detectChanges();
+      return true;
+    }
+    if (this.laboresAbiertas().length === 0) return false;
+    this.notificacionService.advertencia(
+      'Tienes labores sin finalizar en tu Panel de Actividades. Ciérralas (hora final) antes de marcar tu salida.'
+    );
+    this.cdr.detectChanges();
+    return true;
+  }
+
+  /*
   Termina la jornada desde el Panel de Actividades - el camino depende de cómo entró el trabajador:
   - Si la jornada de hoy es de PRÉSTAMO (esPrestamoHoy, entró vía "¿Hoy trabajas en otra hacienda?" más abajo),
     SIEMPRE vuelve a mostrar el QR, aunque su hacienda propia use código - tiene que salir por donde entró (que
@@ -697,6 +743,7 @@ export class MiJornada implements OnInit, OnDestroy {
   Las actividades se derivan solas de lo ya cargado en el Panel, sin checklist, en los 3 casos.
   */
   async marcarSalida(): Promise<void> {
+    if (this.bloquearSiHayLaboresAbiertas()) return;
     if (this.requiereCodigo && !this.esPrestamoHoy) {
       this.fase = 'codigo';
       this.errorCodigo = '';
@@ -764,6 +811,8 @@ export class MiJornada implements OnInit, OnDestroy {
   confirmación del servidor que puede tardar horas en llegar.
   */
   async marcarMiSalidaOlvidada(): Promise<void> {
+    if (this.bloquearSiHayLaboresAbiertas()) return;
+
     // Guarda defensiva (caso borde offline): si la app se reabrió con la salida ya encolada pero aún sin
     // sincronizar, y mientras tanto volvió la señal justo antes de que la cola se vaciara sola, mi-estado del
     // servidor todavía diría "en jornada" y volvería a mostrar este botón - evita encolar una segunda vez.

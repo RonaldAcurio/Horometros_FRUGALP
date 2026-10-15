@@ -4,13 +4,12 @@ import { Operador } from '../models/operador';
 import { Asistencia } from '../models/asistencias';
 import { Actividad } from '../models';
 import { Op, literal } from 'sequelize';
-import { AsistenciaActividad, RegistroActividad, CierreJornada } from '../models';
+import { AsistenciaActividad, RegistroActividad, CierreJornada, TokenHacienda } from '../models';
 import { Usuario } from '../models/usuario';
 import { Hacienda } from '../models/hacienda';
 import { Seccion } from '../models/seccion';
 import bcrypt from 'bcryptjs';
 import { generarTokenQrJornada, verificarTokenQrJornada, PayloadToken } from '../services/jwt.service';
-import { tokenHaciendaVigente } from '../utils/token-hacienda';
 import { registrarAuditoria } from '../utils/registrar-auditoria';
 import { cifrarDeterministico } from '../utils/cifrado';
 import { obtenerFechaLocalEcuador } from '../utils/fecha-ecuador';
@@ -624,6 +623,15 @@ const procesarMarcacion = async(
         siempre necesita señal (ver CLAUDE.md), así que este camino jamás la encola.
         */
         hora_salida?: Date | undefined;
+        /*
+        FASE B del Token de Hacienda (ver MEMORY.md): la fecha de la fila de 'tokens_hacienda' que efectivamente
+        coincidio con el codigo recibido (solo lo mandan marcarConCodigo/marcarConMiCodigo - los 2 unicos
+        caminos que usan Token de Hacienda; QR/carnet lo dejan sin poner). Una ENTRADA nueva exige que sea la
+        fecha de HOY (un codigo pre-generado para manana no sirve todavia) - una SALIDA nunca se fija en esto,
+        sigue aceptando el mismo codigo con el que el trabajador entro, sin importar si ya cruzo la medianoche
+        (ver el chequeo mas abajo, Paso 3).
+        */
+        fecha_token_usado?: string;
     },
     contexto: ContextoMarcacion = {}
 ): Promise<{ status: number; body: any }> => {
@@ -708,6 +716,26 @@ const procesarMarcacion = async(
             };
         }
 
+        /*
+        PRUEBA (2026-10-13, rama test/salida-exige-cerrar-labores): exigir que toda labor del Panel de
+        Actividades (RegistroActividad) ya tenga hora_fin antes de dejar cerrar la jornada - antes se podia
+        marcar salida con labores todavia abiertas. El bloqueo REAL para el trabajador debe pasar en el celular
+        (mi-jornada.ts, antes de intentar la peticion, para no chocar con el encolado offline-first) - esto es
+        una segunda capa de seguridad en el servidor, por si ese chequeo del cliente fallara o quedara desactualizado.
+        */
+        const laboresAbiertas = await RegistroActividad.count({
+            where: { asistencia_id: asistencia.id, hora_fin: null },
+        });
+        if(laboresAbiertas > 0){
+            return {
+                status: 400,
+                body: {
+                    message: 'Tienes labores sin finalizar en tu Panel de Actividades. Ciérralas antes de marcar tu salida.',
+                    labores_pendientes: true,
+                },
+            };
+        }
+
         // Validar que la actividad exista y NO este eliminada(Soft Delete) - solo si vino alguna que validar.
         if(actividadesIds.length > 0){
             const actividadExistente = await Actividad.findAll({where: { id: actividadesIds}});
@@ -771,6 +799,20 @@ const procesarMarcacion = async(
         return {
             status: 403,
             body: { message: 'El Supervisor ya finalizo la jornada de hoy en esta hacienda. Debes esperar al siguiente dia.' },
+        };
+    }
+
+    /*
+    FASE B del Token de Hacienda: si esta marcacion vino con un codigo (fecha_token_usado puesto - QR/carnet lo
+    dejan undefined, nunca se bloquean por esto), una ENTRADA nueva exige que la fila de ese codigo sea
+    exactamente la de HOY - asi un codigo pre-generado para manana/pasado (ver generarTokenHacienda, "dias")
+    no sirve hasta que llegue su dia. Deliberadamente DESPUES de resolver el Paso 1 (jornada ambigua de ayer):
+    si esto termina siendo una SALIDA real (asistencia sigue sin null), nunca se llega hasta aca.
+    */
+    if(datos.fecha_token_usado !== undefined && datos.fecha_token_usado !== hoy){
+        return {
+            status: 401,
+            body: { message: `Este código todavía no es válido. Entra en vigencia el ${datos.fecha_token_usado}.` },
         };
     }
 
@@ -860,8 +902,17 @@ export const marcarConCodigo = async(req:Request, res:Response):Promise<void> =>
             return;
         }
 
-        const hacienda = await Hacienda.findOne({ where: { token_actual: token_hacienda }});
-        if(!hacienda || !tokenHaciendaVigente(hacienda)){
+        /*
+        FASE B (ver MEMORY.md): se busca por el STRING del token directo en tokens_hacienda, sin filtrar por
+        fecha aca - 'activo' + 'expira_en' alcanza para saber si el codigo "existe y sigue vivo". La fecha de
+        la fila que matcheo se guarda para que procesarMarcacion decida, mas abajo, si aplica o no (solo le
+        importa a una ENTRADA nueva, nunca a una SALIDA).
+        */
+        const tokenFila = await TokenHacienda.findOne({
+            where: { token: token_hacienda, activo: true, expira_en: { [Op.gt]: new Date() } },
+        });
+        const hacienda = tokenFila ? await Hacienda.findByPk(tokenFila.hacienda_id) : null;
+        if(!hacienda || !tokenFila){
             res.status(401).json({ message: 'El codigo de la hacienda es invalido o ya expiro.'});
             return;
         }
@@ -895,7 +946,11 @@ export const marcarConCodigo = async(req:Request, res:Response):Promise<void> =>
             };
         }
 
-        const { status, body } = await procesarMarcacion(operador, { actividades_ids, foto_ingreso }, contexto);
+        const { status, body } = await procesarMarcacion(
+            operador,
+            { actividades_ids, foto_ingreso, fecha_token_usado: tokenFila.fecha },
+            contexto
+        );
         res.status(status).json(body);
     }catch(err){
         console.error('Error procesando la marcacion con codigo.', err);
@@ -938,7 +993,16 @@ export const marcarConMiCodigo = async(req:Request, res:Response):Promise<void> 
         }
 
         const hacienda = await Hacienda.findByPk(req.auth.hacienda_id);
-        if(!hacienda || hacienda.token_actual !== token_hacienda || !tokenHaciendaVigente(hacienda)){
+        if(!hacienda){
+            res.status(401).json({ message: 'El codigo ingresado es invalido o ya expiro.'});
+            return;
+        }
+        // FASE B (ver MEMORY.md): mismo criterio que marcarConCodigo - sin filtrar por fecha aca, eso lo
+        // decide procesarMarcacion mas abajo (solo le importa si esto termina siendo una ENTRADA nueva).
+        const tokenFila = await TokenHacienda.findOne({
+            where: { hacienda_id: hacienda.id, token: token_hacienda, activo: true, expira_en: { [Op.gt]: new Date() } },
+        });
+        if(!tokenFila){
             res.status(401).json({ message: 'El codigo ingresado es invalido o ya expiro.'});
             return;
         }
@@ -975,7 +1039,10 @@ export const marcarConMiCodigo = async(req:Request, res:Response):Promise<void> 
         */
         const { status, body } = await procesarMarcacion(
             operador,
-            { actividades_ids: actividadesIdsFinal, foto_ingreso, accion_jornada_anterior, hora_salida: horaSalidaParseada },
+            {
+                actividades_ids: actividadesIdsFinal, foto_ingreso, accion_jornada_anterior,
+                hora_salida: horaSalidaParseada, fecha_token_usado: tokenFila.fecha,
+            },
             { omitirActividadRequerida: true }
         );
         res.status(status).json(body);
@@ -1017,6 +1084,19 @@ export const marcarSalidaOlvidada = async(req:Request, res:Response):Promise<voi
                 return;
             }
             horaSalidaFinal = parseada;
+        }
+
+        // PRUEBA (2026-10-13, rama test/salida-exige-cerrar-labores): mismo chequeo que procesarMarcacion -
+        // tambien aplica a la salida olvidada, no solo a la salida normal.
+        const laboresAbiertas = await RegistroActividad.count({
+            where: { asistencia_id: asistencia.id, hora_fin: null },
+        });
+        if(laboresAbiertas > 0){
+            res.status(400).json({
+                message: 'Tienes labores sin finalizar en tu Panel de Actividades. Ciérralas antes de marcar tu salida.',
+                labores_pendientes: true,
+            });
+            return;
         }
 
         await asistencia.update({ estado: 'SALIDA_OLVIDADA', hora_salida: horaSalidaFinal });
@@ -1518,6 +1598,12 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
                     { token_actual: null, token_expira_en: null },
                     { where: { id: { [Op.in]: haciendaIdsAInvalidar } } },
                 );
+                // FASE A (ver MEMORY.md, "Token de Hacienda"): doble escritura, mismo criterio que
+                // invalidarToken - esHoy ya garantiza que fechaProcesar es la fecha de HOY.
+                await TokenHacienda.update(
+                    { activo: false },
+                    { where: { hacienda_id: { [Op.in]: haciendaIdsAInvalidar }, fecha: fechaProcesar } },
+                );
                 for (const hda of haciendasAInvalidar) {
                     await registrarAuditoria({
                         actorUsuarioId: req.auth!.id,
@@ -1643,6 +1729,17 @@ export const deshacerCierreJornada = async(req:Request, res:Response):Promise<vo
         const expiraEn = new Date(Date.now() + 24 * 60 * 60 * 1000);
         await hacienda.update({ token_actual: nuevoToken, token_expira_en: expiraEn });
 
+        // FASE A (ver MEMORY.md): doble escritura, mismo criterio que generarTokenHacienda - la fila es de HOY
+        // (el token recien generado sirve a partir de AHORA, sin importar que fechaProcesar sea un dia atrasado).
+        await TokenHacienda.upsert({
+            hacienda_id: hacienda.id,
+            fecha: obtenerFechaLocalEcuador(),
+            token: nuevoToken,
+            expira_en: expiraEn,
+            activo: true,
+            generado_por_usuario_id: req.auth!.id,
+        });
+
         await registrarAuditoria({
             actorUsuarioId: req.auth!.id,
             accion: 'DESHACER_CIERRE_JORNADA',
@@ -1759,6 +1856,14 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
                 permanente - el frontend prioriza esta sobre operador.supervisor.hacienda (ver asistencia-panel.ts).
                 */
                 { model: Hacienda, as: 'haciendaPrestamo', attributes: ['nombre'], paranoid: false },
+                /*
+                Labores del Panel de Actividades de ESTA jornada (pedido del usuario, 2026-10-15): "Horas
+                Trabajadas" pasa a ser la suma de hora_fin-hora_inicio de cada labor, no hora_salida-hora_ingreso
+                (ver mas abajo) - un trabajador puede marcar salida horas despues de haber dejado de trabajar de
+                verdad (ya en su casa), asi que el rango completo de la jornada mentia. Solo se piden
+                hora_inicio/hora_fin, nada mas - el resto (equipo/actividad) no hace falta para esta suma.
+                */
+                { model: RegistroActividad, as: 'registros', attributes: ['hora_inicio', 'hora_fin'] },
             ],
             order: [['fecha','DESC'],['hora_ingreso','DESC']],
             limit: limitePagina,
@@ -1768,17 +1873,30 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
             distinct: true,
         });
 
-        //Calculamos las horas trabajadas de cada registro(campo derivado, no vive en la BD)
+        /*
+        Calculamos las horas trabajadas de cada registro (campo derivado, no vive en la BD). Suma de las labores
+        del Panel de Actividades con hora_fin (pedido del usuario, 2026-10-15), no hora_salida-hora_ingreso -
+        las labores sin hora_fin (dejadas sueltas por un cierre de dia en bloque, caso raro) se excluyen de la
+        suma en vez de inventarles una hora de cierre. Si NINGUNA labor de esta jornada tiene horas (caso del
+        kiosco fisico/carnet, que nunca pasa por el Panel de Actividades - ver registrarMacarcoQR/marcarConCodigo),
+        total_horas queda en null (el frontend ya lo pinta como "—", nunca como "0 h") en vez de mentir con cero.
+        */
         const historialConHoras = historial.map((registro) => {
             const datos = registro.toJSON() as any;
+            const registrosConHoras: { hora_inicio: string; hora_fin: string | null }[] = datos.registros || [];
+
             let total_horas: number | null = null;
-
-            if(datos.hora_ingreso && datos.hora_salida){
-                const milisegundos = new Date(datos.hora_salida).getTime() - new Date(datos.hora_ingreso).getTime();
-
-                total_horas = Math.round((milisegundos / (1000 *60 * 60)) * 100) / 100;
+            const sumaHoras = registrosConHoras.reduce((acumulado, reg) => {
+                if(!reg.hora_fin) return acumulado;
+                const milisegundos = new Date(reg.hora_fin).getTime() - new Date(reg.hora_inicio).getTime();
+                return acumulado + milisegundos;
+            }, 0);
+            const hayAlgunaLaborConHoras = registrosConHoras.some((reg) => reg.hora_fin);
+            if(hayAlgunaLaborConHoras){
+                total_horas = Math.round((sumaHoras / (1000 * 60 * 60)) * 100) / 100;
             }
 
+            delete datos.registros; // Solo se usaba para este calculo - no hace falta mandarlo al frontend.
             return {...datos, total_horas};
         });
 
