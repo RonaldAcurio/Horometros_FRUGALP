@@ -23,8 +23,9 @@ desplegado en Railway (backend) y Vercel (frontend web + descarga del .apk).
   las labores abiertas.
 - **Token de Hacienda**: tabla `tokens_hacienda` (una fila por hacienda+fecha). Una ENTRADA nueva
   exige el código de HOY; una SALIDA no se fija en la fecha (no rompe turnos nocturnos). Soporta
-  generar hasta 3 días de una vez e invalidar uno específico (hoy solo vía API, sin botón en el
-  Panel todavía — ver PENDIENTE).
+  generar hasta 3 días de una vez e invalidar uno específico. El Supervisor Panel reutiliza su
+  propio selector de fecha (el mismo que ya usaba para ver el Historial de otro día) para elegir
+  PARA QUÉ DÍA generar/invalidar/consultar el token — no hace falta moverse día por día desde hoy.
 - **Secciones/Áreas**: tabla `secciones` (hija de Hacienda). Un OPERADOR tiene un `seccion_id`
   FIJO asignado al crear su cuenta (nunca un MECANICO — eso es exclusivo de OPERADOR). Se
   gestiona desde el Panel Admin, pestaña Haciendas.
@@ -32,7 +33,8 @@ desplegado en Railway (backend) y Vercel (frontend web + descarga del .apk).
   cerrar el día en bloque (`finalizarDia`, fuerza `SALIDA_OLVIDADA` a quien quedó abierto).
 - **Reportes**: hoja Excel de Taller por hacienda/día (`exportar-excel.service.ts`, firma
   "FIRMA SUPERVISOR"), Historial de Asistencias con filtros (Panel de Asistente/Admin) — "Horas
-  Trabajadas" es la suma real de las actividades, no el rango entrada→salida.
+  Trabajadas" es la suma real de las actividades, no el rango entrada→salida, mostrada en formato
+  "Xh Ymin" (ej. "30min", "12h 1min"), no decimal.
 - **Offline-first**: crear/cerrar labores y marcar salida funcionan sin señal (se encola en el
   celular con `@capacitor/preferences` y sincroniza solo al volver la conexión).
 - **APK**: 4.2MB (antes ~100MB — se embebía a sí mismo dentro de sus propios assets, ya
@@ -42,25 +44,14 @@ desplegado en Railway (backend) y Vercel (frontend web + descarga del .apk).
 PR [#45](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/45): exigir cerrar labores antes
 de salida, Excel "FIRMA SUPERVISOR", limpieza de `operadores.area`, Horas Trabajadas real, Token
 de Hacienda Fases A+B completas. PR [#46](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/46):
-APK liviano (R8 + quitar auto-incrustación), confirmado instalando bien en celular real. Falta que
-el usuario revise la parte de ADMIN desde otras cuentas.
+APK liviano (R8 + quitar auto-incrustación). PR [#47](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/47):
+calendario de tokens (el Supervisor elige para qué día generar/invalidar, usando su propio selector
+de fecha ya existente) + Horas Trabajadas en formato "Xh Ymin" en vez de decimal. APK recompilado,
+confirmado 4.2MB (4.422.786 bytes) en producción tras este merge.
 
 ## PENDIENTE
 
-### 1 — Calendario para generar/invalidar el Token de un día específico
-Pedido del usuario (2026-10-15): el Supervisor necesita poder **navegar un calendario y elegir un
-día puntual** (ej. moverse al sábado, generar; moverse al domingo, generar) — no el mismo
-"generar los próximos N días corridos" que ya existe. Hoy el Panel Admin **no tiene ningún
-selector de fecha**, solo un botón simple "Generar" (siempre hoy). Hace falta:
-- Agregar un `date picker` junto al botón "Generar"/"Invalidar" en `admin-panel.html`/`.ts`.
-- El backend ya soporta casi todo esto vía `dias` (cuenta de días corridos desde hoy) — para elegir
-  un día SUELTO (no necesariamente consecutivo) hay que agregarle a `generarTokenHacienda` un
-  parámetro `fecha` explícito (hoy solo entiende "cuántos días corridos", no "este día puntual").
-  `invalidarToken` ya acepta `{ fecha }`, ese lado está listo.
-- Bajo riesgo (aditivo), pero requiere decidir el diseño de la pantalla (lista de los próximos
-  días con su estado, o un calendario de verdad) — a definir contigo antes de programar.
-
-### 2 — Token de Hacienda — Fase C (limpieza final, informe detallado)
+### 1 — Token de Hacienda — Fase C (limpieza final, informe detallado)
 Solo cuando Fase B lleve tiempo estable en producción:
 - Quitar `haciendas.token_actual`/`token_expira_en` por completo (migración `removeColumn`, con
   `down()` que las re-crea vacías — mismo criterio que `cifrar-pii-operadores.js`: para ese punto
@@ -73,7 +64,7 @@ Solo cuando Fase B lleve tiempo estable en producción:
 - Borrar la función `tokenHaciendaVigente` y su archivo de pruebas (`utils/token-hacienda.ts`/
   `.test.ts`) — quedaron como código muerto desde Fase B.
 
-### 3 — Token por Área (informe detallado)
+### 2 — Token por Área (informe detallado)
 Motivo real: cada Área dentro de una Hacienda tiene su propio Supervisor (no comparten uno). Se
 evaluaron 2 caminos:
 - **Camino A — tabla `tokens_seccion`**: descartado. `Seccion` hoy NO tiene concepto de "su
@@ -89,6 +80,6 @@ evaluaron 2 caminos:
   de una misma finca en un solo total — el usuario lo va a investigar por su cuenta. Depende
   también de que la Fase C de Token de Hacienda esté resuelta primero.
 
-### 4 — Casos borde menores, aceptados tal cual
+### 3 — Casos borde menores, aceptados tal cual
 - Una labor creada 100% sin señal no se puede cerrar hasta sincronizar (así bloquea la salida
   mientras tanto) — límite conocido del diseño offline, no es un bug.
