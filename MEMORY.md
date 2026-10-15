@@ -47,6 +47,22 @@ Todo esto vive junto en la rama `test/salida-exige-cerrar-labores` (commits hast
 - **Limpieza `operadores.area`**: columna muerta (sin uso real confirmado) eliminada con su
   migración (`20261015000000-quitar-area-de-operadores.js`). No confundir con
   `registro_actividades.area`, que SÍ se usa (OT del Mecánico) — esa no se tocó.
+- **"Horas Trabajadas" del Historial** = suma de horas por actividad (`RegistroActividad.hora_fin
+  - hora_inicio`), ya NO `hora_salida - hora_ingreso`. Labores sin cerrar se excluyen de la suma
+  (no se les inventa un cierre); si una jornada no tiene NINGUNA actividad con horas (kiosco
+  físico, el único camino que no pasa por el Panel de Actividades), queda en `null` y el frontend
+  ya lo pinta como "—", nunca como "0 h" engañoso. Cambia solo `obtenerHistorial`
+  (`asistencia.controller.ts`) — el frontend no necesitó ningún cambio, ya sabía mostrar `null`
+  como "—".
+- **Token de Hacienda — Fase A** (aditiva, cero riesgo): tabla `tokens_hacienda` nueva (una fila
+  por hacienda+fecha) + modelo `TokenHacienda` + migración con backfill del token vigente de cada
+  hacienda. `generarTokenHacienda`/`invalidarToken`/`deshacerCierreJornada`/`finalizarDia` ahora
+  escriben TAMBIÉN ahí, en doble escritura — **nada cambia de lo que hoy se LEE** (login,
+  marcar con código, el panel del Supervisor siguen usando exactamente
+  `Hacienda.token_actual`/`token_expira_en`, intactos). Verificado con pruebas reales contra el
+  backend local: generar crea 1 fila activa; regenerar el mismo día actualiza esa misma fila (no
+  crea una nueva); invalidar la deja `activo=false`; el comportamiento viejo (`token_actual`) se
+  comprobó sin cambios en los 3 casos. Suite completa (27+10) sigue en verde.
 
 ### Aparte — también probado, pendiente de tu propia prueba en celular
 - **APK liviano**: el .apk se embebía a sí mismo dentro de sus propios assets (bug real de
@@ -54,18 +70,29 @@ Todo esto vive junto en la rama `test/salida-exige-cerrar-labores` (commits hast
   **Esperando que lo instales y confirmes antes de producción.**
 
 ### En planificación (sin código todavía)
-- **Token de Hacienda, arreglo de fondo**: tabla `tokens_hacienda` (una fila por hacienda+fecha),
-  3 fases de despliegue. Diseño ya refinado con la idea del Supervisor (generar hasta 3 días
-  seguidos, ej. viernes genera sábado+domingo+lunes): **ENTRADA nueva exige `fecha = hoy`**
-  (un código futuro no sirve hasta su día); **SALIDA no se filtra por fecha** (sigue funcionando
-  con el código que ya sirvió al entrar, sin romper turnos que cruzan medianoche). Con esta regla
-  se eliminan solos los 2 huecos detectados antes (ambigüedad de medianoche; dos tokens activos
-  a la vez).
-- **"Horas Trabajadas" del Historial** = suma de horas por actividad (`RegistroActividad`), no
-  `hora_salida - hora_ingreso` como hoy. Cambia solo `obtenerHistorial`
-  (`asistencia.controller.ts`). Depende de que la exigencia de cerrar labores ya esté en
-  producción. Pendiente confirmar si el **kiosco físico** (único camino sin horas por actividad)
-  sigue en uso real, para decidir qué mostrar ahí ("—" propuesto, con fallback ya definido).
+- **Token de Hacienda — Fases B y C** (informe detallado, guardado para cuando lo pidas):
+  - **Fase B (el cambio de comportamiento real)**: `tokenHaciendaVigente` deja de leer
+    `Hacienda.token_actual`/`token_expira_en` y pasa a consultar `tokens_hacienda`, con la regla
+    ya acordada con el usuario: **ENTRADA nueva exige `fecha = hoy`** (un código generado para
+    mañana/pasado no sirve hasta que llegue su día — esto es lo que de verdad habilita "generar
+    hasta 3 días seguidos", inútil en Fase A porque todavía nadie respeta la fecha al leer);
+    **SALIDA NO se filtra por fecha** (sigue aceptando el mismo código con el que el trabajador
+    entró, sin importar si ya cruzó medianoche — así no se reintroduce el bug de turnos
+    nocturnos que ya se resolvió para jornadas). Call sites a cambiar: `auth.controller.ts`
+    (login), `marcarConCodigo`/`marcarConMiCodigo` (`asistencia.controller.ts`).
+    `obtenerHaciendas` pasa a hacer JOIN con la fila de HOY de cada hacienda para seguir
+    devolviendo el mismo contrato JSON — **cero cambios de frontend** en esta fase.
+    `generarTokenHacienda` gana un parámetro opcional "cuántos días" (1-3) para crear varias
+    filas futuras de una vez. Riesgos a probar a fondo antes de desplegar: el turno nocturno
+    cruzando medianoche (diseño ya resuelto, falta la prueba real); invalidar un código
+    específico entre los pre-generados necesita una pantalla nueva (hoy solo existe "invalidar
+    EL token", no "elige cuál de los 3").
+  - **Fase C (limpieza, solo cuando Fase B lleve tiempo estable)**: quitar
+    `haciendas.token_actual`/`token_expira_en` (migración con `down()` que las re-crea vacías,
+    mismo criterio que `cifrar-pii-operadores.js` — para ese punto el dato ya no es la fuente de
+    verdad). Quitar la doble escritura de Fase A. Eliminar el parche viejo de `finalizarDia`
+    (`esHoy`) — ya no hace falta "matar" el token de hoy al cerrar el día: cada día ya tiene su
+    propia fila, el de mañana nunca depende del de hoy.
 - 2 casos borde offline — el principal (ventana de milisegundos) ya se reforzó arriba; queda
   el de una labor creada 100% sin señal, que no se puede cerrar hasta sincronizar (límite
   conocido, aceptado tal cual).

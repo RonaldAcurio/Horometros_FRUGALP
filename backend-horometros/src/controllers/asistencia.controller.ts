@@ -4,7 +4,7 @@ import { Operador } from '../models/operador';
 import { Asistencia } from '../models/asistencias';
 import { Actividad } from '../models';
 import { Op, literal } from 'sequelize';
-import { AsistenciaActividad, RegistroActividad, CierreJornada } from '../models';
+import { AsistenciaActividad, RegistroActividad, CierreJornada, TokenHacienda } from '../models';
 import { Usuario } from '../models/usuario';
 import { Hacienda } from '../models/hacienda';
 import { Seccion } from '../models/seccion';
@@ -1551,6 +1551,12 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
                     { token_actual: null, token_expira_en: null },
                     { where: { id: { [Op.in]: haciendaIdsAInvalidar } } },
                 );
+                // FASE A (ver MEMORY.md, "Token de Hacienda"): doble escritura, mismo criterio que
+                // invalidarToken - esHoy ya garantiza que fechaProcesar es la fecha de HOY.
+                await TokenHacienda.update(
+                    { activo: false },
+                    { where: { hacienda_id: { [Op.in]: haciendaIdsAInvalidar }, fecha: fechaProcesar } },
+                );
                 for (const hda of haciendasAInvalidar) {
                     await registrarAuditoria({
                         actorUsuarioId: req.auth!.id,
@@ -1676,6 +1682,17 @@ export const deshacerCierreJornada = async(req:Request, res:Response):Promise<vo
         const expiraEn = new Date(Date.now() + 24 * 60 * 60 * 1000);
         await hacienda.update({ token_actual: nuevoToken, token_expira_en: expiraEn });
 
+        // FASE A (ver MEMORY.md): doble escritura, mismo criterio que generarTokenHacienda - la fila es de HOY
+        // (el token recien generado sirve a partir de AHORA, sin importar que fechaProcesar sea un dia atrasado).
+        await TokenHacienda.upsert({
+            hacienda_id: hacienda.id,
+            fecha: obtenerFechaLocalEcuador(),
+            token: nuevoToken,
+            expira_en: expiraEn,
+            activo: true,
+            generado_por_usuario_id: req.auth!.id,
+        });
+
         await registrarAuditoria({
             actorUsuarioId: req.auth!.id,
             accion: 'DESHACER_CIERRE_JORNADA',
@@ -1792,6 +1809,14 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
                 permanente - el frontend prioriza esta sobre operador.supervisor.hacienda (ver asistencia-panel.ts).
                 */
                 { model: Hacienda, as: 'haciendaPrestamo', attributes: ['nombre'], paranoid: false },
+                /*
+                Labores del Panel de Actividades de ESTA jornada (pedido del usuario, 2026-10-15): "Horas
+                Trabajadas" pasa a ser la suma de hora_fin-hora_inicio de cada labor, no hora_salida-hora_ingreso
+                (ver mas abajo) - un trabajador puede marcar salida horas despues de haber dejado de trabajar de
+                verdad (ya en su casa), asi que el rango completo de la jornada mentia. Solo se piden
+                hora_inicio/hora_fin, nada mas - el resto (equipo/actividad) no hace falta para esta suma.
+                */
+                { model: RegistroActividad, as: 'registros', attributes: ['hora_inicio', 'hora_fin'] },
             ],
             order: [['fecha','DESC'],['hora_ingreso','DESC']],
             limit: limitePagina,
@@ -1801,17 +1826,30 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
             distinct: true,
         });
 
-        //Calculamos las horas trabajadas de cada registro(campo derivado, no vive en la BD)
+        /*
+        Calculamos las horas trabajadas de cada registro (campo derivado, no vive en la BD). Suma de las labores
+        del Panel de Actividades con hora_fin (pedido del usuario, 2026-10-15), no hora_salida-hora_ingreso -
+        las labores sin hora_fin (dejadas sueltas por un cierre de dia en bloque, caso raro) se excluyen de la
+        suma en vez de inventarles una hora de cierre. Si NINGUNA labor de esta jornada tiene horas (caso del
+        kiosco fisico/carnet, que nunca pasa por el Panel de Actividades - ver registrarMacarcoQR/marcarConCodigo),
+        total_horas queda en null (el frontend ya lo pinta como "—", nunca como "0 h") en vez de mentir con cero.
+        */
         const historialConHoras = historial.map((registro) => {
             const datos = registro.toJSON() as any;
+            const registrosConHoras: { hora_inicio: string; hora_fin: string | null }[] = datos.registros || [];
+
             let total_horas: number | null = null;
-
-            if(datos.hora_ingreso && datos.hora_salida){
-                const milisegundos = new Date(datos.hora_salida).getTime() - new Date(datos.hora_ingreso).getTime();
-
-                total_horas = Math.round((milisegundos / (1000 *60 * 60)) * 100) / 100;
+            const sumaHoras = registrosConHoras.reduce((acumulado, reg) => {
+                if(!reg.hora_fin) return acumulado;
+                const milisegundos = new Date(reg.hora_fin).getTime() - new Date(reg.hora_inicio).getTime();
+                return acumulado + milisegundos;
+            }, 0);
+            const hayAlgunaLaborConHoras = registrosConHoras.some((reg) => reg.hora_fin);
+            if(hayAlgunaLaborConHoras){
+                total_horas = Math.round((sumaHoras / (1000 * 60 * 60)) * 100) / 100;
             }
 
+            delete datos.registros; // Solo se usaba para este calculo - no hace falta mandarlo al frontend.
             return {...datos, total_horas};
         });
 

@@ -1,7 +1,9 @@
 import { Request, Response } from "express";
 import crypto from 'crypto';
 import { Hacienda } from "../models/hacienda";
+import { TokenHacienda } from "../models/token_hacienda";
 import { registrarAuditoria } from "../utils/registrar-auditoria";
+import { obtenerFechaLocalEcuador } from "../utils/fecha-ecuador";
 
 //24h: vigencia del Token de Hacienda(distinto del JWT de sesion)
 const TOKEN_VIGENCIA_MS = 24*60*60*1000;
@@ -95,6 +97,18 @@ export const generarTokenHacienda = async(req:Request, res:Response):Promise<voi
             token_expira_en: expiraEn,
         });
 
+        // FASE A (ver MEMORY.md, "Token de Hacienda"): doble escritura, nadie lee de aca todavia. Un UPSERT
+        // sobre (hacienda_id, fecha=hoy) - regenerar el token el mismo dia actualiza esa misma fila, igual que
+        // arriba se sobreescribe token_actual, en vez de dejar filas basura.
+        await TokenHacienda.upsert({
+            hacienda_id: hacienda.id,
+            fecha: obtenerFechaLocalEcuador(),
+            token,
+            expira_en: expiraEn,
+            activo: true,
+            generado_por_usuario_id: req.auth!.id,
+        });
+
         await registrarAuditoria({
             actorUsuarioId: req.auth!.id,
             accion: 'GENERAR_TOKEN_HACIENDA',
@@ -139,6 +153,14 @@ export const invalidarToken = async(req:Request, res:Response):Promise<void> => 
             token_actual:null,
             token_expira_en:null,
         });
+
+        // FASE A (ver MEMORY.md): doble escritura - si existe una fila de HOY para esta hacienda, tambien
+        // queda inactiva. No crea una fila nueva si no habia ninguna (no tiene sentido "invalidar" algo que
+        // nunca se genero via este camino).
+        await TokenHacienda.update(
+            { activo: false },
+            { where: { hacienda_id: haciendaId, fecha: obtenerFechaLocalEcuador() } }
+        );
 
         await registrarAuditoria({
             actorUsuarioId: req.auth!.id,
