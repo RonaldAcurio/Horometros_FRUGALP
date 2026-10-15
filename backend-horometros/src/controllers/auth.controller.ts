@@ -7,7 +7,7 @@ import { Asistencia } from '../models/asistencias';
 import { Hacienda } from '../models/hacienda';
 import { RegistroDispositivo } from '../models/registro_dispositivo';
 import { generarToken } from '../services/jwt.service';
-import { tokenHaciendaVigente } from '../utils/token-hacienda';
+import { TokenHacienda } from '../models/token_hacienda';
 import { obtenerFechaLocalEcuador } from '../utils/fecha-ecuador';
 import { ESTADOS_JORNADA_CERRADA } from '../utils/estados-jornada-cerrada';
 
@@ -124,10 +124,18 @@ export const login = async(req: Request, res: Response):Promise<void> => {
             el frontend lo manda al QR flotante (Camino B). Esto se decide UNA vez aqui, en el login, para que el
             frontend no tenga que adivinar ni mostrar los dos caminos a la vez (ver CLAUDE.md).
             */
+            // FASE B del Token de Hacienda (ver MEMORY.md): en vez de mirar Hacienda.token_actual, se busca
+            // la fila de HOY en tokens_hacienda - coherente con que esto decide si el trabajador debe marcar
+            // con el codigo de HOY (Camino A), nunca uno pre-generado para un dia futuro.
             let haciendaRequiereCodigo = false;
             if(haciendaId){
-                const hacienda = await Hacienda.findByPk(haciendaId);
-                haciendaRequiereCodigo = tokenHaciendaVigente(hacienda);
+                const tokenHoy = await TokenHacienda.findOne({
+                    where: {
+                        hacienda_id: haciendaId, fecha: obtenerFechaLocalEcuador(),
+                        activo: true, expira_en: { [Op.gt]: new Date() },
+                    },
+                });
+                haciendaRequiereCodigo = !!tokenHoy;
             }
 
             const token = generarToken({

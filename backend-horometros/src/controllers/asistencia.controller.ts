@@ -10,7 +10,6 @@ import { Hacienda } from '../models/hacienda';
 import { Seccion } from '../models/seccion';
 import bcrypt from 'bcryptjs';
 import { generarTokenQrJornada, verificarTokenQrJornada, PayloadToken } from '../services/jwt.service';
-import { tokenHaciendaVigente } from '../utils/token-hacienda';
 import { registrarAuditoria } from '../utils/registrar-auditoria';
 import { cifrarDeterministico } from '../utils/cifrado';
 import { obtenerFechaLocalEcuador } from '../utils/fecha-ecuador';
@@ -624,6 +623,15 @@ const procesarMarcacion = async(
         siempre necesita señal (ver CLAUDE.md), así que este camino jamás la encola.
         */
         hora_salida?: Date | undefined;
+        /*
+        FASE B del Token de Hacienda (ver MEMORY.md): la fecha de la fila de 'tokens_hacienda' que efectivamente
+        coincidio con el codigo recibido (solo lo mandan marcarConCodigo/marcarConMiCodigo - los 2 unicos
+        caminos que usan Token de Hacienda; QR/carnet lo dejan sin poner). Una ENTRADA nueva exige que sea la
+        fecha de HOY (un codigo pre-generado para manana no sirve todavia) - una SALIDA nunca se fija en esto,
+        sigue aceptando el mismo codigo con el que el trabajador entro, sin importar si ya cruzo la medianoche
+        (ver el chequeo mas abajo, Paso 3).
+        */
+        fecha_token_usado?: string;
     },
     contexto: ContextoMarcacion = {}
 ): Promise<{ status: number; body: any }> => {
@@ -794,6 +802,20 @@ const procesarMarcacion = async(
         };
     }
 
+    /*
+    FASE B del Token de Hacienda: si esta marcacion vino con un codigo (fecha_token_usado puesto - QR/carnet lo
+    dejan undefined, nunca se bloquean por esto), una ENTRADA nueva exige que la fila de ese codigo sea
+    exactamente la de HOY - asi un codigo pre-generado para manana/pasado (ver generarTokenHacienda, "dias")
+    no sirve hasta que llegue su dia. Deliberadamente DESPUES de resolver el Paso 1 (jornada ambigua de ayer):
+    si esto termina siendo una SALIDA real (asistencia sigue sin null), nunca se llega hasta aca.
+    */
+    if(datos.fecha_token_usado !== undefined && datos.fecha_token_usado !== hoy){
+        return {
+            status: 401,
+            body: { message: `Este código todavía no es válido. Entra en vigencia el ${datos.fecha_token_usado}.` },
+        };
+    }
+
     //Paso 3: Entrada Nueva
     const { fotoIngreso, fotoR2Key } = await prepararFotoParaGuardar(datos.foto_ingreso, operador.id, ahora);
     asistencia = await Asistencia.create({
@@ -880,8 +902,17 @@ export const marcarConCodigo = async(req:Request, res:Response):Promise<void> =>
             return;
         }
 
-        const hacienda = await Hacienda.findOne({ where: { token_actual: token_hacienda }});
-        if(!hacienda || !tokenHaciendaVigente(hacienda)){
+        /*
+        FASE B (ver MEMORY.md): se busca por el STRING del token directo en tokens_hacienda, sin filtrar por
+        fecha aca - 'activo' + 'expira_en' alcanza para saber si el codigo "existe y sigue vivo". La fecha de
+        la fila que matcheo se guarda para que procesarMarcacion decida, mas abajo, si aplica o no (solo le
+        importa a una ENTRADA nueva, nunca a una SALIDA).
+        */
+        const tokenFila = await TokenHacienda.findOne({
+            where: { token: token_hacienda, activo: true, expira_en: { [Op.gt]: new Date() } },
+        });
+        const hacienda = tokenFila ? await Hacienda.findByPk(tokenFila.hacienda_id) : null;
+        if(!hacienda || !tokenFila){
             res.status(401).json({ message: 'El codigo de la hacienda es invalido o ya expiro.'});
             return;
         }
@@ -915,7 +946,11 @@ export const marcarConCodigo = async(req:Request, res:Response):Promise<void> =>
             };
         }
 
-        const { status, body } = await procesarMarcacion(operador, { actividades_ids, foto_ingreso }, contexto);
+        const { status, body } = await procesarMarcacion(
+            operador,
+            { actividades_ids, foto_ingreso, fecha_token_usado: tokenFila.fecha },
+            contexto
+        );
         res.status(status).json(body);
     }catch(err){
         console.error('Error procesando la marcacion con codigo.', err);
@@ -958,7 +993,16 @@ export const marcarConMiCodigo = async(req:Request, res:Response):Promise<void> 
         }
 
         const hacienda = await Hacienda.findByPk(req.auth.hacienda_id);
-        if(!hacienda || hacienda.token_actual !== token_hacienda || !tokenHaciendaVigente(hacienda)){
+        if(!hacienda){
+            res.status(401).json({ message: 'El codigo ingresado es invalido o ya expiro.'});
+            return;
+        }
+        // FASE B (ver MEMORY.md): mismo criterio que marcarConCodigo - sin filtrar por fecha aca, eso lo
+        // decide procesarMarcacion mas abajo (solo le importa si esto termina siendo una ENTRADA nueva).
+        const tokenFila = await TokenHacienda.findOne({
+            where: { hacienda_id: hacienda.id, token: token_hacienda, activo: true, expira_en: { [Op.gt]: new Date() } },
+        });
+        if(!tokenFila){
             res.status(401).json({ message: 'El codigo ingresado es invalido o ya expiro.'});
             return;
         }
@@ -995,7 +1039,10 @@ export const marcarConMiCodigo = async(req:Request, res:Response):Promise<void> 
         */
         const { status, body } = await procesarMarcacion(
             operador,
-            { actividades_ids: actividadesIdsFinal, foto_ingreso, accion_jornada_anterior, hora_salida: horaSalidaParseada },
+            {
+                actividades_ids: actividadesIdsFinal, foto_ingreso, accion_jornada_anterior,
+                hora_salida: horaSalidaParseada, fecha_token_usado: tokenFila.fecha,
+            },
             { omitirActividadRequerida: true }
         );
         res.status(status).json(body);

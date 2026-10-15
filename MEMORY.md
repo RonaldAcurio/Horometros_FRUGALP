@@ -56,13 +56,28 @@ Todo esto vive junto en la rama `test/salida-exige-cerrar-labores` (commits hast
   como "—".
 - **Token de Hacienda — Fase A** (aditiva, cero riesgo): tabla `tokens_hacienda` nueva (una fila
   por hacienda+fecha) + modelo `TokenHacienda` + migración con backfill del token vigente de cada
-  hacienda. `generarTokenHacienda`/`invalidarToken`/`deshacerCierreJornada`/`finalizarDia` ahora
-  escriben TAMBIÉN ahí, en doble escritura — **nada cambia de lo que hoy se LEE** (login,
-  marcar con código, el panel del Supervisor siguen usando exactamente
-  `Hacienda.token_actual`/`token_expira_en`, intactos). Verificado con pruebas reales contra el
-  backend local: generar crea 1 fila activa; regenerar el mismo día actualiza esa misma fila (no
-  crea una nueva); invalidar la deja `activo=false`; el comportamiento viejo (`token_actual`) se
-  comprobó sin cambios en los 3 casos. Suite completa (27+10) sigue en verde.
+  hacienda. `generarTokenHacienda`/`invalidarToken`/`deshacerCierreJornada`/`finalizarDia`
+  escriben TAMBIÉN ahí, en doble escritura.
+- **Token de Hacienda — Fase B** (el cambio de comportamiento real, YA HECHO): `login`,
+  `marcarConCodigo`, `marcarConMiCodigo` y `obtenerHaciendas` dejan de leer
+  `Hacienda.token_actual`/`token_expira_en` y pasan a consultar `tokens_hacienda`. Regla aplicada
+  exactamente como se acordó: una **ENTRADA** nueva exige que el código sea el de **HOY**; una
+  **SALIDA** nunca se fija en la fecha de la fila (sigue aceptando el mismo código con el que el
+  trabajador entró, sin importar si cruzó medianoche). `generarTokenHacienda` ya acepta
+  `{ dias: 1-3 }` para pre-generar varios días de una vez (el pedido real: el Supervisor deja
+  listos sábado+domingo+lunes el viernes); cada día pre-generado recibe 48h de vigencia desde su
+  propia medianoche Ecuador. `invalidarToken` ya acepta `{ fecha }` para invalidar un día
+  específico entre los pre-generados sin tocar los demás (ni el campo viejo de Hacienda, que solo
+  se toca cuando la fecha a invalidar es hoy). Verificado con 7 pruebas reales de punta a punta
+  contra el backend local: generar 2 días crea 2 filas correctas; un código de mañana se
+  RECHAZA hoy (401, mensaje claro); el de hoy se acepta; `obtenerHaciendas` muestra el token de
+  hoy (no el de mañana); invalidar mañana no toca hoy ni el campo viejo; **una SALIDA con un
+  token cuya fila es de AYER (todavía vigente) se acepta igual** — el escenario crítico de turno
+  nocturno, confirmado sin romperse. Suite completa (27 unit + 10 integración) sigue en verde.
+  **Nota de alcance**: el backend ya soporta generar varios días e invalidar uno específico; el
+  Panel del Supervisor todavía solo tiene el botón de "generar token de hoy" — agregarle el
+  control para elegir cuántos días (o cuál invalidar) es una tarea de frontend aparte, no incluida
+  en esta pasada.
 
 ### Aparte — también probado, pendiente de tu propia prueba en celular
 - **APK liviano**: el .apk se embebía a sí mismo dentro de sus propios assets (bug real de
@@ -70,29 +85,21 @@ Todo esto vive junto en la rama `test/salida-exige-cerrar-labores` (commits hast
   **Esperando que lo instales y confirmes antes de producción.**
 
 ### En planificación (sin código todavía)
-- **Token de Hacienda — Fases B y C** (informe detallado, guardado para cuando lo pidas):
-  - **Fase B (el cambio de comportamiento real)**: `tokenHaciendaVigente` deja de leer
-    `Hacienda.token_actual`/`token_expira_en` y pasa a consultar `tokens_hacienda`, con la regla
-    ya acordada con el usuario: **ENTRADA nueva exige `fecha = hoy`** (un código generado para
-    mañana/pasado no sirve hasta que llegue su día — esto es lo que de verdad habilita "generar
-    hasta 3 días seguidos", inútil en Fase A porque todavía nadie respeta la fecha al leer);
-    **SALIDA NO se filtra por fecha** (sigue aceptando el mismo código con el que el trabajador
-    entró, sin importar si ya cruzó medianoche — así no se reintroduce el bug de turnos
-    nocturnos que ya se resolvió para jornadas). Call sites a cambiar: `auth.controller.ts`
-    (login), `marcarConCodigo`/`marcarConMiCodigo` (`asistencia.controller.ts`).
-    `obtenerHaciendas` pasa a hacer JOIN con la fila de HOY de cada hacienda para seguir
-    devolviendo el mismo contrato JSON — **cero cambios de frontend** en esta fase.
-    `generarTokenHacienda` gana un parámetro opcional "cuántos días" (1-3) para crear varias
-    filas futuras de una vez. Riesgos a probar a fondo antes de desplegar: el turno nocturno
-    cruzando medianoche (diseño ya resuelto, falta la prueba real); invalidar un código
-    específico entre los pre-generados necesita una pantalla nueva (hoy solo existe "invalidar
-    EL token", no "elige cuál de los 3").
-  - **Fase C (limpieza, solo cuando Fase B lleve tiempo estable)**: quitar
-    `haciendas.token_actual`/`token_expira_en` (migración con `down()` que las re-crea vacías,
-    mismo criterio que `cifrar-pii-operadores.js` — para ese punto el dato ya no es la fuente de
-    verdad). Quitar la doble escritura de Fase A. Eliminar el parche viejo de `finalizarDia`
-    (`esHoy`) — ya no hace falta "matar" el token de hoy al cerrar el día: cada día ya tiene su
-    propia fila, el de mañana nunca depende del de hoy.
+- **Token de Hacienda — Fase C** (informe detallado, guardado para cuando lo pidas — solo cuando
+  Fase B lleve tiempo estable en producción):
+  - Quitar `haciendas.token_actual`/`token_expira_en` por completo (migración `removeColumn`,
+    con `down()` que las re-crea vacías — mismo criterio que `cifrar-pii-operadores.js`: para ese
+    punto el dato ya no es la fuente de verdad, no hay nada real que restaurar).
+  - Quitar la doble escritura de Fase A en `generarTokenHacienda`/`invalidarToken`/
+    `deshacerCierreJornada`/`finalizarDia` (ya no hace falta, nadie lee esos 2 campos).
+  - Eliminar el parche viejo del bloque `esHoy` dentro de `finalizarDia` (`asistencia.controller.ts`)
+    — ya no hace falta "matar" el token de hoy al cerrar el día: cada día ya tiene su propia fila
+    en `tokens_hacienda`, el de mañana nunca dependió del de hoy.
+  - Borrar también la función `tokenHaciendaVigente` y su archivo de pruebas
+    (`utils/token-hacienda.ts`/`.test.ts`) — quedaron sin ningún llamado real desde Fase B, vivos
+    solo como código muerto hasta este punto.
+  - (Opcional, frontend) agregar al Panel del Supervisor un control para elegir cuántos días
+    generar (1-3) y cuál invalidar — hoy esto solo es posible vía API, no tiene botón todavía.
 - 2 casos borde offline — el principal (ventana de milisegundos) ya se reforzó arriba; queda
   el de una labor creada 100% sin señal, que no se puede cerrar hasta sincronizar (límite
   conocido, aceptado tal cual).
