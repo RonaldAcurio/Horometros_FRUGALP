@@ -1,6 +1,6 @@
 # MEMORY.md — Horómetros FRUGALP
 
-Respaldo de contexto del proyecto. Última actualización: 2026-10-14.
+Respaldo de contexto del proyecto. Última actualización: 2026-10-15.
 
 ## Qué es la aplicación
 
@@ -34,35 +34,57 @@ desplegado en Railway (backend) y Vercel (frontend web + descarga del .apk).
 
 ## PENDIENTE
 
-### Listo y probado en rama de pruebas — falta tu aprobación final para pasar a producción
-- **Exigir cerrar todas las labores antes de marcar salida** (normal u "olvidada"), para
-  OPERADOR y MECANICO. Bloqueo en el celular (antes de intentar la petición, evita el hueco del
-  offline-first) + respaldo en el backend. Probado con suite completa (27+10 tests) y script
-  end-to-end. Rama: `test/salida-exige-cerrar-labores`.
-- **APK liviano**: se encontró que el .apk se embebía a sí mismo dentro de sus propios assets
-  (bug real de tamaño, no solo falta de compresión). Arreglado + R8/ProGuard activado: de ~100MB
-  a **4.2MB**. Rama: `test/proguard-apk-size`. **Esperando que lo instales en tu celular y
-  confirmes que todo funciona antes de pasar a producción.**
-- **Excel: "AUTORIZADO POR:" → "FIRMA SUPERVISOR"** (sin dos puntos, decidido). Cambio de una
-  línea, aún no aplicado — iría junto con el punto de arriba.
+### Listo, probado y con capturas — esperando tu confirmación para pasar a producción
+Todo esto vive junto en la rama `test/salida-exige-cerrar-labores` (commits hasta el
+2026-10-15), probado con 27 unit + 10 integración (sin regresiones) y capturas reales del flujo:
+- **Exigir cerrar todas las labores antes de marcar salida** (normal u "olvidada"), OPERADOR y
+  MECANICO. Bloqueo en el celular antes de intentar la petición (evita el hueco offline-first).
+- **Refuerzo del borde offline**: mientras el Panel de Actividades todavía carga los registros,
+  "Marcar salida"/"Marcar salida olvidada" quedan deshabilitados (cierra la ventana de
+  milisegundos que antes podía dejar pasar una salida con labores realmente abiertas).
+- **Excel: "AUTORIZADO POR:" → "FIRMA SUPERVISOR"** (sin dos puntos, aplicado y confirmado con
+  un Excel de muestra generado).
+- **Limpieza `operadores.area`**: columna muerta (sin uso real confirmado) eliminada con su
+  migración (`20261015000000-quitar-area-de-operadores.js`). No confundir con
+  `registro_actividades.area`, que SÍ se usa (OT del Mecánico) — esa no se tocó.
 
-### En planificación (modo plan, sin código todavía)
-- **Token de Hacienda, arreglo de fondo**: hoy solo existe un parche puntual
-  (`finalizarDia` no invalida el token si el día cerrado no es hoy) — la tabla `tokens_hacienda`
-  de verdad (una fila por hacienda+fecha) nunca se construyó. Plan ya armado en 3 fases
-  (aditiva → cambiar lecturas → limpieza), con 2 huecos ya identificados y resueltos en el
-  diseño (no filtrar vigencia por fecha; invalidar cualquier token activo anterior al generar
-  uno nuevo).
-- **Token por Área**: idea nueva (cada área tiene su propio Supervisor). Se evaluaron 2 caminos;
-  se recomienda que **cada Área pase a ser su propia Hacienda** (reusa 100% del sistema de
-  Token/Supervisor ya probado, en vez de construir permisos nuevos por Sección). Pendiente que
-  confirmes si algún reporte necesita juntar varias Haciendas de una misma finca física.
+### Aparte — también probado, pendiente de tu propia prueba en celular
+- **APK liviano**: el .apk se embebía a sí mismo dentro de sus propios assets (bug real de
+  tamaño). Arreglado + R8/ProGuard: de ~100MB a **4.2MB**. Rama: `test/proguard-apk-size`.
+  **Esperando que lo instales y confirmes antes de producción.**
+
+### En planificación (sin código todavía)
+- **Token de Hacienda, arreglo de fondo**: tabla `tokens_hacienda` (una fila por hacienda+fecha),
+  3 fases de despliegue. Diseño ya refinado con la idea del Supervisor (generar hasta 3 días
+  seguidos, ej. viernes genera sábado+domingo+lunes): **ENTRADA nueva exige `fecha = hoy`**
+  (un código futuro no sirve hasta su día); **SALIDA no se filtra por fecha** (sigue funcionando
+  con el código que ya sirvió al entrar, sin romper turnos que cruzan medianoche). Con esta regla
+  se eliminan solos los 2 huecos detectados antes (ambigüedad de medianoche; dos tokens activos
+  a la vez).
 - **"Horas Trabajadas" del Historial** = suma de horas por actividad (`RegistroActividad`), no
   `hora_salida - hora_ingreso` como hoy. Cambia solo `obtenerHistorial`
-  (`asistencia.controller.ts`). Pendiente confirmar si el **kiosco físico** (único camino sin
-  horas por actividad) sigue en uso real, para decidir qué mostrar ahí ("—" propuesto).
+  (`asistencia.controller.ts`). Depende de que la exigencia de cerrar labores ya esté en
+  producción. Pendiente confirmar si el **kiosco físico** (único camino sin horas por actividad)
+  sigue en uso real, para decidir qué mostrar ahí ("—" propuesto, con fallback ya definido).
+- 2 casos borde offline — el principal (ventana de milisegundos) ya se reforzó arriba; queda
+  el de una labor creada 100% sin señal, que no se puede cerrar hasta sincronizar (límite
+  conocido, aceptado tal cual).
 
-### Candidatos menores, sin decisión aún
-- Columna `operadores.area` (texto libre, viejo) confirmada sin uso real — limpieza opcional.
-- 2 casos borde del offline aceptados tal cual (labor creada sin señal bloquea salida hasta
-  sincronizar; ventana de milisegundos en la carga inicial del Panel de Actividades).
+### PENDIENTE — Token por Área (informe detallado, guardado para cuando lo pidas)
+Motivo real: cada Área dentro de una Hacienda tiene su propio Supervisor (no comparten uno).
+Se evaluaron 2 caminos:
+- **Camino A — tabla `tokens_seccion`**: descartado como primera opción. `Seccion` hoy NO tiene
+  concepto de "su propio Supervisor" (solo `nombre`+`hacienda_id`) — habría que construir desde
+  cero toda una capa de permisos por-área (quién genera/ve el token de esa área) duplicando la
+  que ya existe y está probada para Hacienda. Alto riesgo de reintroducir bugs de alcance ya
+  resueltos una vez (ej. "un Supervisor veía operadores de otro Supervisor").
+- **Camino B — recomendado**: cada Área pasa a ser su propia Hacienda. Reusa el 100% del motor
+  de Token/Supervisor/permisos ya construido y probado, cero tablas ni permisos nuevos.
+  Contrapartida: la Sección que ya está en producción quedaría redundante para este caso (dos
+  formas de resolver lo mismo), y cualquier pantalla/reporte que asuma "una Hacienda = una finca
+  completa" (nombre del Excel, filtro del Historial, panel de Haciendas del Admin) pasaría a
+  mostrar/filtrar por área en vez de por finca.
+- **Bloqueante real**: falta confirmar si algún reporte necesita JUNTAR varias Haciendas (áreas)
+  de una misma finca física en un solo total — el usuario dijo que lo iba a investigar por su
+  cuenta antes de decidir. Sin código todavía, depende también de que el punto de Token de
+  Hacienda (arriba) esté construido primero.
