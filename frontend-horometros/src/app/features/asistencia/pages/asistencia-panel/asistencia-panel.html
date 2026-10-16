@@ -176,20 +176,50 @@
                     <option value="OPERADOR">Operador</option>
                   </select>
                 </div>
-                <!-- Credenciales de acceso: si ya tiene usuario, solo se puede resetear la clave; si no, se asignan aqui -->
+                <!-- Credenciales de acceso: si ya tiene usuario, se puede resetear la clave y/o cambiar el
+                usuario por separado (pedido del usuario, 2026-10-16); si no, se asignan juntos aqui abajo. -->
                 @if (operadorSeleccionado?.usuario) {
                   <div class="form-group">
                     <label class="form-label">Usuario de acceso</label>
-                    <div class="flex items-center gap-2">
-                      <span class="code-badge">{{ operadorSeleccionado?.usuario }}</span>
-                      <button
-                        type="button"
-                        class="btn btn-secondary btn-sm"
-                        (click)="abrirModalResetClaveOperador()"
-                      >
-                        🔑 Resetear clave
-                      </button>
-                    </div>
+                    @if (!editandoUsuarioFicha()) {
+                      <div class="flex items-center gap-2">
+                        <span class="code-badge">{{ operadorSeleccionado?.usuario }}</span>
+                        <button
+                          type="button"
+                          class="btn btn-secondary btn-sm"
+                          (click)="abrirEdicionUsuarioFicha()"
+                        >
+                          ✏️ Cambiar usuario
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-secondary btn-sm"
+                          (click)="abrirModalResetClaveOperador()"
+                        >
+                          🔑 Resetear clave
+                        </button>
+                      </div>
+                    }
+                    @if (editandoUsuarioFicha()) {
+                      <div class="flex items-center gap-2">
+                        <input
+                          type="text"
+                          class="input-control"
+                          [(ngModel)]="nuevoUsuarioFicha"
+                          placeholder="usuario"
+                        />
+                        <button
+                          type="button"
+                          class="btn btn-secondary btn-sm"
+                          (click)="cancelarEdicionUsuarioFicha()"
+                        >
+                          ✕ Cancelar
+                        </button>
+                      </div>
+                      <p class="text-muted-sm">
+                        El cambio se guarda con "💾 Actualizar Ficha" más abajo. La clave actual no se toca.
+                      </p>
+                    }
                   </div>
                 }
                 @if (!operadorSeleccionado?.usuario) {
@@ -294,6 +324,7 @@
                 <th>Ingreso</th>
                 <th>Salida</th>
                 <th>Horas Trabajadas</th>
+                <th>Estado</th>
                 <th>Ver/Imprimir</th>
                 <th>Evidencia</th>
                 <th>Observación</th>
@@ -325,6 +356,19 @@
                   </td>
                   <td>{{ formatearHorasTrabajadas(reg.total_horas) }}</td>
                   <td>
+                    <!-- OBSERVANDO = el Supervisor marco la X ("no vino") - unico estado que vale la pena
+                    resaltar aca, el resto (FINALIZADO/SALIDA_OLVIDADA) son dias normales trabajados. -->
+                    @if (reg.estado === 'OBSERVANDO') {
+                      <span class="badge-status status-observando">❌ No presente</span>
+                    }
+                    @if (reg.estado !== 'OBSERVANDO') {
+                      <span class="text-muted-sm">—</span>
+                    }
+                  </td>
+                  <td>
+                    <!-- Un dia "X" no tiene nada real que ver/imprimir (pedido del usuario, 2026-10-16) -
+                    mismo criterio que excluirlo de "Exportar a Excel"/"Imprimir Hojas del rango". -->
+                    @if (reg.estado !== 'OBSERVANDO') {
                     <div class="flex gap-1">
                       <button
                         class="btn btn-secondary btn-sm"
@@ -341,6 +385,10 @@
                         🖨️ Imprimir
                       </button>
                     </div>
+                    }
+                    @if (reg.estado === 'OBSERVANDO') {
+                      <span class="text-muted-sm">No aplica</span>
+                    }
                   </td>
                   <td>
                     <app-visor-foto
@@ -353,11 +401,11 @@
               }
               @if (cargandoHistorial) {
                 <tr>
-                  <td colspan="8" class="table-empty">⏳ Cargando...</td>
+                  <td colspan="9" class="table-empty">⏳ Cargando...</td>
                 </tr>
               } @else if (historial.length === 0) {
                 <tr>
-                  <td colspan="8" class="table-empty">
+                  <td colspan="9" class="table-empty">
                     No hay registros para el rango seleccionado.
                   </td>
                 </tr>
@@ -1354,6 +1402,7 @@ Historial general, ya filtrado a este operador (reutiliza GET /historial con ope
                 <th>Ingreso</th>
                 <th>Salida</th>
                 <th>Horas Trabajadas</th>
+                <th>Estado</th>
                 <th>Ver/Imprimir</th>
                 <th>Evidencia</th>
                 <th>Observación</th>
@@ -1380,6 +1429,15 @@ Historial general, ya filtrado a este operador (reutiliza GET /historial con ope
                   </td>
                   <td>{{ formatearHorasTrabajadas(reg.total_horas) }}</td>
                   <td>
+                    @if (reg.estado === 'OBSERVANDO') {
+                      <span class="badge-status status-observando">❌ No presente</span>
+                    }
+                    @if (reg.estado !== 'OBSERVANDO') {
+                      <span class="text-muted-sm">—</span>
+                    }
+                  </td>
+                  <td>
+                    @if (reg.estado !== 'OBSERVANDO') {
                     <div class="flex gap-1">
                       <button
                         class="btn btn-secondary btn-sm"
@@ -1396,6 +1454,10 @@ Historial general, ya filtrado a este operador (reutiliza GET /historial con ope
                         🖨️ Imprimir
                       </button>
                     </div>
+                    }
+                    @if (reg.estado === 'OBSERVANDO') {
+                      <span class="text-muted-sm">No aplica</span>
+                    }
                   </td>
                   <td>
                     <app-visor-foto
@@ -1408,7 +1470,7 @@ Historial general, ya filtrado a este operador (reutiliza GET /historial con ope
               }
               @if (!cargandoHistorialOperador && historialOperadorRegistros.length === 0) {
                 <tr>
-                  <td colspan="7" class="table-empty">
+                  <td colspan="8" class="table-empty">
                     No hay registros para el rango seleccionado.
                   </td>
                 </tr>

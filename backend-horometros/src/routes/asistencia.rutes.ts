@@ -20,6 +20,7 @@ import {
     marcarConQrSesion,
     confirmarAsistencia,
     eliminarOperador,
+    activarOperador,
     importarOperadores,
 } from "../controllers/asistencia.controller";
 import { verificarAutenticacion, requireRol, verificarJornadaOperadorActiva } from "../middlewares/auth.middleware";
@@ -35,6 +36,9 @@ router.post('/operadores/importar', verificarAutenticacion, requireRol('ADMIN','
 router.get('/operadores', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), obtenerOperadores);
 router.put('/operadores/:id', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), actualizarOperador);
 router.delete('/operadores/:id', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), eliminarOperador);
+// Deshace el soft-delete (ver "Ojo con paranoid + UNIQUE" en CLAUDE.md) - mismos roles que el resto de Gestion
+// de Personal.
+router.put('/operadores/:id/activar', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), activarOperador);
 router.get('/historial', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), obtenerHistorial);
 router.put('/operadores/:id/clave',verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), resetearClaveOperador);
 

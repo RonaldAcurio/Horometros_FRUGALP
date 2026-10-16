@@ -51,6 +51,12 @@ export class AsistenciaService {
         return this.http.delete<{ message: string }>(`${this.baseUrl}/operadores/${id}`);
     }
 
+    // PUT -> /api/asistencia/operadores/:id/activar - deshace el soft-delete (ver "Nuevo Operador" en
+    // asistencia-panel.ts: se ofrece cuando el codigo/cedula/usuario que choca pertenecio a alguien eliminado).
+    activarOperador(id: number): Observable<{ message: string; operador: Operador }> {
+        return this.http.put<{ message: string; operador: Operador }>(`${this.baseUrl}/operadores/${id}/activar`, {});
+    }
+
     // PUT -> /api/asistencia/operadores/:id/clave (requiere JWT con rol ADMIN o ASISTENTE)
     resetearClaveOperador(id: number, clave: string): Observable<{ message: string }> {
         return this.http.put<{ message: string }>(`${this.baseUrl}/operadores/${id}/clave`, { clave });
