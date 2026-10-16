@@ -445,10 +445,12 @@
                       registroFinalizandoId === null &&
                       !offlineSyncService.tieneOperacionPendiente(reg.id)
                     ) {
-                      <button class="btn-icon" title="Editar" (click)="iniciarEdicionRegistro(reg)">✏️</button>
-                      @if (esUltimaActividad(reg)) {
-                        <button class="btn-icon" title="Eliminar" (click)="eliminarRegistro(reg)">🗑️</button>
-                      }
+                      <div class="acciones-labor">
+                        <button class="btn-chip btn-chip-editar" (click)="iniciarEdicionRegistro(reg)">✏️ Editar</button>
+                        @if (esUltimaActividad(reg)) {
+                          <button class="btn-chip btn-chip-eliminar" (click)="eliminarRegistro(reg)">🗑️ Eliminar</button>
+                        }
+                      </div>
                     }
                   </td>
                 </tr>
