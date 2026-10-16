@@ -5,6 +5,10 @@ import { RegistroAuditoria } from '../models/registro_auditoria';
 import { Hacienda } from '../models/hacienda';
 import { CierreJornada } from '../models/cierre_jornada';
 import { Seccion } from '../models/seccion';
+import { RegistroActividad } from '../models/registro_actividad';
+import { Asistencia } from '../models/asistencias';
+import { Equipo } from '../models/equipo';
+import { Actividad } from '../models/actividad';
 
 /*
 Helpers compartidos por las pruebas de integracion (ver CLAUDE.md, "Pruebas de integracion"). Todo esto corre
@@ -12,15 +16,22 @@ contra la BD de TEST real (ver config/database.ts, NODE_ENV=test) - nunca contra
 */
 
 // Orden por las FK, igual que cualquier limpieza manual de esta BD (ver CLAUDE.md sobre el bug de orden de
-// deletes de sesiones anteriores): RegistroAuditoria, Operador y CierreJornada referencian a Usuario (y
-// CierreJornada tambien a Hacienda), Usuario y Seccion referencian a Hacienda - hay que borrar en ese orden o
-// Postgres rechaza el DELETE por la FK. Seccion tiene que ir ANTES que Hacienda (su FK es RESTRICT, no SET
-// NULL como la de Operador.seccion_id) - sin esto, cualquier prueba que cree una Seccion deja a la siguiente
-// corrida sin poder limpiar la BD (bug real encontrado al agregar las pruebas de Secciones).
+// deletes de sesiones anteriores): RegistroActividad referencia a Asistencia/Equipo/Actividad/Seccion, y
+// Asistencia referencia a Operador - tienen que ir ANTES que esas tablas o Postgres rechaza el DELETE por la
+// FK (bug real encontrado al agregar las pruebas de editar/eliminar labor, mismo patron que el de Seccion mas
+// abajo). RegistroAuditoria, Operador y CierreJornada referencian a Usuario (y CierreJornada tambien a
+// Hacienda), Usuario y Seccion referencian a Hacienda - hay que borrar en ese orden o Postgres rechaza el
+// DELETE por la FK. Seccion tiene que ir ANTES que Hacienda (su FK es RESTRICT, no SET NULL como la de
+// Operador.seccion_id) - sin esto, cualquier prueba que cree una Seccion deja a la siguiente corrida sin poder
+// limpiar la BD (bug real encontrado al agregar las pruebas de Secciones).
 export const limpiarBaseDeDatosTest = async (): Promise<void> => {
+    await RegistroActividad.destroy({ where: {}, force: true });
+    await Asistencia.destroy({ where: {}, force: true });
     await RegistroAuditoria.destroy({ where: {}, force: true });
     await CierreJornada.destroy({ where: {}, force: true });
     await Operador.destroy({ where: {}, force: true });
+    await Equipo.destroy({ where: {}, force: true });
+    await Actividad.destroy({ where: {}, force: true });
     await Seccion.destroy({ where: {}, force: true });
     await Usuario.destroy({ where: {}, force: true });
     await Hacienda.destroy({ where: {}, force: true });

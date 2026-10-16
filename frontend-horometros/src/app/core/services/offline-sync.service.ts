@@ -10,6 +10,8 @@ import { Equipo, Actividad } from '../models/asistencia.model';
 import {
   OperacionCrearLabor,
   OperacionFinalizarLabor,
+  OperacionEditarLabor,
+  OperacionEliminarLabor,
   OperacionSalidaOlvidada,
   OperacionFinalizarDia,
   OperacionSalidaConCodigo,
@@ -142,6 +144,61 @@ export class OfflineSyncService {
     return this.cola().some((op) => op.tipo === 'finalizar_labor' && op.id === registroId);
   }
 
+  /*
+  Pedido del usuario, 2026-10-16 (editar/eliminar labor): una misma labor YA SINCRONIZADA no puede tener dos
+  operaciones encoladas a la vez (ej. un cierre pendiente Y ademas una edicion pendiente) - evita que se crucen
+  en la cola y una le "gane" a la otra sin que el trabajador se entere. mi-jornada.ts usa esto para ocultar
+  Editar/Eliminar mientras la labor tenga CUALQUIER operacion (cierre, edicion o eliminacion) sin sincronizar.
+  */
+  tieneOperacionPendiente(registroId: number): boolean {
+    return this.cola().some(
+      (op) =>
+        (op.tipo === 'finalizar_labor' || op.tipo === 'editar_labor' || op.tipo === 'eliminar_labor') &&
+        op.id === registroId
+    );
+  }
+
+  // Encuentra la operacion 'crear_labor' todavia sin sincronizar que corresponde a un id LOCAL (negativo) - la
+  // usan editarLaborPendiente/mi-jornada.ts para modificarla o descartarla directo en la cola, sin red.
+  buscarCrearLaborPendiente(idLocal: number): OperacionCrearLabor | undefined {
+    return this.cola().find((op): op is OperacionCrearLabor => op.tipo === 'crear_labor' && op.idLocal === idLocal);
+  }
+
+  /*
+  Edicion pendiente (sin sincronizar) de una labor YA sincronizada (id positivo) - mi-jornada.ts la usa en
+  recalcularVistaRegistros() para pintar los cambios en la fila de inmediato, sin esperar a que viaje al
+  servidor (mismo criterio que ya aplican las 'crear_labor' pendientes via opACamposDeVista).
+  */
+  buscarEditarLaborPendiente(id: number): OperacionEditarLabor | undefined {
+    return this.cola().find((op): op is OperacionEditarLabor => op.tipo === 'editar_labor' && op.id === id);
+  }
+
+  // Si esta labor tiene una eliminacion encolada sin sincronizar, ya no deberia seguir apareciendo en el Panel
+  // de Actividades (ni contar como "labor abierta" para bloquearSiHayLaboresAbiertas) aunque el servidor
+  // todavia no confirme el borrado - mismo criterio optimista que el resto de la cola offline.
+  tieneEliminarLaborPendiente(id: number): boolean {
+    return this.cola().some((op) => op.tipo === 'eliminar_labor' && op.id === id);
+  }
+
+  // Edita EN LA COLA una labor que todavia no se sincronizo (id negativo) - puramente local, no necesita señal
+  // ni pasar por el backend: la operacion 'crear_labor' ni siquiera viajo todavia. Mismos campos que editar()
+  // del backend (nunca hora_inicio/hora_fin).
+  async editarCrearLaborPendiente(
+    idLocal: number,
+    cambios: { equipo_id?: number; actividad_id?: number; area?: string; horometro_inicio?: number; observaciones?: string },
+    equipo?: Equipo,
+    actividad?: Actividad
+  ): Promise<void> {
+    this.cola.update((c) =>
+      c.map((op) =>
+        op.tipo === 'crear_labor' && op.idLocal === idLocal
+          ? { ...op, payload: { ...op.payload, ...cambios }, equipo: equipo ?? op.equipo, actividad: actividad ?? op.actividad }
+          : op
+      )
+    );
+    await this.guardar();
+  }
+
   async encolarCrearLabor(payload: OperacionCrearLabor['payload'], equipo?: Equipo, actividad?: Actividad): Promise<void> {
     const op: OperacionCrearLabor = {
       tipo: 'crear_labor',
@@ -164,6 +221,34 @@ export class OfflineSyncService {
       horometroFinal,
       creadoEn: new Date().toISOString(),
     };
+    this.cola.update((c) => [...c, op]);
+    await this.guardar();
+  }
+
+  // Editar una labor YA SINCRONIZADA (id positivo) sin señal - mismo patron que encolarFinalizarLabor. Guarda
+  // tambien equipo/actividad (ya resueltos del catalogo cacheado) para que mi-jornada.ts pueda repintar la fila
+  // mientras espera a sincronizar, sin depender del servidor.
+  async encolarEditarLabor(
+    id: number,
+    cambios: { equipo_id?: number; actividad_id?: number; area?: string; horometro_inicio?: number; horometro_final?: number; observaciones?: string },
+    equipo?: Equipo,
+    actividad?: Actividad
+  ): Promise<void> {
+    const op: OperacionEditarLabor = {
+      tipo: 'editar_labor',
+      id,
+      ...cambios,
+      equipo,
+      actividad,
+      creadoEn: new Date().toISOString(),
+    };
+    this.cola.update((c) => [...c, op]);
+    await this.guardar();
+  }
+
+  // Eliminar una labor YA SINCRONIZADA (id positivo) sin señal - mismo patron que encolarFinalizarLabor.
+  async encolarEliminarLabor(id: number): Promise<void> {
+    const op: OperacionEliminarLabor = { tipo: 'eliminar_labor', id, creadoEn: new Date().toISOString() };
     this.cola.update((c) => [...c, op]);
     await this.guardar();
   }
@@ -230,6 +315,11 @@ export class OfflineSyncService {
             await firstValueFrom(
               this.registroActividadService.finalizar(op.id, op.observaciones, op.horaFin, op.horometroFinal)
             );
+          } else if (op.tipo === 'editar_labor') {
+            const { tipo, id, equipo, actividad, creadoEn, error, ...cambios } = op;
+            await firstValueFrom(this.registroActividadService.editar(id, cambios));
+          } else if (op.tipo === 'eliminar_labor') {
+            await firstValueFrom(this.registroActividadService.eliminar(op.id));
           } else if (op.tipo === 'salida_olvidada') {
             await firstValueFrom(this.asistenciaService.marcarSalidaOlvidada(op.horaSalida));
           } else if (op.tipo === 'salida_con_codigo') {

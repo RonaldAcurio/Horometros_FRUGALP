@@ -256,6 +256,7 @@
                   min="0"
                   max="23"
                   placeholder="HH"
+                  [disabled]="editandoRegistroId !== null"
                   required
                 />
                 <span class="hora-hhmm-separador">:</span>
@@ -267,10 +268,15 @@
                   min="0"
                   max="59"
                   placeholder="MM"
+                  [disabled]="editandoRegistroId !== null"
                   required
                 />
               </div>
-              <p class="hint-text">Puedes cambiarla si estás registrando esto más tarde.</p>
+              @if (editandoRegistroId === null) {
+                <p class="hint-text">Puedes cambiarla si estás registrando esto más tarde.</p>
+              } @else {
+                <p class="hint-text">La hora de inicio no se puede editar.</p>
+              }
             </div>
             <div class="form-group">
               <label class="form-label">Observaciones</label>
@@ -281,19 +287,29 @@
                 name="observaciones"
               />
             </div>
-            <button
-              type="submit"
-              class="btn btn-primary w-full"
-              [disabled]="
-                guardandoRegistro ||
-                !nuevoRegistro.equipo_id ||
-                !nuevoRegistro.actividad_id ||
-                horaInicioHH === null ||
-                horaInicioMM === null
-              "
-            >
-              ➕ Iniciar labor
-            </button>
+            <div class="flex gap-2">
+              <button
+                type="submit"
+                class="btn btn-primary w-full"
+                [disabled]="
+                  guardandoRegistro ||
+                  !nuevoRegistro.equipo_id ||
+                  !nuevoRegistro.actividad_id ||
+                  (editandoRegistroId === null && (horaInicioHH === null || horaInicioMM === null))
+                "
+              >
+                @if (editandoRegistroId === null) {
+                  ➕ Iniciar labor
+                } @else {
+                  💾 Guardar cambios
+                }
+              </button>
+              @if (editandoRegistroId !== null) {
+                <button type="button" class="btn btn-secondary" [disabled]="guardandoRegistro" (click)="cancelarEdicionRegistro()">
+                  ✕ Cancelar
+                </button>
+              }
+            </div>
           </form>
         </div>
       </div>
@@ -416,11 +432,23 @@
                     }
                   </td>
                   <td>
-                    @if (reg.hora_fin) {
-                      <span class="badge-status status-finalizado">Cerrada</span>
-                    }
-                    @if (!reg.hora_fin) {
-                      <span class="badge-status status-jornada">En curso</span>
+                    <!--
+                    Editar/Eliminar (pedido del usuario, 2026-10-16): solo se ofrecen mientras no haya OTRA fila
+                    en edicion/finalizacion a la vez (un solo formulario arriba) y esta labor no tenga ya una
+                    operacion sin sincronizar en la cola (ver tieneOperacionPendiente) - evita que se cruce una
+                    segunda edicion/eliminacion antes de que la primera viaje al servidor. Eliminar, ademas,
+                    solo aparece en la ULTIMA labor (ver esUltimaActividad) - el backend lo vuelve a exigir por
+                    su cuenta, pero el boton ya no se ofrece donde sea que fuera a ser rechazado.
+                    -->
+                    @if (
+                      editandoRegistroId === null &&
+                      registroFinalizandoId === null &&
+                      !offlineSyncService.tieneOperacionPendiente(reg.id)
+                    ) {
+                      <button class="btn-icon" title="Editar" (click)="iniciarEdicionRegistro(reg)">✏️</button>
+                      @if (esUltimaActividad(reg)) {
+                        <button class="btn-icon" title="Eliminar" (click)="eliminarRegistro(reg)">🗑️</button>
+                      }
                     }
                   </td>
                 </tr>

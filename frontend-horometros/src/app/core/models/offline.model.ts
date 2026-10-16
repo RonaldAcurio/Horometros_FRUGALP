@@ -48,6 +48,35 @@ export interface OperacionFinalizarLabor {
   error?: string;
 }
 
+/*
+'editar_labor'/'eliminar_labor' (pedido del usuario, 2026-10-16: corregir equipo/actividad/observación
+equivocados, o borrar una labor por completo): mismo patrón que 'finalizar_labor' - SOLO se pueden encolar
+sobre un id REAL (positivo, ya sincronizado). Si la labor todavía no se sincronizó (id negativo), editarla o
+borrarla es puramente local - se modifica/saca directo de la cola (ver OfflineSyncService), nunca pasa por
+acá. Nunca llevan hora_inicio/hora_fin - ver registro-actividad.service.ts, editar() no las acepta siquiera.
+*/
+export interface OperacionEditarLabor {
+  tipo: 'editar_labor';
+  id: number;
+  equipo_id?: number;
+  actividad_id?: number;
+  area?: string;
+  horometro_inicio?: number;
+  horometro_final?: number;
+  observaciones?: string;
+  equipo?: Equipo;
+  actividad?: Actividad;
+  creadoEn: string;
+  error?: string;
+}
+
+export interface OperacionEliminarLabor {
+  tipo: 'eliminar_labor';
+  id: number;
+  creadoEn: string;
+  error?: string;
+}
+
 // Autoservicio del trabajador (mi-jornada.ts, marcarMiSalidaOlvidada) - horaSalida SIEMPRE viene puesta (es la
 // hora del clic), a diferencia de hora_salida en el backend que es opcional para llamadas online directas.
 export interface OperacionSalidaOlvidada {
@@ -88,6 +117,8 @@ export interface OperacionSalidaConCodigo {
 export type OperacionPendiente =
   | OperacionCrearLabor
   | OperacionFinalizarLabor
+  | OperacionEditarLabor
+  | OperacionEliminarLabor
   | OperacionSalidaOlvidada
   | OperacionFinalizarDia
   | OperacionSalidaConCodigo;
