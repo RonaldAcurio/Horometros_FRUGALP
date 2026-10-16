@@ -1,6 +1,6 @@
 # MEMORY.md — Horómetros FRUGALP
 
-Respaldo de contexto del proyecto. Última actualización: 2026-10-16 (PR #50).
+Respaldo de contexto del proyecto. Última actualización: 2026-10-16 (PR #51).
 
 ## Qué es la aplicación
 
@@ -50,8 +50,9 @@ desplegado en Railway (backend) y Vercel (frontend web + descarga del .apk).
   corregir equipo/actividad/observaciones de una labor ya registrada (nunca hora_inicio/hora_fin —
   el controller ni siquiera los lee) o eliminarla (borrado físico, SOLO permitido sobre la última
   labor de la jornada, para nunca abrir un hueco — el backend lo re-verifica siempre). La columna
-  "Acción" son solo los iconos ✏️/🗑️, sin badges de "Cerrada"/"En curso". Eliminar nunca toca el
-  catálogo de Equipo/Actividad (la FK apunta desde la labor hacia el catálogo, no al revés).
+  "Acción" son botones "chip" (icono + texto "Editar"/"Eliminar", borde propio, se rellenan de
+  color al :hover/:active), sin badges de "Cerrada"/"En curso". Eliminar nunca toca el catálogo
+  de Equipo/Actividad (la FK apunta desde la labor hacia el catálogo, no al revés).
 - **APK**: 4.2MB (antes ~100MB — se embebía a sí mismo dentro de sus propios assets, ya
   arreglado), con R8/ProGuard activado.
 
@@ -67,8 +68,11 @@ Supervisor) del Excel/impresión + badge en el Historial, activar operador elimi
 `PUT /operadores/:id/activar`) con usuario/clave editables por separado, OT→Actividad en el reporte
 del Mecánico. PR [#50](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/50): editar/eliminar
 labor en el Panel de Actividades (hard delete solo en la última labor, editar nunca toca las horas,
-offline-first para ambos, nuevas pruebas de integración). APK recompilado, confirmado 4.2MB
-(4.425.146 bytes) en producción tras este merge.
+offline-first para ambos, nuevas pruebas de integración). PR
+[#51](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/51): botones Editar/Eliminar como
+chips con borde (icono + texto) y :hover/:active de color, elegidos de entre 4 opciones comparadas
+en un mockup antes de implementar. APK recompilado, confirmado 4.2MB (4.425.278 bytes) en
+producción tras este merge.
 
 ## PENDIENTE
 
