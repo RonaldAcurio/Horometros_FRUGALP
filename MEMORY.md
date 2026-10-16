@@ -1,6 +1,6 @@
 # MEMORY.md — Horómetros FRUGALP
 
-Respaldo de contexto del proyecto. Última actualización: 2026-10-16.
+Respaldo de contexto del proyecto. Última actualización: 2026-10-16 (PR #50).
 
 ## Qué es la aplicación
 
@@ -44,8 +44,14 @@ desplegado en Railway (backend) y Vercel (frontend web + descarga del .apk).
   Operador" choca con uno de esos valores y pertenece a alguien eliminado, ofrece activarlo (mismo
   id, conserva su historial) en vez de solo bloquear. El usuario de un Operador ya activo también
   se puede editar por separado de la clave desde su Ficha (antes solo se podía resetear la clave).
-- **Offline-first**: crear/cerrar labores y marcar salida funcionan sin señal (se encola en el
-  celular con `@capacitor/preferences` y sincroniza solo al volver la conexión).
+- **Offline-first**: crear/cerrar/editar/eliminar labores y marcar salida funcionan sin señal (se
+  encola en el celular con `@capacitor/preferences` y sincroniza solo al volver la conexión).
+- **Editar/Eliminar Labor**: en el Panel de Actividades (`mi-jornada.ts`) el trabajador puede
+  corregir equipo/actividad/observaciones de una labor ya registrada (nunca hora_inicio/hora_fin —
+  el controller ni siquiera los lee) o eliminarla (borrado físico, SOLO permitido sobre la última
+  labor de la jornada, para nunca abrir un hueco — el backend lo re-verifica siempre). La columna
+  "Acción" son solo los iconos ✏️/🗑️, sin badges de "Cerrada"/"En curso". Eliminar nunca toca el
+  catálogo de Equipo/Actividad (la FK apunta desde la labor hacia el catálogo, no al revés).
 - **APK**: 4.2MB (antes ~100MB — se embebía a sí mismo dentro de sus propios assets, ya
   arreglado), con R8/ProGuard activado.
 
@@ -59,7 +65,10 @@ de fecha ya existente) + Horas Trabajadas en formato "Xh Ymin" en vez de decimal
 [#49](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/49): excluir OBSERVANDO (la X del
 Supervisor) del Excel/impresión + badge en el Historial, activar operador eliminado (nuevo endpoint
 `PUT /operadores/:id/activar`) con usuario/clave editables por separado, OT→Actividad en el reporte
-del Mecánico. APK recompilado, confirmado 4.2MB (4.423.898 bytes) en producción tras este merge.
+del Mecánico. PR [#50](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/50): editar/eliminar
+labor en el Panel de Actividades (hard delete solo en la última labor, editar nunca toca las horas,
+offline-first para ambos, nuevas pruebas de integración). APK recompilado, confirmado 4.2MB
+(4.425.146 bytes) en producción tras este merge.
 
 ## PENDIENTE
 
