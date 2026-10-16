@@ -25,9 +25,11 @@ el orden en el HTML (ver .modal-backdrop-anidado más abajo). -->
       <div class="hoja-actividades-grupos">
       @for (grupo of grupos; track grupo) {
         <div class="hoja-actividades-grupo">
-          <!-- Titulo y tabla dependen del rol de quien hizo las labores: un Operador no tiene OT ni "daño" (eso
-          es del taller mecánico), en cambio sí lleva horómetro inicio/fin - por eso el diseño impreso es
-          distinto para cada uno, no solo el título (ver CLAUDE.md). -->
+          <!-- Titulo y tabla dependen del rol de quien hizo las labores: la tabla del Mecanico muestra la
+          Actividad registrada (pedido del usuario, 2026-10-16 - antes mostraba el campo libre OT, que casi no
+          se llenaba; OT sigue existiendo y guardandose igual en el Panel de Actividades, solo dejo de
+          mostrarse en ESTE reporte). Un Operador no lleva eso, en cambio sí horómetro inicio/fin - por eso el
+          diseño impreso es distinto para cada uno, no solo el título (ver CLAUDE.md). -->
           <h2 class="hoja-actividades-titulo">
             {{
               grupo.operador.rol === 'OPERADOR'
@@ -50,7 +52,7 @@ el orden en el HTML (ver .modal-backdrop-anidado más abajo). -->
               <thead>
                 <tr>
                   <th>Equipo</th>
-                  <th>OT</th>
+                  <th>Actividad</th>
                   <th>Observaciones</th>
                   <th>Tiempo estimado</th>
                   <th>Hora</th>
@@ -66,7 +68,7 @@ el orden en el HTML (ver .modal-backdrop-anidado más abajo). -->
                           : '—'
                       }}
                     </td>
-                    <td>{{ reg.area || '—' }}</td>
+                    <td>{{ reg.actividad?.description || '—' }}</td>
                     <td>{{ reg.observaciones || '—' }}</td>
                     <td>{{ duracionLabor(reg) }}</td>
                     <td>{{ rangoHorasLabor(reg) }}</td>

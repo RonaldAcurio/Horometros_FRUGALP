@@ -324,6 +324,15 @@ html, body {
   border: 1px solid #7a1f3d;
 }
 
+/* OBSERVANDO (la X del Supervisor, "no vino" - ver confirmarAsistencia en el backend): rojo distinto del
+   resto a proposito, para que se note de un vistazo que ese dia NO cuenta como trabajado (pedido del
+   usuario, 2026-10-16 - antes no tenia ningun indicador en el Historial del Panel de Asistente). */
+.status-observando {
+  background-color: rgba(220, 38, 38, 0.14);
+  color: #dc2626;
+  border: 1px solid #dc2626;
+}
+
 /* Offline-first (Panel de Actividades, ver OfflineSyncService): labor creada o cerrada sin señal, todavía
    guardada solo en el celular. */
 .status-pendiente-sync {

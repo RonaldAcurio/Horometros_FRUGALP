@@ -75,6 +75,13 @@ export class AsistenciaPanel implements OnInit{
   credencialesOperador = { usuario: '', clave: '' };
   mostrarClaveCredenciales = signal(false);
 
+  // Cambiar el USUARIO de un Operador que YA tiene uno asignado (pedido del usuario, 2026-10-16 - antes era de
+  // solo lectura una vez asignado, solo se podia resetear la clave). Va separado de credencialesOperador
+  // porque ese es exclusivo de la asignacion inicial (usuario+clave juntos) - esto es editar solo el usuario,
+  // sin tocar la clave actual (ver guardarDatosOperador: manda 'usuario' sin 'clave').
+  editandoUsuarioFicha = signal(false);
+  nuevoUsuarioFicha: string = '';
+
   // Modal: Resetear clave de un Operador que YA tiene credenciales
   mostrarModalResetClaveOperador: boolean = false;
   claveResetOperador: string = '';
@@ -350,6 +357,8 @@ export class AsistenciaPanel implements OnInit{
     this.rolSeleccionado = op.rol || 'MECANICO';
     this.credencialesOperador = { usuario: '', clave: '' };
     this.mostrarClaveCredenciales.set(false);
+    this.editandoUsuarioFicha.set(false);
+    this.nuevoUsuarioFicha = '';
     await this.generarQR(op.id);
     this.cdr.detectChanges();
   }
@@ -383,11 +392,23 @@ export class AsistenciaPanel implements OnInit{
       datos.clave = this.credencialesOperador.clave;
     }
 
+    /*
+    Cambiar SOLO el usuario de un operador que ya tenia uno (pedido del usuario, 2026-10-16): se manda 'usuario'
+    sin 'clave' - el backend (validarCredencialesOperador) ya soporta cambiarlos por separado al editar, y
+    conserva la clave actual cuando no llega una nueva. Mutuamente excluyente con el bloque de arriba (ese
+    solo aplica cuando el operador TODAVIA no tiene usuario - ver el @if en el HTML).
+    */
+    if (this.editandoUsuarioFicha() && this.nuevoUsuarioFicha.trim() && this.nuevoUsuarioFicha.trim() !== this.operadorSeleccionado.usuario) {
+      datos.usuario = this.nuevoUsuarioFicha.trim();
+    }
+
     this.asistenciaService.actualizarOperador(this.operadorSeleccionado.id, datos).subscribe({
       next: (res) => {
         this.notificacionService.exito('¡Datos del operador actualizados exitosamente!');
         this.operadorSeleccionado = res.operador;
         this.credencialesOperador = { usuario: '', clave: '' };
+        this.editandoUsuarioFicha.set(false);
+        this.nuevoUsuarioFicha = '';
         this.cargarOperadores();
         this.cdr.detectChanges();
       },
@@ -396,6 +417,18 @@ export class AsistenciaPanel implements OnInit{
         this.cdr.detectChanges();
       }
     });
+  }
+
+  abrirEdicionUsuarioFicha(): void {
+    this.nuevoUsuarioFicha = this.operadorSeleccionado?.usuario || '';
+    this.editandoUsuarioFicha.set(true);
+    this.cdr.detectChanges();
+  }
+
+  cancelarEdicionUsuarioFicha(): void {
+    this.editandoUsuarioFicha.set(false);
+    this.nuevoUsuarioFicha = '';
+    this.cdr.detectChanges();
   }
 
   // --- Resetear clave de un Operador que YA tiene credenciales ---
@@ -469,11 +502,48 @@ export class AsistenciaPanel implements OnInit{
         this.cerrarModalNuevoOperador();
         this.cdr.detectChanges();
       },
-      error: (err) => {
-        console.error('Error al crear operador:', err);
-        this.notificacionService.error(err.error?.message || 'Error al guardar operador.');
+      error: (err) => this.manejarErrorCrearOperador(err),
+    });
+  }
+
+  /*
+  Pedido del usuario, 2026-10-16: antes, si el codigo/cedula/usuario chocaba contra alguien ELIMINADO, esto
+  solo mostraba el mensaje de error y ahi quedaba - no habia forma de reusarlo (ver "Ojo con paranoid + UNIQUE"
+  en CLAUDE.md). El backend (verificarDuplicadosOperador/validarCredencialesOperador) ahora manda
+  'operador_eliminado' en el 409 cuando el choque es justo por eso - se ofrece activarlo y editarlo en vez de
+  solo bloquear. Si el choque es contra alguien ACTIVO (operador_eliminado ausente), sigue siendo un bloqueo
+  real sin nada que ofrecer.
+  */
+  private async manejarErrorCrearOperador(err: any): Promise<void> {
+    const operadorEliminado = err.error?.operador_eliminado;
+    if (!operadorEliminado) {
+      console.error('Error al crear operador:', err);
+      this.notificacionService.error(err.error?.message || 'Error al guardar operador.');
+      this.cdr.detectChanges();
+      return;
+    }
+
+    const confirmado = await this.confirmacionService.preguntar(
+      `${err.error.message} ¿Querés activarlo y editar sus datos en vez de crear uno nuevo? Conserva todo su historial de asistencia.`,
+      'Activar operador eliminado'
+    );
+    if (!confirmado) {
+      this.cdr.detectChanges();
+      return;
+    }
+
+    this.asistenciaService.activarOperador(operadorEliminado.id).subscribe({
+      next: (res) => {
+        this.notificacionService.exito(`${res.operador.nombre_completo} fue activado - edita lo que haga falta abajo.`);
+        this.cerrarModalNuevoOperador();
+        this.cargarOperadores();
+        this.seleccionarOperador(res.operador);
         this.cdr.detectChanges();
-      }
+      },
+      error: (errActivar) => {
+        this.notificacionService.error(errActivar.error?.message || 'No se pudo activar el operador.');
+        this.cdr.detectChanges();
+      },
     });
   }
 
@@ -637,9 +707,23 @@ export class AsistenciaPanel implements OnInit{
   imprimirHojasRangoHistorial(): void {
     if (!this.fechaInicioFiltro || !this.fechaFinFiltro) return;
 
+    /*
+    Mismo motivo que exportarExcelDiario: obtenerHistorial incluye a proposito los dias OBSERVANDO (la X del
+    Supervisor) para auditoria en esta pantalla, pero "Imprimir Hojas del rango" es un reporte oficial - un
+    dia que el Supervisor marco como NO presente no debe imprimirse como si se hubiera trabajado (pedido del
+    usuario, 2026-10-16). Un operador puede tener ALGUNOS dias normales y OTROS en X dentro del mismo rango,
+    asi que el filtro es por dia puntual (operador+fecha), no por operador completo - diasObservando guarda
+    esas combinaciones para descartar solo esos grupos despues de agruparPorDia.
+    */
+    const diasObservando = new Set(
+      this.historial
+        .filter((reg) => reg.estado === 'OBSERVANDO')
+        .map((reg) => `${reg.operador_id}_${reg.fecha}`)
+    );
+
     const operadoresUnicos = new Map<number, Operador>();
     for (const reg of this.historial) {
-      if (reg.operador && !operadoresUnicos.has(reg.operador_id)) {
+      if (reg.operador && reg.estado !== 'OBSERVANDO' && !operadoresUnicos.has(reg.operador_id)) {
         operadoresUnicos.set(reg.operador_id, reg.operador);
       }
     }
@@ -653,7 +737,8 @@ export class AsistenciaPanel implements OnInit{
       this.registroActividadService.obtenerPorOperador(op.id, this.fechaInicioFiltro, this.fechaFinFiltro).pipe(
         // Rango de varios días: se muestra la hacienda PERMANENTE del operador (no tiene sentido mostrar una
         // sola hacienda "de préstamo" cuando el rango puede cruzar varios días distintos).
-        map((registros) => this.agruparPorDia(op, registros, resolverHaciendaJornada(op)))
+        map((registros) => this.agruparPorDia(op, registros, resolverHaciendaJornada(op))
+          .filter((grupo) => !diasObservando.has(`${op.id}_${grupo.fecha}`)))
       )
     );
 
@@ -699,9 +784,16 @@ export class AsistenciaPanel implements OnInit{
     // tope real del backend - ver obtenerHistorial - de sobra para la cuadrilla de un solo Supervisor en un dia).
     this.asistenciaService.obtenerHistorial(fecha, fecha, 1, 100, hacienda.id, undefined, supervisor.id).subscribe({
       next: (res) => {
+        /*
+        obtenerHistorial (backend) incluye a proposito los registros OBSERVANDO (la X del Supervisor, "no vino")
+        junto a los que si trabajaron - asi quedan visibles para auditoria en ESTA pantalla (ver comentario de
+        obtenerHistorial en asistencia.controller.ts). Pero el Excel es el reporte OFICIAL de horas trabajadas:
+        un operador que el Supervisor marco como NO presente no debe aparecer aca como si hubiera trabajado
+        (pedido del usuario, 2026-10-16) - se filtra antes de armar la lista de operadores a exportar.
+        */
         const operadoresUnicos = new Map<number, Operador>();
         for (const reg of res.data) {
-          if (reg.operador && !operadoresUnicos.has(reg.operador_id)) {
+          if (reg.operador && reg.estado !== 'OBSERVANDO' && !operadoresUnicos.has(reg.operador_id)) {
             operadoresUnicos.set(reg.operador_id, reg.operador);
           }
         }

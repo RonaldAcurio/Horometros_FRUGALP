@@ -28,22 +28,43 @@ const ATRIBUTOS_SIN_FOTO = {
 
 const ROLES_OPERADOR_VALIDOS = ['MECANICO', 'OPERADOR'];
 
+// Resultado comun de un choque de UNIQUE contra un Operador: el mensaje listo para mostrar, y - si el dueño
+// actual esta eliminado (soft-delete) - sus datos para que el frontend pueda ofrecer "Activar y editar" en vez
+// de solo bloquear (ver activarOperador mas abajo). operadorEliminado es null si el dueño sigue activo (ahi no
+// hay nada que ofrecer, es un choque real).
+type ColisionOperador = { mensaje: string; operadorEliminado: { id: number; nombre_completo: string } | null };
+
 /*
 Chequeo PREVIO de codigo_megued/cedula duplicados, antes de intentar el INSERT/UPDATE: sin esto, el choque contra
 el UNIQUE de la BD tumbaba con un 500 generico y sin informacion (el usuario solo veia "Error al crear el operador",
 sin saber cual campo chocaba ni con quien). 'idAExcluir' es el propio id al EDITAR, para no chocar contra si mismo.
-Devuelve un mensaje listo para mostrar (con el nombre de quien ya tiene ese dato), o null si no hay conflicto.
+
+'paranoid:false' en los 2 chequeos (pedido del usuario, 2026-10-16 - antes no lo tenia, a diferencia de
+describirColisionOperador que ya lo usaba para la importacion masiva): sin esto, un codigo_megued/cedula que
+pertenecio a un Operador ELIMINADO no se detecta aca (Sequelize paranoid excluye los eliminados del find() por
+defecto), pasa de largo, y recien el INSERT se la choca contra el UNIQUE real de Postgres (que SI sigue viendo
+esa fila eliminada) - ahi terminaba en el mensaje generico de mensajeDuplicadoGenerico, sin decirle al usuario
+POR QUE chocaba ni darle forma de resolverlo (ver CLAUDE.md, "Ojo con paranoid + UNIQUE").
 */
 const verificarDuplicadosOperador = async(
     datos: { codigo_megued?: string; cedula?: string | null },
     idAExcluir?: number
-): Promise<string | null> => {
+): Promise<ColisionOperador | null> => {
     if(datos.codigo_megued){
         const where: any = { codigo_megued: datos.codigo_megued };
         if(idAExcluir) where.id = { [Op.ne]: idAExcluir };
-        const existente = await Operador.findOne({ where });
+        const existente = await Operador.findOne({ where, paranoid: false });
         if(existente){
-            return `El código MEGUED "${datos.codigo_megued}" ya está registrado a nombre de ${existente.nombre_completo}.`;
+            if(existente.deletedAt){
+                return {
+                    mensaje: `El código MEGUED "${datos.codigo_megued}" perteneció a ${existente.nombre_completo}, que fue eliminado.`,
+                    operadorEliminado: { id: existente.id, nombre_completo: existente.nombre_completo },
+                };
+            }
+            return {
+                mensaje: `El código MEGUED "${datos.codigo_megued}" ya está registrado a nombre de ${existente.nombre_completo}.`,
+                operadorEliminado: null,
+            };
         }
     }
     if(datos.cedula){
@@ -56,9 +77,18 @@ const verificarDuplicadosOperador = async(
         */
         const where: any = { cedula: cifrarDeterministico(datos.cedula) };
         if(idAExcluir) where.id = { [Op.ne]: idAExcluir };
-        const existente = await Operador.findOne({ where });
+        const existente = await Operador.findOne({ where, paranoid: false });
         if(existente){
-            return `La cédula "${datos.cedula}" ya está registrada a nombre de ${existente.nombre_completo}.`;
+            if(existente.deletedAt){
+                return {
+                    mensaje: `La cédula "${datos.cedula}" perteneció a ${existente.nombre_completo}, que fue eliminado.`,
+                    operadorEliminado: { id: existente.id, nombre_completo: existente.nombre_completo },
+                };
+            }
+            return {
+                mensaje: `La cédula "${datos.cedula}" ya está registrada a nombre de ${existente.nombre_completo}.`,
+                operadorEliminado: null,
+            };
         }
     }
     return null;
@@ -67,8 +97,13 @@ const verificarDuplicadosOperador = async(
 /*
 Valida el trio opcional supervisor_id/usuario/clave que puede venir al crear o actualizar un Operador.
 Devuelve null (y ya respondio el error) si algo no es valido, o el objeto listo para mezclar en Operador.create/update.
-usuario y clave van SIEMPRE juntos: no tiene sentido mandar uno sin el otro. 'idAExcluir' es el propio id al EDITAR,
-para no rechazar el usuario que el operador YA tenia asignado.
+
+Al CREAR (idAExcluir undefined) usuario y clave siguen yendo SIEMPRE juntos - no tiene sentido una cuenta nueva
+con usuario pero sin clave, o al reves. Al EDITAR (idAExcluir presente) pedido del usuario (2026-10-16): ahora
+se pueden cambiar POR SEPARADO - mandar solo 'usuario' conserva la clave actual (el caller hace
+`clave_hash: credenciales.clave_hash ?? operador.clave_hash`, y acá queda en null cuando no viene clave nueva),
+y mandar solo 'clave' conserva el usuario actual igual. 'idAExcluir' tambien es para no rechazar el usuario que
+el operador YA tenia asignado.
 */
 const validarCredencialesOperador = async(
     req: Request, res: Response, idAExcluir?: number
@@ -92,28 +127,47 @@ const validarCredencialesOperador = async(
     let usuarioFinal: string | null = null;
     let claveHashFinal: string | null = null;
     if(usuario || clave){
-        if(!usuario || !clave){
+        if(!idAExcluir && (!usuario || !clave)){
             res.status(400).json({ message: 'usuario y clave van juntos: si envias uno, tienes que enviar el otro.'});
             return null;
         }
-        if(clave.length < 8){
+        if(clave && clave.length < 8){
             res.status(400).json({ message: 'La clave debe tener al menos 8 caracteres.'});
             return null;
         }
-        // Comparacion sin distinguir mayusculas: evita crear dos cuentas que solo difieran en eso (ver login,
-        // auth.controller.ts, que ya busca asi) y quedarian indistinguibles para el trabajador.
-        const usuarioLike = { [Op.iLike]: usuario };
-        const usuarioExistente = await Usuario.findOne({ where: { usuario: usuarioLike }});
-        const operadorConMismoUsuario = await Operador.findOne({
-            where: idAExcluir ? { usuario: usuarioLike, id: { [Op.ne]: idAExcluir } } : { usuario: usuarioLike },
-        });
-        if(usuarioExistente || operadorConMismoUsuario){
-            const nombreExistente = usuarioExistente?.nombre_completo ?? operadorConMismoUsuario?.nombre_completo;
-            res.status(409).json({ message: `El usuario "${usuario}" ya está en uso por ${nombreExistente}.`});
-            return null;
+
+        if(usuario){
+            // Comparacion sin distinguir mayusculas: evita crear dos cuentas que solo difieran en eso (ver login,
+            // auth.controller.ts, que ya busca asi) y quedarian indistinguibles para el trabajador.
+            const usuarioLike = { [Op.iLike]: usuario };
+            const usuarioExistente = await Usuario.findOne({ where: { usuario: usuarioLike }});
+            /*
+            paranoid:false (pedido del usuario, 2026-10-16, mismo motivo que verificarDuplicadosOperador): un
+            usuario que pertenecio a un Operador ELIMINADO tiene que detectarse aca para poder ofrecer "Activar
+            y editar" en vez de dejar que el INSERT/UPDATE choque crudo contra el UNIQUE de Postgres (que no
+            distingue eliminados). Usuario (cuentas de oficina) no es paranoid, no hace falta ahi.
+            */
+            const operadorConMismoUsuario = await Operador.findOne({
+                where: idAExcluir ? { usuario: usuarioLike, id: { [Op.ne]: idAExcluir } } : { usuario: usuarioLike },
+                paranoid: false,
+            });
+            if(usuarioExistente || operadorConMismoUsuario){
+                if(operadorConMismoUsuario?.deletedAt){
+                    res.status(409).json({
+                        message: `El usuario "${usuario}" perteneció a ${operadorConMismoUsuario.nombre_completo}, que fue eliminado.`,
+                        operador_eliminado: { id: operadorConMismoUsuario.id, nombre_completo: operadorConMismoUsuario.nombre_completo },
+                    });
+                    return null;
+                }
+                const nombreExistente = usuarioExistente?.nombre_completo ?? operadorConMismoUsuario?.nombre_completo;
+                res.status(409).json({ message: `El usuario "${usuario}" ya está en uso por ${nombreExistente}.`});
+                return null;
+            }
+            usuarioFinal = usuario;
         }
-        usuarioFinal = usuario;
-        claveHashFinal = await bcrypt.hash(clave, 10);
+        if(clave){
+            claveHashFinal = await bcrypt.hash(clave, 10);
+        }
     }
 
     return { supervisor_id: supervisorIdFinal, usuario: usuarioFinal, clave_hash: claveHashFinal };
@@ -192,9 +246,9 @@ export const crearOperador = async (req:Request, res:Response):Promise<void> => 
             return;
         }
 
-        const mensajeDuplicado = await verificarDuplicadosOperador({ codigo_megued, cedula: cedula || null });
-        if(mensajeDuplicado){
-            res.status(409).json({ message: mensajeDuplicado });
+        const colision = await verificarDuplicadosOperador({ codigo_megued, cedula: cedula || null });
+        if(colision){
+            res.status(409).json({ message: colision.mensaje, operador_eliminado: colision.operadorEliminado });
             return;
         }
 
@@ -393,9 +447,9 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
             return;
         }
 
-        const mensajeDuplicado = await verificarDuplicadosOperador({ cedula: cedula || null }, operador.id);
-        if(mensajeDuplicado){
-            res.status(409).json({ message: mensajeDuplicado });
+        const colision = await verificarDuplicadosOperador({ cedula: cedula || null }, operador.id);
+        if(colision){
+            res.status(409).json({ message: colision.mensaje });
             return;
         }
 
@@ -422,9 +476,15 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
             ? null
             : (seccion_id !== undefined ? (seccion_id ? Number(seccion_id) : null) : operador.seccion_id);
 
-        // Si esta edicion incluyo una clave nueva, invalida cualquier JWT de este Operador emitido antes de
-        // ahora (mismo motivo que resetearClaveOperador) - si no cambio la clave, no toca la sesion vigente.
+        /*
+        Si esta edicion incluyo una clave nueva Y/O un usuario nuevo, invalida cualquier JWT de este Operador
+        emitido antes de ahora (mismo motivo que resetearClaveOperador). Antes solo miraba claveCambio - pedido
+        del usuario, 2026-10-16: usuario y clave ahora se pueden cambiar por separado (ver
+        validarCredencialesOperador), y cambiar el LOGIN (usuario) tiene que cerrar sesiones viejas igual que
+        cambiar la clave - si no, alguien con una sesion ya abierta seguiria entrando con el usuario anterior.
+        */
         const claveCambio = credenciales.clave_hash !== null;
+        const usuarioCambio = credenciales.usuario !== null;
 
         await operador.update({
             cedula: cedula || null, // ver nota en crearOperador: '' choca contra otro '' en el UNIQUE, null no.
@@ -436,10 +496,10 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
             seccion_id: seccionIdFinal,
             usuario: credenciales.usuario ?? operador.usuario,
             clave_hash: credenciales.clave_hash ?? operador.clave_hash,
-            sesion_valida_desde: claveCambio ? new Date() : operador.sesion_valida_desde,
+            sesion_valida_desde: (claveCambio || usuarioCambio) ? new Date() : operador.sesion_valida_desde,
         });
 
-        if(claveCambio){
+        if(claveCambio || usuarioCambio){
             await registrarAuditoria({
                 actorUsuarioId: req.auth!.id,
                 accion: 'CAMBIAR_CREDENCIALES_OPERADOR',
@@ -480,6 +540,48 @@ export const eliminarOperador = async (req: Request, res: Response): Promise<voi
     } catch (err) {
         console.error('Error al eliminar el operador:', err);
         res.status(500).json({ message: 'Error al eliminar el operador.' });
+    }
+};
+
+/*
+Activar (deshacer el soft-delete) un Operador eliminado - pedido del usuario, 2026-10-16: antes no habia
+ninguna forma de reusar el codigo_megued/cedula/usuario de alguien eliminado (ver "Ojo con paranoid + UNIQUE"
+en CLAUDE.md) - el mensaje de choque de "Nuevo Operador" ya sugeria "pedile a un Admin que lo recupere", pero
+esa recuperacion nunca existio. 'operador.restore()' (Sequelize paranoid) solo pone deletedAt en null - NO
+toca ningun otro campo (usuario/clave/codigo siguen igual que antes de eliminarlo) ni su historial de
+Asistencias/RegistroActividad ya registrado, que sigue enlazado al MISMO id (a diferencia de crear un Operador
+nuevo, que hubiera fragmentado el historial de este trabajador en 2 registros separados). El frontend edita lo
+que haga falta (usuario, clave, etc) DESPUES de activarlo, como un paso aparte.
+*/
+export const activarOperador = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+
+        const operador = await Operador.findByPk(Number(id), { paranoid: false });
+        if (!operador) {
+            res.status(404).json({ message: 'Operador no encontrado.' });
+            return;
+        }
+        if (!operador.deletedAt) {
+            res.status(400).json({ message: 'Este operador no está eliminado.' });
+            return;
+        }
+
+        await operador.restore();
+
+        await registrarAuditoria({
+            actorUsuarioId: req.auth!.id,
+            accion: 'ACTIVAR_OPERADOR',
+            objetivoTipo: 'operador',
+            objetivoId: operador.id,
+            objetivoNombre: operador.nombre_completo,
+        });
+
+        const { clave_hash: _omitido, ...perfil } = operador.toJSON() as any;
+        res.json({ message: 'Operador activado correctamente.', operador: perfil });
+    } catch (err) {
+        console.error('Error al activar el operador:', err);
+        res.status(500).json({ message: 'Error al activar el operador.' });
     }
 };
 

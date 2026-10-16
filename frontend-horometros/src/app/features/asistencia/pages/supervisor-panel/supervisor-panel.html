@@ -219,22 +219,30 @@
                 </button>
               </td>
               <td>
-                <div class="flex gap-1">
-                  <button
-                    class="btn btn-secondary btn-sm"
-                    [disabled]="cargandoReporteImpresion"
-                    (click)="verHojaFila(asis)"
-                  >
-                    👁️ Ver
-                  </button>
-                  <button
-                    class="btn btn-secondary btn-sm"
-                    [disabled]="cargandoReporteImpresion"
-                    (click)="imprimirHojaFila(asis)"
-                  >
-                    🖨️ Imprimir
-                  </button>
-                </div>
+                <!-- OBSERVANDO (la X del Supervisor, "no vino"): no hay nada real que ver/imprimir de ese
+                dia - pedido del usuario, 2026-10-16 (mismo criterio que excluirlo del Excel/Imprimir
+                General). -->
+                @if (asis.estado !== 'OBSERVANDO') {
+                  <div class="flex gap-1">
+                    <button
+                      class="btn btn-secondary btn-sm"
+                      [disabled]="cargandoReporteImpresion"
+                      (click)="verHojaFila(asis)"
+                    >
+                      👁️ Ver
+                    </button>
+                    <button
+                      class="btn btn-secondary btn-sm"
+                      [disabled]="cargandoReporteImpresion"
+                      (click)="imprimirHojaFila(asis)"
+                    >
+                      🖨️ Imprimir
+                    </button>
+                  </div>
+                }
+                @if (asis.estado === 'OBSERVANDO') {
+                  <span class="text-muted-sm">No aplica</span>
+                }
               </td>
             </tr>
           }

@@ -464,9 +464,11 @@ export class SupervisorPanel implements OnInit {
     const fecha = this.fechaSeleccionada || this.asistenciasHoy[0]?.fecha;
     if (!fecha) return;
 
+    // Un dia OBSERVANDO (la X del Supervisor, "no vino") no debe imprimirse como si se hubiera trabajado -
+    // mismo motivo que exportarExcel mas abajo (pedido del usuario, 2026-10-16).
     const operadoresUnicos = new Map<number, Operador>();
     for (const asis of this.asistenciasHoy) {
-      if (asis.operador && !operadoresUnicos.has(asis.operador_id)) {
+      if (asis.operador && asis.estado !== 'OBSERVANDO' && !operadoresUnicos.has(asis.operador_id)) {
         operadoresUnicos.set(asis.operador_id, asis.operador);
       }
     }
@@ -528,9 +530,11 @@ export class SupervisorPanel implements OnInit {
       return;
     }
 
+    // Mismo motivo que imprimirGeneral: un operador marcado OBSERVANDO (X) no debe aparecer en el Excel
+    // oficial como si hubiera trabajado (pedido del usuario, 2026-10-16).
     const operadoresUnicos = new Map<number, Operador>();
     for (const asis of this.asistenciasHoy) {
-      if (asis.operador && !operadoresUnicos.has(asis.operador_id)) {
+      if (asis.operador && asis.estado !== 'OBSERVANDO' && !operadoresUnicos.has(asis.operador_id)) {
         operadoresUnicos.set(asis.operador_id, asis.operador);
       }
     }

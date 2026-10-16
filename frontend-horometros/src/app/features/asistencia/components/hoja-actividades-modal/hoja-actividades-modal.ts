@@ -115,7 +115,7 @@ export class HojaActividadesModal {
           const equipo = reg.equipo ? `${reg.equipo.codigo_megued} - ${reg.equipo.nombre_equipo}` : '—';
           const detalle = esOperador
             ? `Horómetro ${reg.horometro_inicio ?? '—'} → ${reg.horometro_final ?? '—'}`
-            : `OT ${reg.area || '—'}`;
+            : `Actividad ${reg.actividad?.description || '—'}`;
           const observaciones = reg.observaciones ? ` | ${reg.observaciones}` : '';
           const horas = esOperador ? '' : ` | ${this.rangoHorasLabor(reg)}`;
           lineas.push(`${equipo} | ${detalle} | ${this.duracionLabor(reg)}${horas}${observaciones}`);
