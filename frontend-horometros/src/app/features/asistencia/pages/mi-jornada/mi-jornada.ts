@@ -11,7 +11,7 @@ import { NotificacionService } from '../../../../core/services/notificacion.serv
 import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
 import { OfflineSyncService } from '../../../../core/services/offline-sync.service';
 import { Equipo, Actividad, RegistroActividad } from '../../../../core/models/asistencia.model';
-import { OperacionCrearLabor } from '../../../../core/models/offline.model';
+import { OperacionCrearLabor, OperacionEditarLabor } from '../../../../core/models/offline.model';
 
 type FaseJornada = 'cargando' | 'codigo' | 'qr' | 'actividades' | 'terminado';
 
@@ -155,6 +155,14 @@ export class MiJornada implements OnInit, OnDestroy {
   mostrarOpcionesActividad = false;
   nuevoRegistro = { equipo_id: null as number | null, actividad_id: null as number | null, area: '', horometro_inicio: null as number | null, observaciones: '' };
   guardandoRegistro = false;
+
+  /*
+  Editar labor (pedido del usuario, 2026-10-16): reutiliza el MISMO formulario de "Nuevo Registro" en vez de
+  abrir uno aparte - mientras editandoRegistroId tiene un id, el formulario cambia a modo edicion (se llena con
+  los datos de esa fila, el botón cambia de texto, la Hora de inicio se deshabilita - nunca se edita, ver
+  editarRegistroActividad en el backend). null = modo normal (crear una labor nueva).
+  */
+  editandoRegistroId: number | null = null;
 
   /*
   Hora de inicio: DOS <input type="number"> (HH y MM) en vez de un <input type="time"> nativo. Se detectó un bug
@@ -558,15 +566,48 @@ export class MiJornada implements OnInit, OnDestroy {
     });
   }
 
-  // Junta lo que ya confirmó el servidor con lo que sigue pendiente de sincronizar de ESTA jornada (ver
-  // OfflineSyncService) - las pendientes se arman con lo que el celular ya tenía cargado (equipo/actividad de
-  // los catálogos), sin depender del servidor para poder mostrarlas.
+  /*
+  Junta lo que ya confirmó el servidor con lo que sigue pendiente de sincronizar de ESTA jornada (ver
+  OfflineSyncService) - las pendientes de CREAR se arman con lo que el celular ya tenía cargado (equipo/actividad
+  de los catálogos), sin depender del servidor para poder mostrarlas. Ademas (pedido del usuario, 2026-10-16):
+  una labor YA sincronizada con una EDICION pendiente se repinta con esos cambios de una vez (mismo criterio que
+  crear_labor), y una con una ELIMINACION pendiente desaparece de la vista - si no se quitara, seguiria contando
+  como "labor abierta" para bloquearSiHayLaboresAbiertas aunque el trabajador ya la eliminó en el celular.
+  */
   private recalcularVistaRegistros(): void {
     if (!this.asistenciaId) { this.registros = this.registrosServidor; return; }
+    const servidorConPendientes = this.registrosServidor
+      .filter((reg) => !this.offlineSyncService.tieneEliminarLaborPendiente(reg.id))
+      .map((reg) => {
+        const edicion = this.offlineSyncService.buscarEditarLaborPendiente(reg.id);
+        return edicion ? this.aplicarEdicionPendiente(reg, edicion) : reg;
+      });
     const pendientes = this.offlineSyncService
       .pendientesCrearDeAsistencia(this.asistenciaId)
       .map((op) => this.opACamposDeVista(op));
-    this.registros = [...this.registrosServidor, ...pendientes];
+    this.registros = [...servidorConPendientes, ...pendientes];
+  }
+
+  private aplicarEdicionPendiente(reg: RegistroActividad, op: OperacionEditarLabor): RegistroActividad {
+    return {
+      ...reg,
+      equipo_id: op.equipo_id ?? reg.equipo_id,
+      actividad_id: op.actividad_id ?? reg.actividad_id,
+      area: op.area ?? reg.area,
+      horometro_inicio: op.horometro_inicio ?? reg.horometro_inicio,
+      horometro_final: op.horometro_final ?? reg.horometro_final,
+      observaciones: op.observaciones ?? reg.observaciones,
+      equipo: op.equipo ?? reg.equipo,
+      actividad: op.actividad ?? reg.actividad,
+    };
+  }
+
+  // Usado por el template (y por eliminarRegistro) para saber cual fila es la ULTIMA cronologicamente - el
+  // backend solo deja eliminar esa (ver esUltimaLaborDeLaJornada). 'registros' ya viene en orden (servidor por
+  // hora_inicio ASC + pendientes encoladas en el mismo orden en que se crearon, siempre mas tarde que todo lo
+  // ya sincronizado), asi que la ultima posicion del arreglo es siempre la ultima cronologica.
+  esUltimaActividad(reg: RegistroActividad): boolean {
+    return this.registros.length > 0 && this.registros[this.registros.length - 1].id === reg.id;
   }
 
   private opACamposDeVista(op: OperacionCrearLabor): RegistroActividad {
@@ -592,6 +633,11 @@ export class MiJornada implements OnInit, OnDestroy {
   }
 
   guardarNuevoRegistro(): void {
+    // Mismo formulario para crear y editar (ver editandoRegistroId) - el submit se desvia segun el modo.
+    if (this.editandoRegistroId !== null) {
+      this.guardarEdicionRegistro();
+      return;
+    }
     if (!this.asistenciaId || !this.nuevoRegistro.equipo_id || !this.nuevoRegistro.actividad_id) return;
     if (this.horaInicioHH === null || this.horaInicioMM === null) return;
 
@@ -640,6 +686,130 @@ export class MiJornada implements OnInit, OnDestroy {
     this.horaInicioMM = mm;
     this.equipoBusqueda = '';
     this.actividadBusqueda = '';
+  }
+
+  /*
+  Abre el formulario de arriba en modo EDICION, precargado con los datos actuales de esa fila (pedido del
+  usuario, 2026-10-16: corregir equipo/actividad/observacion sin tener que borrar y re-crear). La Hora de
+  inicio NO se precarga para editarla - el template la deshabilita mientras editandoRegistroId tiene valor,
+  y guardarEdicionRegistro() nunca la manda (ver editar() en registro-actividad.service.ts).
+  */
+  iniciarEdicionRegistro(reg: RegistroActividad): void {
+    this.editandoRegistroId = reg.id;
+    this.nuevoRegistro = {
+      equipo_id: reg.equipo_id,
+      actividad_id: reg.actividad_id,
+      area: reg.area || '',
+      horometro_inicio: reg.horometro_inicio ?? null,
+      observaciones: reg.observaciones || '',
+    };
+    this.equipoBusqueda = reg.equipo ? `${reg.equipo.codigo_megued} - ${reg.equipo.nombre_equipo}` : '';
+    this.actividadBusqueda = reg.actividad ? `${reg.actividad.codigo_megued} - ${reg.actividad.description}` : '';
+    this.cdr.detectChanges();
+  }
+
+  cancelarEdicionRegistro(): void {
+    this.editandoRegistroId = null;
+    this.limpiarFormularioNuevoRegistro();
+    this.cdr.detectChanges();
+  }
+
+  private guardarEdicionRegistro(): void {
+    const id = this.editandoRegistroId;
+    if (id === null || !this.nuevoRegistro.equipo_id || !this.nuevoRegistro.actividad_id) return;
+
+    const equipoSel = this.offlineSyncService.catalogoEquipos().find((e) => e.id === this.nuevoRegistro.equipo_id);
+    const actividadSel = this.offlineSyncService.catalogoActividades().find((a) => a.id === this.nuevoRegistro.actividad_id);
+    const cambios = {
+      equipo_id: this.nuevoRegistro.equipo_id,
+      actividad_id: this.nuevoRegistro.actividad_id,
+      area: this.esMecanico ? this.nuevoRegistro.area : undefined,
+      horometro_inicio: !this.esMecanico && this.nuevoRegistro.horometro_inicio !== null ? this.nuevoRegistro.horometro_inicio : undefined,
+      observaciones: this.nuevoRegistro.observaciones || undefined,
+    };
+
+    // Pendiente de sincronizar (id negativo): se edita LOCAL, directo en la cola, sin red - esa operacion
+    // 'crear_labor' ni siquiera viajo todavia (ver editarCrearLaborPendiente en OfflineSyncService).
+    if (this.esPendienteDeSincronizar(id)) {
+      this.offlineSyncService.editarCrearLaborPendiente(id, cambios, equipoSel, actividadSel).then(() => {
+        this.notificacionService.exito('Labor actualizada.');
+        this.editandoRegistroId = null;
+        this.limpiarFormularioNuevoRegistro();
+        this.recalcularVistaRegistros();
+        this.cdr.detectChanges();
+      });
+      return;
+    }
+
+    this.guardandoRegistro = true;
+    this.registroActividadService.editar(id, cambios).subscribe({
+      next: () => {
+        this.notificacionService.exito('Labor actualizada.');
+        this.guardandoRegistro = false;
+        this.editandoRegistroId = null;
+        this.limpiarFormularioNuevoRegistro();
+        this.cargarRegistros();
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.guardandoRegistro = false;
+        if (this.offlineSyncService.esFalloDeRed(err)) {
+          this.offlineSyncService.encolarEditarLabor(id, cambios, equipoSel, actividadSel).then(() => {
+            this.notificacionService.exito('Sin señal: la edición quedó guardada en el celular y se sincroniza sola cuando vuelva la conexión.');
+            this.editandoRegistroId = null;
+            this.limpiarFormularioNuevoRegistro();
+            this.recalcularVistaRegistros();
+            this.cdr.detectChanges();
+          });
+          return;
+        }
+        this.notificacionService.error(err.error?.message || 'Error al editar la labor.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  /*
+  Eliminar (pedido del usuario, 2026-10-16) - el backend solo lo permite sobre la ULTIMA labor de la jornada
+  (ver esUltimaLaborDeLaJornada/eliminarRegistroActividad), pero el template ya solo muestra el boton sobre esa
+  fila (ver esUltimaActividad) para que esto nunca se intente sobre otra.
+  */
+  async eliminarRegistro(reg: RegistroActividad): Promise<void> {
+    const confirmado = await this.confirmacionService.preguntar(
+      '¿Seguro que quieres eliminar esta labor? Esta acción no se puede deshacer.',
+      'Eliminar labor'
+    );
+    if (!confirmado) return;
+
+    // Pendiente de sincronizar (id negativo): se saca directo de la cola, sin red (nunca llego a existir en el servidor).
+    if (this.esPendienteDeSincronizar(reg.id)) {
+      const op = this.offlineSyncService.buscarCrearLaborPendiente(reg.id);
+      if (op) await this.offlineSyncService.descartar(op);
+      this.notificacionService.exito('Labor eliminada.');
+      this.recalcularVistaRegistros();
+      this.cdr.detectChanges();
+      return;
+    }
+
+    this.registroActividadService.eliminar(reg.id).subscribe({
+      next: () => {
+        this.notificacionService.exito('Labor eliminada.');
+        this.cargarRegistros();
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        if (this.offlineSyncService.esFalloDeRed(err)) {
+          this.offlineSyncService.encolarEliminarLabor(reg.id).then(() => {
+            this.notificacionService.exito('Sin señal: la eliminación quedó guardada en el celular y se sincroniza sola cuando vuelva la conexión.');
+            this.recalcularVistaRegistros();
+            this.cdr.detectChanges();
+          });
+          return;
+        }
+        this.notificacionService.error(err.error?.message || 'Error al eliminar la labor.');
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   // Abre el pequeño formulario inline (en la misma fila) para elegir la hora de fin, en vez de cerrarla al

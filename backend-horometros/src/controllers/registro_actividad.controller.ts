@@ -216,6 +216,164 @@ export const finalizarRegistroActividad = async(req:Request, res:Response):Promi
     }
 };
 
+/*
+Busca cual es la ULTIMA labor registrada en una jornada (la de hora_inicio mas tardia; 'id' como desempate
+para el caso raro de 2 labores con la misma hora_inicio exacta, ya que el id autoincremental si refleja el
+orden real de creacion). La usa eliminarRegistroActividad para no confiar nunca en lo que mande el frontend -
+el boton "Eliminar" solo deberia aparecer en pantalla sobre la ultima fila, pero el backend vuelve a
+confirmarlo por su cuenta antes de borrar nada.
+*/
+const esUltimaLaborDeLaJornada = async (asistenciaId: number, registroId: number): Promise<boolean> => {
+    const ultima = await RegistroActividad.findOne({
+        where: { asistencia_id: asistenciaId },
+        order: [['hora_inicio', 'DESC'], ['id', 'DESC']],
+    });
+    return ultima?.id === registroId;
+};
+
+/*
+Editar una labor ya registrada (pedido del usuario, 2026-10-16: corregir un equipo/actividad/observacion mal
+elegidos, sin tener que borrar y re-crear todo). Deliberadamente NO lee hora_inicio ni hora_fin del body -
+ni siquiera se desestructuran aca abajo - para que sea estructuralmente imposible que este endpoint mueva una
+hora, que es lo unico que podria desordenar "Labores de hoy" (ver horaEsAnteriorARegistrosPrevios, que sigue
+intacta: esta funcion nunca le da motivo para fallar). Mismos permisos y mismo limite EN_JORNADA que crear.
+*/
+export const editarRegistroActividad = async(req:Request, res:Response):Promise<void> => {
+    try{
+        const { id } = req.params;
+        const { equipo_id, actividad_id, area, seccion_id, horometro_inicio, horometro_final, observaciones } = req.body;
+
+        const registro = await RegistroActividad.findByPk(Number(id));
+        if(!registro){
+            res.status(404).json({ message:'Registro de actividad no encontrado.'});
+            return;
+        }
+
+        const asistencia = await Asistencia.findByPk(registro.asistencia_id);
+        if(!asistencia || !(await puedeOperarSobreAsistencia(req, asistencia))){
+            res.status(403).json({ message:'No puedes modificar la actividad de otro trabajador.'});
+            return;
+        }
+
+        if(asistencia.estado !== 'EN_JORNADA'){
+            res.status(400).json({ message: 'Esta jornada ya no esta activa: no se pueden editar sus labores.'});
+            return;
+        }
+
+        let equipoIdFinal = registro.equipo_id;
+        if(equipo_id !== undefined){
+            const equipo = await Equipo.findByPk(Number(equipo_id));
+            if(!equipo){
+                res.status(404).json({ message:'El equipo indicado no existe.'});
+                return;
+            }
+            equipoIdFinal = equipo.id;
+        }
+
+        let actividadIdFinal = registro.actividad_id;
+        if(actividad_id !== undefined){
+            const actividad = await Actividad.findByPk(Number(actividad_id));
+            if(!actividad){
+                res.status(404).json({ message:'La actividad indicada no existe o esta inactiva.'});
+                return;
+            }
+            actividadIdFinal = actividad.id;
+        }
+
+        let seccionIdFinal = registro.seccion_id;
+        if(seccion_id !== undefined){
+            if(seccion_id === null || seccion_id === ''){
+                seccionIdFinal = null;
+            } else {
+                const seccion = await Seccion.findByPk(Number(seccion_id));
+                if(!seccion){
+                    res.status(404).json({ message:'La seccion indicada no existe.'});
+                    return;
+                }
+                seccionIdFinal = seccion.id;
+            }
+        }
+
+        await registro.update({
+            equipo_id: equipoIdFinal,
+            actividad_id: actividadIdFinal,
+            area: area !== undefined ? (area || null) : registro.area,
+            seccion_id: seccionIdFinal,
+            horometro_inicio: horometro_inicio !== undefined
+                ? (horometro_inicio !== null && horometro_inicio !== '' ? Number(horometro_inicio) : null)
+                : registro.horometro_inicio,
+            horometro_final: horometro_final !== undefined
+                ? (horometro_final !== null && horometro_final !== '' ? Number(horometro_final) : null)
+                : registro.horometro_final,
+            observaciones: observaciones !== undefined ? (observaciones || null) : registro.observaciones,
+        });
+
+        // Recarga con los catalogos (equipo/actividad) para que el frontend pueda repintar la fila sin pedir
+        // de nuevo toda la lista - mismo patron que finalizarRegistroActividad.
+        await registro.reload({
+            include: [
+                { model: Equipo, as: 'equipo' },
+                { model: Actividad, as: 'actividad' },
+                { model: Seccion, as: 'seccion' },
+            ],
+        });
+
+        res.json({ message: 'Labor actualizada correctamente.', registro });
+
+    }catch(err){
+        console.error('Error al editar el registro de actividad.', err);
+        res.status(500).json({ message: 'Error al editar el registro de actividad.' });
+    }
+};
+
+/*
+Eliminar una labor (pedido del usuario, 2026-10-16: "me equivoque por completo, quiero borrar esto"). Borrado
+FISICO a proposito (decision explicita del usuario, sin soft-delete): equipo_id/actividad_id son llaves
+FORANEAS que APUNTAN a 'equipos'/'actividades' (la labor apunta al catalogo, nunca al reves), asi que borrar
+esta fila jamas toca el Equipo/Actividad del catalogo - siguen disponibles para cualquier otra labor de
+cualquier otro trabajador, sin importar cuantas veces se borre esta.
+
+SOLO se puede eliminar la ULTIMA labor de la jornada (ver esUltimaLaborDeLaJornada) - asi nunca se abre un
+hueco en medio de "Labores de hoy": borrar siempre achica la lista desde el final, el mismo lugar por donde
+siempre se agranda al crear. El backend verifica esto por su cuenta, nunca confia en que el boton de la
+pantalla solo aparezca ahi.
+*/
+export const eliminarRegistroActividad = async(req:Request, res:Response):Promise<void> => {
+    try{
+        const { id } = req.params;
+
+        const registro = await RegistroActividad.findByPk(Number(id));
+        if(!registro){
+            res.status(404).json({ message:'Registro de actividad no encontrado.'});
+            return;
+        }
+
+        const asistencia = await Asistencia.findByPk(registro.asistencia_id);
+        if(!asistencia || !(await puedeOperarSobreAsistencia(req, asistencia))){
+            res.status(403).json({ message:'No puedes eliminar la actividad de otro trabajador.'});
+            return;
+        }
+
+        if(asistencia.estado !== 'EN_JORNADA'){
+            res.status(400).json({ message: 'Esta jornada ya no esta activa: no se pueden eliminar sus labores.'});
+            return;
+        }
+
+        if(!(await esUltimaLaborDeLaJornada(registro.asistencia_id, registro.id))){
+            res.status(400).json({ message: 'Solo se puede eliminar la última actividad registrada - elimina primero las que quedaron después.' });
+            return;
+        }
+
+        await registro.destroy();
+
+        res.json({ message: 'Labor eliminada correctamente.' });
+
+    }catch(err){
+        console.error('Error al eliminar el registro de actividad.', err);
+        res.status(500).json({ message: 'Error al eliminar el registro de actividad.' });
+    }
+};
+
 //Listar las labores de una jornada puntual (para al Panel de Actividades y el reporte imprimible)
 export const obtenerRegistrosPorAsistencia = async (req:Request, res:Response):Promise<void> => {
     try{
