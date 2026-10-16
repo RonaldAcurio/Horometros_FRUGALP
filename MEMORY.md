@@ -1,6 +1,6 @@
 # MEMORY.md — Horómetros FRUGALP
 
-Respaldo de contexto del proyecto. Última actualización: 2026-10-15.
+Respaldo de contexto del proyecto. Última actualización: 2026-10-16.
 
 ## Qué es la aplicación
 
@@ -34,20 +34,32 @@ desplegado en Railway (backend) y Vercel (frontend web + descarga del .apk).
 - **Reportes**: hoja Excel de Taller por hacienda/día (`exportar-excel.service.ts`, firma
   "FIRMA SUPERVISOR"), Historial de Asistencias con filtros (Panel de Asistente/Admin) — "Horas
   Trabajadas" es la suma real de las actividades, no el rango entrada→salida, mostrada en formato
-  "Xh Ymin" (ej. "30min", "12h 1min"), no decimal.
+  "Xh Ymin" (ej. "30min", "12h 1min"), no decimal. Un día marcado OBSERVANDO (la X del Supervisor,
+  "no vino") queda visible en el Historial en pantalla (badge "❌ No presente", para auditoría) pero
+  se excluye de "Exportar a Excel"/"Imprimir Hojas del rango"/"Ver/Imprimir" por fila — esos son el
+  reporte oficial de horas, no deben mostrar a alguien que el Supervisor dijo que no trabajó. El
+  reporte imprimible del Mecánico muestra la Actividad registrada, no el campo libre "OT".
+- **Eliminar/Activar Operador**: eliminar es soft-delete (`deletedAt`), pero su código/cédula/
+  usuario seguían "ocupados" a nivel de UNIQUE de Postgres, bloqueando recrearlo. Si "Nuevo
+  Operador" choca con uno de esos valores y pertenece a alguien eliminado, ofrece activarlo (mismo
+  id, conserva su historial) en vez de solo bloquear. El usuario de un Operador ya activo también
+  se puede editar por separado de la clave desde su Ficha (antes solo se podía resetear la clave).
 - **Offline-first**: crear/cerrar labores y marcar salida funcionan sin señal (se encola en el
   celular con `@capacitor/preferences` y sincroniza solo al volver la conexión).
 - **APK**: 4.2MB (antes ~100MB — se embebía a sí mismo dentro de sus propios assets, ya
   arreglado), con R8/ProGuard activado.
 
-## Recién subido a producción (2026-10-15)
+## Recién subido a producción (2026-10-16)
 PR [#45](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/45): exigir cerrar labores antes
 de salida, Excel "FIRMA SUPERVISOR", limpieza de `operadores.area`, Horas Trabajadas real, Token
 de Hacienda Fases A+B completas. PR [#46](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/46):
 APK liviano (R8 + quitar auto-incrustación). PR [#47](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/47):
 calendario de tokens (el Supervisor elige para qué día generar/invalidar, usando su propio selector
-de fecha ya existente) + Horas Trabajadas en formato "Xh Ymin" en vez de decimal. APK recompilado,
-confirmado 4.2MB (4.422.786 bytes) en producción tras este merge.
+de fecha ya existente) + Horas Trabajadas en formato "Xh Ymin" en vez de decimal. PR
+[#49](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/49): excluir OBSERVANDO (la X del
+Supervisor) del Excel/impresión + badge en el Historial, activar operador eliminado (nuevo endpoint
+`PUT /operadores/:id/activar`) con usuario/clave editables por separado, OT→Actividad en el reporte
+del Mecánico. APK recompilado, confirmado 4.2MB (4.423.898 bytes) en producción tras este merge.
 
 ## PENDIENTE
 
