@@ -122,9 +122,16 @@ export class ExportarExcelService {
 
     // Filas de datos: un bloque por trabajador, N° auto-incremental, A/B/C/D/O combinadas y centradas en
     // todo el bloque (pedido explicito del usuario - igual que en la plantilla real).
+    //
+    // Orden alfabetico A-Z por nombre (pedido del usuario, 2026-10-19) - 'bloques' llega en el orden en que
+    // el backend devolvio los registros (por hora de ingreso/fecha, ver obtenerAsistenciaHoy/obtenerHistorial),
+    // nunca alfabetico. localeCompare con locale 'es' (no un < / > simple) para que tildes y Ñ ordenen bien.
+    const bloquesOrdenados = [...bloques].sort((a, b) =>
+      a.operador.nombre_completo.localeCompare(b.operador.nombre_completo, 'es', { sensitivity: 'base' })
+    );
     let filaActual = 8;
     let numero = 1;
-    for (const bloque of bloques) {
+    for (const bloque of bloquesOrdenados) {
       const filaInicio = filaActual;
       const registros: (RegistroActividad | null)[] = bloque.registros.length > 0 ? bloque.registros : [null];
 
@@ -148,7 +155,10 @@ export class ExportarExcelService {
 
       celda(`A${filaInicio}`, numero);
       celda(`B${filaInicio}`, new Date(`${fecha}T00:00:00Z`));
-      ws.getCell(`B${filaInicio}`).numFmt = 'm/d/yy';
+      // DD/MM/YYYY (pedido del usuario, 2026-10-19) - mismo formato que ya usa el resto de la app
+      // (ver el pipe 'dd/MM/yyyy HH:mm' en asistencia-panel.html/admin-panel.html). Antes 'm/d/yy'
+      // (M/D/YY) confundía a los trabajadores, que leen fecha en formato DD/MM/YYYY.
+      ws.getCell(`B${filaInicio}`).numFmt = 'dd/mm/yyyy';
       celda(`C${filaInicio}`, bloque.operador.codigo_megued);
       celda(`D${filaInicio}`, bloque.operador.nombre_completo, { bold: true });
       celda(`O${filaInicio}`, ''); // Observacion: vacia a proposito, para que la editen despues.
