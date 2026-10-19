@@ -1,6 +1,6 @@
 # MEMORY.md — Horómetros FRUGALP
 
-Respaldo de contexto del proyecto. Última actualización: 2026-10-16 (PR #51).
+Respaldo de contexto del proyecto. Última actualización: 2026-10-19 (PR #52).
 
 ## Qué es la aplicación
 
@@ -38,7 +38,9 @@ desplegado en Railway (backend) y Vercel (frontend web + descarga del .apk).
   "no vino") queda visible en el Historial en pantalla (badge "❌ No presente", para auditoría) pero
   se excluye de "Exportar a Excel"/"Imprimir Hojas del rango"/"Ver/Imprimir" por fila — esos son el
   reporte oficial de horas, no deben mostrar a alguien que el Supervisor dijo que no trabajó. El
-  reporte imprimible del Mecánico muestra la Actividad registrada, no el campo libre "OT".
+  reporte imprimible del Mecánico muestra la Actividad registrada, no el campo libre "OT". En el
+  Excel la fecha se muestra DD/MM/YYYY y los trabajadores salen ordenados alfabéticamente A-Z por
+  nombre (un solo `sort` en `generarYDescargar`, compartido por los dos flujos de exportación).
 - **Eliminar/Activar Operador**: eliminar es soft-delete (`deletedAt`), pero su código/cédula/
   usuario seguían "ocupados" a nivel de UNIQUE de Postgres, bloqueando recrearlo. Si "Nuevo
   Operador" choca con uno de esos valores y pertenece a alguien eliminado, ofrece activarlo (mismo
@@ -71,8 +73,10 @@ labor en el Panel de Actividades (hard delete solo en la última labor, editar n
 offline-first para ambos, nuevas pruebas de integración). PR
 [#51](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/51): botones Editar/Eliminar como
 chips con borde (icono + texto) y :hover/:active de color, elegidos de entre 4 opciones comparadas
-en un mockup antes de implementar. APK recompilado, confirmado 4.2MB (4.425.278 bytes) en
-producción tras este merge.
+en un mockup antes de implementar. PR
+[#52](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/52): fecha DD/MM/YYYY y orden
+alfabético A-Z por nombre en el Excel exportado. APK recompilado, confirmado 4.2MB (4.425.342
+bytes) en producción tras este merge.
 
 ## PENDIENTE
 
@@ -105,6 +109,21 @@ evaluaron 2 caminos:
   de una misma finca en un solo total — el usuario lo va a investigar por su cuenta. Depende
   también de que la Fase C de Token de Hacienda esté resuelta primero.
 
-### 3 — Casos borde menores, aceptados tal cual
+### 3 — Trabajador prestado cuenta para la hacienda receptora (implementado, SIN mergear a propósito)
+Implementado y verificado en la rama `test/prestamo-hacienda2-fecha-excel` (no mergeada - el usuario pidió
+dejarla pendiente el 2026-10-19 tras encontrar un vacío real al verificar el flujo completo, ver abajo):
+- `obtenerAsistenciaHoy`/`obtenerHistorial` (solo filtrando por hacienda): un trabajador prestado a otra
+  hacienda por el día aparece en los reportes de la hacienda RECEPTORA ese día, y deja de aparecer ese mismo
+  día en los de su hacienda de ORIGEN (antes solo aparecía en la de origen, nunca en la receptora).
+- `puedeVerHistorialDeOperador` (`registro_actividad.controller.ts`): ajustado para que el "Exportar a
+  Excel" de la hacienda receptora no falle con 403 al pedir las labores del trabajador prestado - acotado
+  SOLO al rango de fechas puntual del préstamo, nunca da acceso al historial completo.
+- **Vacío real encontrado, sin resolver todavía**: `finalizarDia` ("Cerrar Jornada") sigue sin considerar
+  `hacienda_prestamo_id` - solo la hacienda de ORIGEN puede cerrarle el día a un trabajador prestado, nunca
+  la receptora, aunque esta última ahora lo vea en sus reportes. Si el trabajador se olvida de marcar salida,
+  la hacienda receptora no tiene forma de cerrarle el día. El usuario pidió dejar esto pendiente de decisión
+  antes de subir el cambio a producción.
+
+### 4 — Casos borde menores, aceptados tal cual
 - Una labor creada 100% sin señal no se puede cerrar hasta sincronizar (así bloquea la salida
   mientras tanto) — límite conocido del diseño offline, no es un bug.
