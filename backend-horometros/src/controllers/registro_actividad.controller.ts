@@ -31,18 +31,38 @@ const puedeOperarSobreAsistencia = async (req:Request, asistencia: Asistencia): 
 }
 
 /*
-Chequeo de alcance PERMANENTE sobre un operador (no una jornada puntual) - lo usa obtenerRegistrosPorOperador
-(historial completo a traves de varias jornadas, "Ver/Imprimir" del Panel de Asistente). Un trabajador
-prestado NO cuenta aqui a proposito: prestarlo por un dia no deberia darle a ese Supervisor acceso al
-historial de TODA la vida laboral del operador en otras haciendas.
+Chequeo de alcance sobre un operador - lo usa obtenerRegistrosPorOperador (historial a traves de varias
+jornadas, "Ver/Imprimir" del Panel de Asistente, y el "Exportar a Excel" del Panel de Supervisor que arma
+cada fila pidiendo las labores de CADA operador de "hoy" por separado). Un trabajador prestado NO da acceso
+al historial COMPLETO de su vida laboral en otras haciendas - eso sigue prohibido. Pero SI da acceso, acotado
+a fechaInicio/fechaFin (pedido del usuario, 2026-10-19), cuando existe una Asistencia de ese operador en ese
+rango con hacienda_prestamo_id == la hacienda del Supervisor que pregunta: sin esto, el "Exportar a Excel" de
+la hacienda RECEPTORA (ver obtenerAsistenciaHoy/obtenerHistorial, que ya listan a este trabajador ahi) fallaba
+con 403 al intentar pedir sus labores de ese dia puntual - el permiso de LISTARLO no alcanzaba para poder
+exportarlo. Sin fechaInicio Y fechaFin (el reporte "Ver/Imprimir" del Directorio, sin rango) esta excepcion
+nunca aplica - ahi si se exige ser el Supervisor permanente, igual que antes.
 */
-const puedeVerHistorialDeOperador = async (req:Request, operadorId: number): Promise<boolean> => {
+const puedeVerHistorialDeOperador = async (
+    req:Request, operadorId: number, fechaInicio?: string, fechaFin?: string
+): Promise<boolean> => {
     if(!req.auth) return false;
     if(req.auth.tipo === 'operador') return req.auth.id === operadorId;
     if(req.auth.rol === 'ADMIN' || req.auth.rol === 'ASISTENTE') return true;
     if(req.auth.rol === 'SUPERVISOR'){
         const operador = await Operador.findByPk(operadorId, { attributes: ['supervisor_id'] });
-        return operador?.supervisor_id === req.auth.id;
+        if(operador?.supervisor_id === req.auth.id) return true;
+
+        if(req.auth.hacienda_id && fechaInicio && fechaFin){
+            const prestamoEnRango = await Asistencia.findOne({
+                where: {
+                    operador_id: operadorId,
+                    hacienda_prestamo_id: req.auth.hacienda_id,
+                    fecha: { [Op.between]: [fechaInicio, fechaFin] },
+                },
+            });
+            return prestamoEnRango !== null;
+        }
+        return false;
     }
     return false;
 }
@@ -427,12 +447,15 @@ export const obtenerRegistrosPorOperador = async (req:Request, res:Response):Pro
             res.status(400).json({ message:'El parametro operador_id es obligatorio.'});
             return;
         }
-        if(!(await puedeVerHistorialDeOperador(req, Number(operadorId)))){
+
+        const { fecha_inicio, fecha_fin } = req.query;
+        const fechaInicioStr = typeof fecha_inicio === 'string' ? fecha_inicio : undefined;
+        const fechaFinStr = typeof fecha_fin === 'string' ? fecha_fin : undefined;
+        if(!(await puedeVerHistorialDeOperador(req, Number(operadorId), fechaInicioStr, fechaFinStr))){
             res.status(403).json({ message:'No puedes ver las actividades de otro trabajador.'});
             return;
         }
 
-        const { fecha_inicio, fecha_fin } = req.query;
         const whereAsistencia: Record<string, unknown> = { operador_id: Number(operadorId) };
         if(fecha_inicio || fecha_fin){
             const rangoFecha: Partial<Record<typeof Op.gte | typeof Op.lte, unknown>> = {};

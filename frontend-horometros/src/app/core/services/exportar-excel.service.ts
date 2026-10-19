@@ -148,7 +148,10 @@ export class ExportarExcelService {
 
       celda(`A${filaInicio}`, numero);
       celda(`B${filaInicio}`, new Date(`${fecha}T00:00:00Z`));
-      ws.getCell(`B${filaInicio}`).numFmt = 'm/d/yy';
+      // DD/MM/YYYY (pedido del usuario, 2026-10-19) - mismo formato que ya usa el resto de la app
+      // (ver el pipe 'dd/MM/yyyy HH:mm' en asistencia-panel.html/admin-panel.html). Antes 'm/d/yy'
+      // (M/D/YY) confundía a los trabajadores, que leen fecha en formato DD/MM/YYYY.
+      ws.getCell(`B${filaInicio}`).numFmt = 'dd/mm/yyyy';
       celda(`C${filaInicio}`, bloque.operador.codigo_megued);
       celda(`D${filaInicio}`, bloque.operador.nombre_completo, { bold: true });
       celda(`O${filaInicio}`, ''); // Observacion: vacia a proposito, para que la editen despues.

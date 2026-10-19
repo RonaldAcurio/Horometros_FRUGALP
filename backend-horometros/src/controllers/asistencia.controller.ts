@@ -1436,6 +1436,17 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
         completo (todas las haciendas), independiente de este alcance. El propio cierre (finalizarDia,
         mas abajo) SI queda acotado a la hacienda del Supervisor que ejecuta el cierre (o a la que mande ADMIN
         via este mismo supervisor_id) - ver ese endpoint para el detalle.
+
+        EXCEPCION deliberada (pedido del usuario, 2026-10-19): un trabajador PRESTADO hoy a la hacienda de
+        este Supervisor (hacienda_prestamo_id === su propia hacienda) SI debe aparecer aca, aunque
+        operador.supervisor_id no sea el suyo - las normas de la empresa exigen que ese dia cuente para la
+        hacienda que de verdad lo tuvo trabajando. Es la MISMA hacienda que ya le da permiso operativo sobre
+        ese registro (ver tienePermisoSupervisorSobreAsistencia, mas abajo) - antes tenia el permiso pero el
+        registro ni siquiera le aparecia en esta lista para poder usarlo. La hacienda de ORIGEN deja de verlo
+        ese dia (ver el `[Op.and]` que excluye `hacienda_prestamo_id` de la rama "propios" - sin eso, el mismo
+        trabajador aparaceria en las dos haciendas el mismo dia, dando a entender que trabajo en ambas a la
+        vez). calcularDiaCerrado/finalizarDia siguen sin esta excepcion a proposito (ver sus propios
+        comentarios) - son sobre quien ADMINISTRA al trabajador, no sobre donde se REPORTA su jornada.
         */
         const supervisorIdQuery = req.query['supervisor_id'];
         const supervisorIdAlcance: number | null =
@@ -1443,9 +1454,19 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
                 ? req.auth.id
                 : (supervisorIdQuery ? Number(supervisorIdQuery) : null);
         const filtrarPorSupervisor = supervisorIdAlcance !== null;
+        const haciendaIdAlcance: number | null =
+            req.auth?.tipo === 'usuario' && req.auth.rol === 'SUPERVISOR' ? req.auth.hacienda_id : null;
 
         const { rows:asistencias, count:total } = await Asistencia.findAndCountAll({
-            where: { fecha:hoy },
+            where: {
+                fecha: hoy,
+                ...(filtrarPorSupervisor ? {
+                    [Op.or]: [
+                        { '$operador.supervisor_id$': supervisorIdAlcance, hacienda_prestamo_id: null },
+                        ...(haciendaIdAlcance ? [{ hacienda_prestamo_id: haciendaIdAlcance }] : []),
+                    ],
+                } : {}),
+            },
             attributes: ATRIBUTOS_SIN_FOTO,
             /*
             paranoid:false en los includes: si el Operador/Actividad de una marcacion de HOY fue eliminado
@@ -1456,13 +1477,17 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
             detalle) - el Panel de Supervisor ahora tambien tiene su propio "Ver/Imprimir" por fila e "Imprimir
             General" (hoja-actividades-modal.ts, pedido del usuario 2026-10-02), que necesitan la hacienda de
             la jornada para el mismo encabezado que ya arma la hoja imprimible del Historial.
+
+            required:false SIEMPRE (incluso filtrando por supervisor): la condicion de "propios" ahora vive en
+            el `where` de arriba (via `$operador.supervisor_id$`), asi que el include solo necesita el LEFT
+            JOIN para poder evaluarla - exigir el INNER JOIN de antes excluiria de entrada cualquier fila que
+            solo calce por `hacienda_prestamo_id`.
             */
             include: [
                 {
                     model: Operador, as:'operador',
-                    required: filtrarPorSupervisor,
+                    required: false,
                     paranoid: false,
-                    ...(filtrarPorSupervisor ? { where: { supervisor_id: supervisorIdAlcance } } : {}),
                     include: [{
                         model: Usuario, as: 'supervisor',
                         attributes: ['hacienda_id'],
@@ -1477,9 +1502,14 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
             limit: limitePagina,
             offset,
             /*
-            El include de 'actividades' es un JOIN muchos-a-muchos: sin 'distrinct el count quedaria inflaso (una vez por cada actividad
-            vinculada, no por registro).'
+            subQuery:false: obligatorio en Sequelize cuando el `where` filtra por una columna de un include
+            (aca `$operador.supervisor_id$`) Y ademas hay `limit`/`offset` - sin esto Sequelize aplica el LIMIT
+            ANTES del join, y el filtro sobre la columna incluida deja de funcionar bien.
+
+            El include de 'actividades' es un JOIN muchos-a-muchos: sin 'distinct' el count quedaria inflado
+            (una vez por cada actividad vinculada, no por registro).
             */
+           subQuery: false,
            distinct: true
         });
         /*
@@ -1920,9 +1950,28 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
         tener que saber a que hacienda pertenece). `required: true` en 'operador' cuando hay CUALQUIERA de los
         dos filtros convierte el include en INNER JOIN (si no, Sequelize lo deja LEFT JOIN y el where anidado no
         filtra nada).
+
+        EXCEPCION deliberada (pedido del usuario, 2026-10-19), SOLO cuando se filtra por hacienda sin combinar
+        con un supervisor puntual (un prestamo es un concepto de hacienda, no de un supervisor especifico): una
+        jornada con hacienda_prestamo_id = la hacienda consultada SI debe aparecer, aunque la hacienda PERMANENTE
+        del trabajador (via su Supervisor) sea otra - mismo motivo que en obtenerAsistenciaHoy (ver ahi el
+        detalle): las normas de la empresa exigen que ese dia cuente para la hacienda que de verdad lo tuvo
+        trabajando. La hacienda de ORIGEN deja de verlo ese dia (la rama "propios" excluye explicitamente
+        hacienda_prestamo_id no nulo) - sin eso, el mismo trabajador aparaceria en el Historial de las dos
+        haciendas el mismo dia. Como hacienda_prestamo_id vive en la fila de Asistencia de ESE dia puntual, ya
+        queda acotado solo a los dias prestados - no hace falta ninguna logica de rango adicional mas alla del
+        filtro de fecha que ya aplica `whereCondition.fecha` arriba.
         */
         const filtrarPorHacienda = hacienda_id !== undefined && hacienda_id !== '';
         const filtrarPorSupervisor = supervisor_id !== undefined && supervisor_id !== '';
+        const aplicaExcepcionPrestamo = filtrarPorHacienda && !filtrarPorSupervisor;
+        if(aplicaExcepcionPrestamo){
+            const haciendaIdFiltro = Number(hacienda_id);
+            whereCondition[Op.or] = [
+                { '$operador.supervisor.hacienda_id$': haciendaIdFiltro, hacienda_prestamo_id: null },
+                { hacienda_prestamo_id: haciendaIdFiltro },
+            ];
+        }
         const { rows:historial, count:total } = await Asistencia.findAndCountAll({
             where: whereCondition,
             attributes:ATRIBUTOS_SIN_FOTO,
@@ -1934,7 +1983,11 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
             include:[
                 {
                     model: Operador, as: 'operador',
-                    required: filtrarPorHacienda || filtrarPorSupervisor,
+                    // required:false cuando aplica la excepcion de prestamo (ver arriba): la condicion de
+                    // "propios" ahora vive en el `where` de nivel superior via dot-notation, asi que el include
+                    // solo necesita el LEFT JOIN para poder evaluarla - un INNER JOIN de entrada excluiria
+                    // cualquier fila que solo calce por hacienda_prestamo_id.
+                    required: aplicaExcepcionPrestamo ? false : (filtrarPorHacienda || filtrarPorSupervisor),
                     paranoid: false,
                     ...(filtrarPorSupervisor ? { where: { supervisor_id: Number(supervisor_id) } } : {}),
                     /*
@@ -1946,7 +1999,7 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
                     include: [{
                         model: Usuario, as: 'supervisor',
                         attributes: ['hacienda_id'],
-                        ...(filtrarPorHacienda ? { where: { hacienda_id: Number(hacienda_id) } } : {}),
+                        ...(filtrarPorHacienda && !aplicaExcepcionPrestamo ? { where: { hacienda_id: Number(hacienda_id) } } : {}),
                         include: [{ model: Hacienda, as: 'hacienda', attributes: ['nombre'] }],
                     }],
                 },
@@ -1970,8 +2023,15 @@ export const obtenerHistorial = async(req:Request, res:Response):Promise<void> =
             order: [['fecha','DESC'],['hora_ingreso','DESC']],
             limit: limitePagina,
             offset,
-            //El include de 'actividades' es un JOIN muchos-a-muchos: sin 'distinct' el count quedaria inflado (cuenta una vez por cada actividad
-            //vinculada, no por registro).
+            /*
+            subQuery:false: obligatorio cuando el `where` filtra por una columna de un include via dot-notation
+            (`$operador.supervisor.hacienda_id$`, solo cuando aplicaExcepcionPrestamo) Y ademas hay limit/offset -
+            sin esto Sequelize aplica el LIMIT antes del join y el filtro sobre la columna incluida no funciona.
+
+            El include de 'actividades' es un JOIN muchos-a-muchos: sin 'distinct' el count quedaria inflado (cuenta
+            una vez por cada actividad vinculada, no por registro).
+            */
+            ...(aplicaExcepcionPrestamo ? { subQuery: false } : {}),
             distinct: true,
         });
 

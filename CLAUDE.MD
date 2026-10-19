@@ -197,10 +197,28 @@ verdad corrió - nunca por inferencia, ni siquiera con un solo trabajador. 3 con
    parámetro) - aplica a `obtenerAsistenciaHoy`, `revisarAsistencia`, `confirmarAsistencia`, `obtenerFotoAsistencia`,
    `finalizarDia`, `calcularDiaCerrado`, y a `registro_actividad.controller.ts` completo
    (`puedeOperarSobreAsistencia` para operar sobre una jornada puntual, `puedeVerHistorialDeOperador` para el
-   historial completo - este último NO cuenta trabajadores prestados, prestar un día no da acceso al historial
-   laboral completo en otras haciendas). `obtenerHaciendas` no expone `token_actual`/`token_expira_en` de otras
-   haciendas a un SUPERVISOR. ADMIN/ASISTENTE nunca quedan restringidos. Un Supervisor SÍ tiene permiso sobre un
-   trabajador prestado que él mismo admitió hoy (`hacienda_prestamo_id`).
+   historial completo - este último NO cuenta trabajadores prestados para el historial SIN rango de fechas,
+   prestar un día no da acceso al historial laboral completo en otras haciendas). `obtenerHaciendas` no expone
+   `token_actual`/`token_expira_en` de otras haciendas a un SUPERVISOR. ADMIN/ASISTENTE nunca quedan
+   restringidos. Un Supervisor SÍ tiene permiso sobre un trabajador prestado que él mismo admitió hoy
+   (`hacienda_prestamo_id`).
+   **EXCEPCIÓN (2026-10-19)**: `obtenerAsistenciaHoy` y `obtenerHistorial` (solo filtrando por hacienda, sin
+   combinar con un supervisor puntual) SÍ consideran `hacienda_prestamo_id` - un trabajador prestado hoy a la
+   Hacienda 2 aparece en los reportes/Excel de la Hacienda 2 ese día, y deja de aparecer ese mismo día en los
+   de su Hacienda 1 de origen (las normas de la empresa exigen que la jornada cuente para quien de verdad lo
+   tuvo trabajando; mostrarlo en las dos haría parecer que trabajó en ambas a la vez). Esto es solo para
+   REPORTES - `finalizarDia`/`calcularDiaCerrado`/`resolverHaciendasDelDia` siguen sin considerar
+   `hacienda_prestamo_id` a propósito (son sobre quién ADMINISTRA/cierra al trabajador, no sobre dónde se
+   reporta su jornada), y el Directorio de Operadores (`obtenerOperadores`) tampoco - la ficha/nómina
+   `puedeVerHistorialDeOperador` (`registro_actividad.controller.ts`) también se ajustó: CON `fechaInicio`/
+   `fechaFin` (el caso real, ya que `obtenerRegistrosPorOperador` siempre los recibe desde el "Exportar a
+   Excel"/"Ver-Imprimir" del Panel de Supervisor), un Supervisor no-dueño SÍ puede ver las labores de ese rango
+   puntual si existe una Asistencia ahí con `hacienda_prestamo_id` igual a su hacienda - sin esto, el Excel de
+   la hacienda receptora fallaba con 403 al pedir las labores del trabajador prestado que `obtenerAsistenciaHoy`
+   ya le mostraba en la lista (el permiso de listarlo no alcanzaba para exportarlo). SIN rango de fechas (el
+   reporte "Ver/Imprimir" sin acotar) la excepción nunca aplica - sigue exigiendo ser el Supervisor permanente.
+   permanente del trabajador nunca se mueve de su hacienda de origen, solo cambia bajo cuál se cuenta un día
+   puntual de préstamo.
 10. **Jornada ambigua al reingresar** (`procesarMarcacion`, `diferenciaEnDiasCalendario`): al encontrar una
     jornada `EN_JORNADA` sin cerrar, compara la fecha de esa jornada contra hoy en DÍAS CALENDARIO, no en horas -
     0 días: sigue como salida normal (turno nocturno cruzando medianoche). 2+ días: se cierra sola como
