@@ -1,6 +1,6 @@
 # MEMORY.md — Horómetros FRUGALP
 
-Respaldo de contexto del proyecto. Última actualización: 2026-10-20 (PR #53).
+Respaldo de contexto del proyecto. Última actualización: 2026-10-20 (PR #54).
 
 ## Qué es la aplicación
 
@@ -80,20 +80,27 @@ bytes) en producción tras este merge. PR
 [#53](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/53): ⚠️ **TEMPORAL** - botón "Forzar
 eliminar" en `mi-jornada.ts`, acotado a un solo trabajador (GRANIZO SALAZAR JORGE EDUARDO), para
 limpiar ~15-20 labores duplicadas por un bug de doble-toque. Solo en la web - el usuario pidió NO
-esperar el rebuild del APK esta vez, porque esto se va a revertir apenas termine de limpiar la
-cuenta (ver PENDIENTE #1, abajo).
+esperar el rebuild del APK esta vez, porque esto se iba a revertir apenas terminara de limpiar la
+cuenta. PR [#54](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/54): revertido - el botón
+"Forzar eliminar" ya cumplió su propósito (cuenta limpia) y `mi-jornada.ts` volvió exactamente a
+como estaba antes del PR #53 (`git revert -m 1` del merge commit `0a2ec5b`). El código no se perdió,
+ver "Herramientas guardadas para reutilizar" abajo.
+
+## Herramientas guardadas para reutilizar
+
+### "Forzar eliminar" (botón temporal de eliminación sin restricción de "última labor")
+Guardado en la rama `herramienta-forzar-eliminar-labor` (GitHub, no se borra), apuntando al commit
+`aac5a48` - tiene el feature completo: flag `forzar` en `eliminarRegistroActividad`
+(`registro_actividad.controller.ts`), el parámetro `forzar` en `RegistroActividadService.eliminar()`
+(frontend), el botón "⚠️ Forzar eliminar" en `mi-jornada.ts`/`.html` (acotado por
+`nombre_completo` para no exponerlo a los ~950 trabajadores), y las 3 pruebas de integración que lo
+cubren. Para traerlo de vuelta: crear una rama nueva desde `main` y hacer
+`git cherry-pick aac5a48` (resolviendo conflictos si el código cambió desde entonces), ajustar el
+nombre del trabajador acotado si hace falta, y subirlo igual que cualquier feature nuevo.
 
 ## PENDIENTE
 
-### 1 — Revertir el botón "Forzar eliminar" temporal (PR #53) - URGENTE una vez usado
-El usuario va a avisar cuando termine de limpiar las labores duplicadas de GRANIZO SALAZAR JORGE
-EDUARDO. En cuanto avise: revertir el commit `aac5a48` (o el merge commit `0a2ec5b`) de `main` - es
-un cambio autocontenido en `registro_actividad.controller.ts` (flag `forzar`), `mi-jornada.ts`/`.html`
-(botón acotado por `nombre_completo`) y `registro-actividad.service.ts` (parámetro `forzar` en
-`eliminar()`), sin tocar nada más - un solo revert limpio. No dejar esto sin hacer: mientras el botón
-siga en producción, salta la protección "nunca dejes un hueco" para ese trabajador puntual.
-
-### 2 — Token de Hacienda — Fase C (limpieza final, informe detallado)
+### 1 — Token de Hacienda — Fase C (limpieza final, informe detallado)
 Solo cuando Fase B lleve tiempo estable en producción:
 - Quitar `haciendas.token_actual`/`token_expira_en` por completo (migración `removeColumn`, con
   `down()` que las re-crea vacías — mismo criterio que `cifrar-pii-operadores.js`: para ese punto
@@ -106,7 +113,7 @@ Solo cuando Fase B lleve tiempo estable en producción:
 - Borrar la función `tokenHaciendaVigente` y su archivo de pruebas (`utils/token-hacienda.ts`/
   `.test.ts`) — quedaron como código muerto desde Fase B.
 
-### 3 — Token por Área (informe detallado)
+### 2 — Token por Área (informe detallado)
 Motivo real: cada Área dentro de una Hacienda tiene su propio Supervisor (no comparten uno). Se
 evaluaron 2 caminos:
 - **Camino A — tabla `tokens_seccion`**: descartado. `Seccion` hoy NO tiene concepto de "su
@@ -122,7 +129,7 @@ evaluaron 2 caminos:
   de una misma finca en un solo total — el usuario lo va a investigar por su cuenta. Depende
   también de que la Fase C de Token de Hacienda esté resuelta primero.
 
-### 4 — Trabajador prestado cuenta para la hacienda receptora (implementado, SIN mergear a propósito)
+### 3 — Trabajador prestado cuenta para la hacienda receptora (implementado, SIN mergear a propósito)
 Implementado y verificado en la rama `test/prestamo-hacienda2-fecha-excel` (no mergeada - el usuario pidió
 dejarla pendiente el 2026-10-19 tras encontrar un vacío real al verificar el flujo completo, ver abajo):
 - `obtenerAsistenciaHoy`/`obtenerHistorial` (solo filtrando por hacienda): un trabajador prestado a otra
@@ -137,6 +144,6 @@ dejarla pendiente el 2026-10-19 tras encontrar un vacío real al verificar el fl
   la hacienda receptora no tiene forma de cerrarle el día. El usuario pidió dejar esto pendiente de decisión
   antes de subir el cambio a producción.
 
-### 5 — Casos borde menores, aceptados tal cual
+### 4 — Casos borde menores, aceptados tal cual
 - Una labor creada 100% sin señal no se puede cerrar hasta sincronizar (así bloquea la salida
   mientras tanto) — límite conocido del diseño offline, no es un bug.
