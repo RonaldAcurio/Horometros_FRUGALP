@@ -5,12 +5,18 @@ import { AsistenciaService } from '../../../../core/services/asistencia.service'
 import { NotificacionService } from '../../../../core/services/notificacion.service';
 import { Operador } from '../../../../core/models/asistencia.model';
 
+const LIMITE_RESULTADOS = 10;
+
 /*
 Botón "+ Agregar Usuario", junto a "Registro de Asistencia de Hoy" en el Panel de Supervisor (pedido del
 usuario, 2026-10-20): mete a la lista de hoy a un trabajador que no llegó a marcar por cualquier motivo. Solo
 pide A QUIÉN agregar - el backend crea la Asistencia igual que una entrada normal (EN_JORNADA), así que de ahí
 en adelante se gestiona como cualquier otra fila (equipo/actividad se agregan después, con el botón ➕ de su
 fila, ver PanelLaboresModal).
+
+Ajuste (pedido del usuario, 2026-10-20, tras probar en producción): el buscador arranca mostrando una lista
+(sin tener que escribir nada), con límite de 10 resultados por página y paginación - antes solo buscaba cuando
+se escribía algo, y traía hasta 20 de golpe sin forma de ver más.
 */
 @Component({
   standalone: true,
@@ -30,6 +36,16 @@ export class AgregarUsuarioModal {
   buscando = false;
   operadorSeleccionado: Operador | null = null;
   guardando = false;
+
+  paginaActual = 1;
+  totalPaginas = 1;
+  totalResultados = 0;
+
+  // Solo tiene valor cuando quien abre el modal es ADMIN y ya eligió un Supervisor puntual arriba (ver
+  // supervisor-panel.ts, abrirAgregarUsuario) - un SUPERVISOR real no lo necesita, el backend ya lo acota
+  // solo a sus propios trabajadores (ver obtenerOperadores).
+  private supervisorId: number | null = null;
+
   private debounceBusqueda?: ReturnType<typeof setTimeout>;
 
   constructor(
@@ -38,12 +54,18 @@ export class AgregarUsuarioModal {
     private cdr: ChangeDetectorRef,
   ) {}
 
-  abrir(): void {
+  abrir(supervisorId?: number | null): void {
     this.visible = true;
+    this.supervisorId = supervisorId ?? null;
     this.busqueda = '';
     this.resultados = [];
     this.operadorSeleccionado = null;
+    this.paginaActual = 1;
+    this.totalPaginas = 1;
+    this.totalResultados = 0;
     this.cdr.detectChanges();
+    // Carga inicial (pedido del usuario): la lista sale de una vez, sin tener que escribir nada primero.
+    this.buscar('', 1);
   }
 
   cerrar(): void {
@@ -52,26 +74,31 @@ export class AgregarUsuarioModal {
     this.cdr.detectChanges();
   }
 
-  // El buscador reutiliza el mismo endpoint paginado del Directorio de Operadores (ver
-  // AsistenciaService.obtenerOperadoresPaginado) - el backend ya lo acota a los propios trabajadores cuando
-  // quien llama es SUPERVISOR (ADMIN sigue viendo a todos).
+  // Búsqueda en tiempo real (pedido del usuario): a medida que se escribe, sin botón "buscar" aparte - con
+  // debounce de 300ms para no pegarle una petición al backend por cada tecla (mismo criterio que
+  // onSearchChange en asistencia-panel.ts, Directorio de Operadores). Cambiar el texto siempre vuelve a la
+  // página 1.
   onBuscarChange(): void {
     this.operadorSeleccionado = null;
     if (this.debounceBusqueda) clearTimeout(this.debounceBusqueda);
     const texto = this.busqueda.trim();
-    if (!texto) {
-      this.resultados = [];
-      return;
-    }
-    this.debounceBusqueda = setTimeout(() => this.buscar(texto), 300);
+    this.debounceBusqueda = setTimeout(() => this.buscar(texto, 1), 300);
   }
 
-  private buscar(texto: string): void {
+  cambiarPagina(nuevaPagina: number): void {
+    if (nuevaPagina < 1 || nuevaPagina > this.totalPaginas || this.buscando) return;
+    this.buscar(this.busqueda.trim(), nuevaPagina);
+  }
+
+  private buscar(texto: string, pagina: number): void {
     this.buscando = true;
-    this.asistenciaService.obtenerOperadoresPaginado(1, 20, texto).subscribe({
+    this.asistenciaService.obtenerOperadoresPaginado(pagina, LIMITE_RESULTADOS, texto || undefined, this.supervisorId ?? undefined).subscribe({
       next: (res) => {
         this.buscando = false;
         this.resultados = res.data || [];
+        this.paginaActual = res.pagina || pagina;
+        this.totalPaginas = res.totalPaginas || 1;
+        this.totalResultados = res.total || 0;
         this.cdr.detectChanges();
       },
       error: () => {
@@ -84,7 +111,6 @@ export class AgregarUsuarioModal {
 
   seleccionarOperador(op: Operador): void {
     this.operadorSeleccionado = op;
-    this.resultados = [];
     this.busqueda = op.nombre_completo;
     this.cdr.detectChanges();
   }

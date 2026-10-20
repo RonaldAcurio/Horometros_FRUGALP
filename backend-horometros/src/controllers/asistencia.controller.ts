@@ -600,19 +600,24 @@ escribirla completa.
 */
 export const obtenerOperadores = async(req: Request, res:Response):Promise<void> => {
     try{
-        const { pagina: paginaQuery, limite: limiteQuery, q: qQuery } = req.query;
+        const { pagina: paginaQuery, limite: limiteQuery, q: qQuery, supervisor_id: supervisorIdQuery } = req.query;
         const include = [{ model: Usuario, as: 'supervisor', attributes: { exclude: ['clave_hash'] } }];
         const attributes = { exclude: ['clave_hash'] };
 
         /*
         SUPERVISOR agregado (2026-10-20, buscador del modal "+ Agregar Usuario" del Panel de Supervisor):
         igual que obtenerAsistenciaHoy/finalizarDia, un SUPERVISOR real queda SIEMPRE acotado a sus propios
-        trabajadores (via supervisor_id = su propio id) - ADMIN/ASISTENTE siguen viendo el directorio completo,
-        sin restriccion.
+        trabajadores (via supervisor_id = su propio id).
+        ADMIN/ASISTENTE agregado (2026-10-20, mismo modal visto por ADMIN): a diferencia de un SUPERVISOR
+        real, ADMIN/ASISTENTE puede mandar `supervisor_id` por query para acotar a un Supervisor puntual -
+        mismo criterio opcional que ya usa obtenerAsistenciaHoy. Sin ese query, siguen viendo el directorio
+        completo, sin restriccion (comportamiento de siempre).
         */
         const filtroSupervisor = req.auth?.tipo === 'usuario' && req.auth.rol === 'SUPERVISOR'
             ? { supervisor_id: req.auth.id }
-            : {};
+            : supervisorIdQuery
+                ? { supervisor_id: Number(supervisorIdQuery) }
+                : {};
 
         if(paginaQuery === undefined && limiteQuery === undefined){
             const operadores = await Operador.findAll({
