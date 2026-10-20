@@ -111,6 +111,11 @@
       <h5 class="card-title">
         📊 Registro de Asistencia {{ fechaSeleccionada ? 'del ' + fechaSeleccionada : 'de Hoy' }}
       </h5>
+      <!-- "+ Agregar Usuario" (pedido del usuario, 2026-10-20): mete a la lista de hoy a un trabajador que
+      no llegó a marcar por cualquier motivo - ver AgregarUsuarioModal. -->
+      <button type="button" class="btn btn-primary btn-sm" (click)="abrirAgregarUsuario()">
+        ➕ Agregar Usuario
+      </button>
     </div>
     <div class="table-responsive">
       <table class="data-table">
@@ -132,9 +137,24 @@
           @for (asis of asistenciasHoy; track asis) {
             <tr>
               <td>
-                <strong class="nombre-operador">{{
-                  asis.operador?.nombre_completo || 'N/A'
-                }}</strong>
+                <div class="flex items-center gap-1">
+                  <!-- ➕ (pedido del usuario, 2026-10-20): abre el Panel de Actividades de este trabajador
+                  (ver PanelLaboresModal) - solo mientras la jornada sigue EN_JORNADA, único estado donde el
+                  backend deja agregar labores. -->
+                  @if (asis.estado === 'EN_JORNADA') {
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      title="Ver/agregar labores de este trabajador"
+                      (click)="abrirPanelLabores(asis)"
+                    >
+                      ➕
+                    </button>
+                  }
+                  <strong class="nombre-operador">{{
+                    asis.operador?.nombre_completo || 'N/A'
+                  }}</strong>
+                </div>
               </td>
               <td>{{ asis.fecha }}</td>
               <td>
@@ -310,6 +330,8 @@
   </div>
 
   <app-hoja-actividades-modal #hojaModal></app-hoja-actividades-modal>
+  <app-panel-labores-modal #panelLaboresModal></app-panel-labores-modal>
+  <app-agregar-usuario-modal #agregarUsuarioModal (agregado)="cargarAsistencias()"></app-agregar-usuario-modal>
 
   <!-- MODAL DE OBSERVACION -->
   @if (observacionEditandoId !== null) {

@@ -57,6 +57,14 @@ export class AsistenciaService {
         return this.http.put<{ message: string; operador: Operador }>(`${this.baseUrl}/operadores/${id}/activar`, {});
     }
 
+    // POST -> /api/asistencia/agregar-manual - botón "+ Agregar Usuario" del Panel de Supervisor: mete a la
+    // lista de hoy a un trabajador que no llegó a marcar (crea la Asistencia igual que una entrada normal,
+    // EN_JORNADA). El buscador de ese modal reutiliza obtenerOperadoresPaginado de arriba (el backend ya lo
+    // acota a los propios trabajadores cuando quien llama es SUPERVISOR).
+    agregarAsistenciaManual(operadorId: number): Observable<{ message: string; asistencia: Asistencia }> {
+        return this.http.post<{ message: string; asistencia: Asistencia }>(`${this.baseUrl}/agregar-manual`, { operador_id: operadorId });
+    }
+
     // PUT -> /api/asistencia/operadores/:id/clave (requiere JWT con rol ADMIN o ASISTENTE)
     resetearClaveOperador(id: number, clave: string): Observable<{ message: string }> {
         return this.http.put<{ message: string }>(`${this.baseUrl}/operadores/${id}/clave`, { clave });

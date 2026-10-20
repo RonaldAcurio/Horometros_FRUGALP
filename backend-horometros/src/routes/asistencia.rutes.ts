@@ -22,6 +22,7 @@ import {
     eliminarOperador,
     activarOperador,
     importarOperadores,
+    registrarAsistenciaManual,
 } from "../controllers/asistencia.controller";
 import { verificarAutenticacion, requireRol, verificarJornadaOperadorActiva } from "../middlewares/auth.middleware";
 import { limitadorLogin, limitadorMarcacion } from "../middlewares/rate-limit.middleware";
@@ -33,7 +34,9 @@ const router = Router();
 router.post('/operadores', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), crearOperador);
 // Importación masiva desde Excel (mismo patrón que /equipos/importar y /actividad/importar).
 router.post('/operadores/importar', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), importarOperadores);
-router.get('/operadores', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), obtenerOperadores);
+// SUPERVISOR agregado (2026-10-20): lo necesita el buscador del modal "+ Agregar Usuario" del Panel de
+// Supervisor - obtenerOperadores lo auto-acota a sus propios trabajadores, mismo criterio que /hoy mas abajo.
+router.get('/operadores', verificarAutenticacion, requireRol('ADMIN','ASISTENTE','SUPERVISOR'), obtenerOperadores);
 router.put('/operadores/:id', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), actualizarOperador);
 router.delete('/operadores/:id', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), eliminarOperador);
 // Deshace el soft-delete (ver "Ojo con paranoid + UNIQUE" en CLAUDE.md) - mismos roles que el resto de Gestion
@@ -54,6 +57,8 @@ router.post('/finalizar-dia', verificarAutenticacion, requireRol('ADMIN','SUPERV
 // real no puede deshacer su propio cierre, a proposito, para que quede una segunda persona de por medio.
 router.post('/deshacer-cierre-jornada', verificarAutenticacion, requireRol('ADMIN'), deshacerCierreJornada);
 router.put('/revisar/:id', verificarAutenticacion, requireRol('ADMIN','SUPERVISOR'), revisarAsistencia);
+// Botón "+ Agregar Usuario": el Supervisor mete a mano a un trabajador que no llegó a marcar hoy.
+router.post('/agregar-manual', verificarAutenticacion, requireRol('ADMIN','SUPERVISOR'), registrarAsistenciaManual);
 
 // "Ver Evidencia" (VisorFoto): componente compartido por Panel de Asistente y Panel de Supervisor, asi que
 // acepta los 3 roles de oficina que pueden llegar a ver un registro de asistencia.
