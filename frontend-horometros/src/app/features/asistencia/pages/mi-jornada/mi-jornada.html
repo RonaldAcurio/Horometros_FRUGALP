@@ -450,15 +450,6 @@
                         @if (esUltimaActividad(reg)) {
                           <button class="btn-chip btn-chip-eliminar" (click)="eliminarRegistro(reg)">🗑️ Eliminar</button>
                         }
-                        <!--
-                        TEMPORAL (pedido del usuario, 2026-10-20 - revertir una vez usado): salta la
-                        restriccion de "solo la ultima" para limpiar labores duplicadas atrapadas detras de
-                        una labor real que el trabajador queria conservar. Acotado a un trabajador puntual
-                        via mostrarForzarEliminarTemporal - nadie mas lo ve.
-                        -->
-                        @if (mostrarForzarEliminarTemporal && !esUltimaActividad(reg)) {
-                          <button class="btn-chip btn-chip-eliminar" (click)="eliminarRegistro(reg, true)">⚠️ Forzar eliminar</button>
-                        }
                       </div>
                     }
                   </td>
