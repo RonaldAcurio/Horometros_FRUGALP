@@ -1,0 +1,194 @@
+<!-- Panel de labores de UN trabajador, abierto por el Supervisor desde el botón ➕ de su fila (Panel de
+Supervisor). Mismo diseño que el Panel de Actividades de mi-jornada.ts, sin offline-first (pantalla de
+oficina) ni flujo de QR/código - solo crear/editar/finalizar/eliminar sobre la asistencia_id elegida. -->
+@if (visible && asistencia) {
+  <div class="modal-backdrop" (click)="cerrar()">
+    <div class="modal-card panel-labores-card" (click)="$event.stopPropagation()">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="card-title">📋 Labores de {{ asistencia.operador?.nombre_completo }}</h3>
+        <button type="button" class="panel-labores-cerrar" (click)="cerrar()">✕</button>
+      </div>
+
+      @if (ultimaLaborSigueAbierta) {
+        <p class="hint-text">⚠️ La última labor de este trabajador todavía está abierta (sin hora de fin). Puedes agregar otra igual, pero revisa si no se le olvidó cerrarla.</p>
+      }
+
+      <form (ngSubmit)="guardarNuevoRegistro()" class="registro-form">
+        <div class="form-group autocomplete-group">
+          <label class="form-label">Equipo</label>
+          <input
+            type="text"
+            class="input-control w-full"
+            [ngModel]="equipoBusqueda"
+            (ngModelChange)="onBuscarEquipo($event)"
+            (focus)="abrirOpcionesEquipo()"
+            (blur)="cerrarOpcionesEquipoConRetraso()"
+            name="equipo_busqueda"
+            placeholder="Escribe para buscar un equipo..."
+            autocomplete="off"
+            required
+          />
+          @if (mostrarOpcionesEquipo) {
+            <div class="autocomplete-opciones">
+              @for (eq of equiposFiltrados; track eq) {
+                <div class="autocomplete-opcion" (click)="seleccionarEquipo(eq)">
+                  {{ eq.codigo_megued }} - {{ eq.nombre_equipo }}
+                </div>
+              }
+              @if (equiposFiltrados.length === 0) {
+                <div class="autocomplete-vacio">Sin resultados.</div>
+              }
+            </div>
+          }
+        </div>
+        <div class="form-group autocomplete-group">
+          <label class="form-label">Actividad</label>
+          <input
+            type="text"
+            class="input-control w-full"
+            [ngModel]="actividadBusqueda"
+            (ngModelChange)="onBuscarActividad($event)"
+            (focus)="abrirOpcionesActividad()"
+            (blur)="cerrarOpcionesActividadConRetraso()"
+            name="actividad_busqueda"
+            placeholder="Escribe para buscar una actividad..."
+            autocomplete="off"
+            required
+          />
+          @if (mostrarOpcionesActividad) {
+            <div class="autocomplete-opciones">
+              @for (act of actividadesFiltradas; track act) {
+                <div class="autocomplete-opcion" (click)="seleccionarActividad(act)">
+                  {{ act.codigo_megued }} - {{ act.description }}
+                </div>
+              }
+              @if (actividadesFiltradas.length === 0) {
+                <div class="autocomplete-vacio">Sin resultados.</div>
+              }
+            </div>
+          }
+        </div>
+        @if (esMecanico) {
+          <div class="form-group">
+            <label class="form-label">OT</label>
+            <input type="text" class="input-control w-full" [(ngModel)]="nuevoRegistro.area" name="area" placeholder="Ej: OT-1023" />
+          </div>
+        }
+        @if (!esMecanico) {
+          <div class="form-group">
+            <label class="form-label">Horómetro inicial</label>
+            <input type="number" class="input-control w-full" [(ngModel)]="nuevoRegistro.horometro_inicio" name="horometro_inicio" step="0.01" placeholder="Ej: 1234.5" />
+          </div>
+        }
+        <div class="form-group">
+          <label class="form-label">Hora de inicio</label>
+          <div class="hora-hhmm">
+            <input type="number" class="input-control hora-hhmm-input" [(ngModel)]="horaInicioHH" name="hora_inicio_hh" min="0" max="23" placeholder="HH" [disabled]="editandoRegistroId !== null" required />
+            <span class="hora-hhmm-separador">:</span>
+            <input type="number" class="input-control hora-hhmm-input" [(ngModel)]="horaInicioMM" name="hora_inicio_mm" min="0" max="59" placeholder="MM" [disabled]="editandoRegistroId !== null" required />
+          </div>
+          @if (editandoRegistroId === null) {
+            <p class="hint-text">Tiene que quedar después de la última labor de este trabajador.</p>
+          } @else {
+            <p class="hint-text">La hora de inicio no se puede editar.</p>
+          }
+        </div>
+        <div class="form-group">
+          <label class="form-label">Observaciones</label>
+          <input type="text" class="input-control w-full" [(ngModel)]="nuevoRegistro.observaciones" name="observaciones" />
+        </div>
+        <div class="flex gap-2">
+          <button
+            type="submit"
+            class="btn btn-primary w-full"
+            [disabled]="
+              guardandoRegistro ||
+              !nuevoRegistro.equipo_id ||
+              !nuevoRegistro.actividad_id ||
+              (editandoRegistroId === null && (horaInicioHH === null || horaInicioMM === null))
+            "
+          >
+            @if (editandoRegistroId === null) {
+              ➕ Agregar labor
+            } @else {
+              💾 Guardar cambios
+            }
+          </button>
+          @if (editandoRegistroId !== null) {
+            <button type="button" class="btn btn-secondary" [disabled]="guardandoRegistro" (click)="cancelarEdicionRegistro()">
+              ✕ Cancelar
+            </button>
+          }
+        </div>
+      </form>
+
+      <div class="table-responsive mt-section">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Equipo</th>
+              <th>Actividad</th>
+              @if (!esMecanico) {
+                <th>Horómetro</th>
+              }
+              <th>Observaciones</th>
+              <th>Inicio</th>
+              <th>Fin</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (reg of registros; track reg) {
+              <tr>
+                <td>{{ reg.equipo?.nombre_equipo || reg.equipo_id }}</td>
+                <td>{{ reg.actividad?.description || reg.actividad_id }}</td>
+                @if (!esMecanico) {
+                  <td>{{ reg.horometro_inicio ?? '—' }} / {{ reg.horometro_final ?? '—' }}</td>
+                }
+                <td>{{ reg.observaciones || '—' }}</td>
+                <td><span class="time-badge">{{ reg.hora_inicio | date: 'HH:mm' : '-0500' }}</span></td>
+                <td>
+                  @if (reg.hora_fin) {
+                    <span class="time-badge">{{ reg.hora_fin | date: 'HH:mm' : '-0500' }}</span>
+                  }
+                  @if (!reg.hora_fin && registroFinalizandoId !== reg.id) {
+                    <button class="btn btn-secondary btn-sm" (click)="abrirFinalizarRegistro(reg)">Finalizar</button>
+                  }
+                  @if (registroFinalizandoId === reg.id) {
+                    <div class="finalizar-inline">
+                      <div class="hora-hhmm">
+                        <input type="number" class="input-control input-control-sm hora-hhmm-input" [(ngModel)]="horaFinHH" name="horaFinHH{{ reg.id }}" min="0" max="23" placeholder="HH" />
+                        <span class="hora-hhmm-separador">:</span>
+                        <input type="number" class="input-control input-control-sm hora-hhmm-input" [(ngModel)]="horaFinMM" name="horaFinMM{{ reg.id }}" min="0" max="59" placeholder="MM" />
+                      </div>
+                      @if (!esMecanico) {
+                        <input type="number" class="input-control input-control-sm horometro-final-input" [(ngModel)]="horometroFinal" name="horometroFinal{{ reg.id }}" step="0.01" placeholder="Horómetro final" />
+                      }
+                      <button class="btn btn-primary btn-sm" [disabled]="guardandoFinalizacion || horaFinHH === null || horaFinMM === null" (click)="confirmarFinalizarRegistro()">✔️</button>
+                      <button class="btn btn-secondary btn-sm" [disabled]="guardandoFinalizacion" (click)="cancelarFinalizarRegistro()">✕</button>
+                    </div>
+                  }
+                </td>
+                <td>
+                  @if (editandoRegistroId === null && registroFinalizandoId === null) {
+                    <div class="acciones-labor">
+                      <button class="btn-chip btn-chip-editar" (click)="iniciarEdicionRegistro(reg)">✏️ Editar</button>
+                      @if (esUltimaActividad(reg)) {
+                        <button class="btn-chip btn-chip-eliminar" (click)="eliminarRegistro(reg)">🗑️ Eliminar</button>
+                      }
+                    </div>
+                  }
+                </td>
+              </tr>
+            }
+            @if (!cargandoRegistros && registros.length === 0) {
+              <tr>
+                <td [attr.colspan]="esMecanico ? 6 : 7" class="table-empty">Todavía no tiene labores registradas hoy.</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+}

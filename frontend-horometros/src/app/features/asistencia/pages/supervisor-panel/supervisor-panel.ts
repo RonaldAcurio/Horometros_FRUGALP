@@ -15,6 +15,8 @@ import { Hacienda } from '../../../../core/models/hacienda.model';
 import { Usuario } from '../../../../core/models/usuario.model';
 import { VisorFoto } from '../../components/visor-foto/visor-foto';
 import { HojaActividadesModal, HojaGrupo, resolverHaciendaJornada } from '../../components/hoja-actividades-modal/hoja-actividades-modal';
+import { PanelLaboresModal } from '../../components/panel-labores-modal/panel-labores-modal';
+import { AgregarUsuarioModal } from '../../components/agregar-usuario-modal/agregar-usuario-modal';
 import { NotificacionService } from '../../../../core/services/notificacion.service';
 import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
 import { OfflineSyncService } from '../../../../core/services/offline-sync.service';
@@ -22,13 +24,15 @@ import { timeoutDeLista, mensajeErrorCarga } from '../../../../core/utils/petici
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, VisorFoto, HojaActividadesModal],
+  imports: [CommonModule, FormsModule, RouterLink, VisorFoto, HojaActividadesModal, PanelLaboresModal, AgregarUsuarioModal],
   selector: 'app-supervisor-panel',
   styleUrl: './supervisor-panel.css',
   templateUrl: './supervisor-panel.html',
 })
 export class SupervisorPanel implements OnInit {
   @ViewChild('hojaModal') hojaModal!: HojaActividadesModal;
+  @ViewChild('panelLaboresModal') panelLaboresModal!: PanelLaboresModal;
+  @ViewChild('agregarUsuarioModal') agregarUsuarioModal!: AgregarUsuarioModal;
 
   asistenciasHoy: Asistencia[] = [];
   fechaSeleccionada: string = '';
@@ -407,6 +411,19 @@ export class SupervisorPanel implements OnInit {
       },
       error: (err) => this.notificacionService.error(err.error?.message || 'Error al confirmar la asistencia.'),
     });
+  }
+
+  // ==================== "+ Agregar Usuario" / Panel de labores por fila ====================
+
+  abrirAgregarUsuario(): void {
+    this.agregarUsuarioModal.abrir();
+  }
+
+  // Botón ➕ a la izquierda de cada fila (pedido del usuario, 2026-10-20): abre el Panel de Actividades de
+  // ESE trabajador, igual que el que usa él mismo (ver PanelLaboresModal) - solo mientras la jornada sigue
+  // EN_JORNADA (único estado donde el backend deja agregar labores, ver crearRegistroActividad).
+  abrirPanelLabores(asis: Asistencia): void {
+    this.panelLaboresModal.abrir(asis);
   }
 
   // ==================== "Ver/Imprimir" (columna Acción) ====================

@@ -604,8 +604,19 @@ export const obtenerOperadores = async(req: Request, res:Response):Promise<void>
         const include = [{ model: Usuario, as: 'supervisor', attributes: { exclude: ['clave_hash'] } }];
         const attributes = { exclude: ['clave_hash'] };
 
+        /*
+        SUPERVISOR agregado (2026-10-20, buscador del modal "+ Agregar Usuario" del Panel de Supervisor):
+        igual que obtenerAsistenciaHoy/finalizarDia, un SUPERVISOR real queda SIEMPRE acotado a sus propios
+        trabajadores (via supervisor_id = su propio id) - ADMIN/ASISTENTE siguen viendo el directorio completo,
+        sin restriccion.
+        */
+        const filtroSupervisor = req.auth?.tipo === 'usuario' && req.auth.rol === 'SUPERVISOR'
+            ? { supervisor_id: req.auth.id }
+            : {};
+
         if(paginaQuery === undefined && limiteQuery === undefined){
             const operadores = await Operador.findAll({
+                where: filtroSupervisor,
                 attributes,
                 include,
                 order: [['nombre_completo','ASC']],
@@ -619,13 +630,16 @@ export const obtenerOperadores = async(req: Request, res:Response):Promise<void>
         const offset = (pagina - 1) * limite;
         const q = typeof qQuery === 'string' ? qQuery.trim() : '';
 
-        const where = q ? {
-            [Op.or]: [
-                { nombre_completo: { [Op.iLike]: `%${q}%` } },
-                { codigo_megued: { [Op.iLike]: `%${q}%` } },
-                { cedula: cifrarDeterministico(q) },
-            ],
-        } : {};
+        const where = {
+            ...filtroSupervisor,
+            ...(q ? {
+                [Op.or]: [
+                    { nombre_completo: { [Op.iLike]: `%${q}%` } },
+                    { codigo_megued: { [Op.iLike]: `%${q}%` } },
+                    { cedula: cifrarDeterministico(q) },
+                ],
+            } : {}),
+        };
 
         const { rows: operadores, count: total } = await Operador.findAndCountAll({
             where,
@@ -1409,6 +1423,89 @@ operador.supervisor_id, nunca hacienda_prestamo_id).
 */
 const calcularDiaCerradoHacienda = async (fecha: string, haciendaId: number): Promise<boolean> => {
     return (await CierreJornada.findOne({ where: { fecha, hacienda_id: haciendaId } })) !== null;
+};
+
+/*
+El Supervisor agrega manualmente a un trabajador que no llego a marcar su entrada hoy (olvido el celular,
+sin senal, etc. - pedido del usuario, 2026-10-20). Crea la Asistencia EXACTAMENTE igual que si el trabajador
+hubiera marcado entrada el mismo (estado EN_JORNADA, hora_ingreso = ahora) - a proposito, para que de ahi en
+adelante el Excel, el Historial, la confirmacion O/X y "Cerrar Jornada" lo traten identico a cualquier otro
+trabajador, sin ningun caso especial que mantener en esos archivos. Las labores (equipo/actividad) se agregan
+despues, desde el Panel de labores por fila (ver crearRegistroActividad en registro_actividad.controller.ts) -
+este endpoint solo mete al trabajador en la lista de hoy.
+*/
+export const registrarAsistenciaManual = async(req:Request, res:Response):Promise<void> => {
+    try{
+        const { operador_id } = req.body;
+        if(!operador_id){
+            res.status(400).json({ message: 'operador_id es obligatorio.' });
+            return;
+        }
+
+        const operador = await Operador.findByPk(Number(operador_id));
+        if(!operador){
+            res.status(404).json({ message: 'El operador indicado no existe.' });
+            return;
+        }
+
+        // Alcance: un SUPERVISOR real solo puede agregar a SUS propios trabajadores - mismo criterio que
+        // puedeVerHistorialDeOperador (registro_actividad.controller.ts). ADMIN/ASISTENTE sin restriccion.
+        if(req.auth?.tipo === 'usuario' && req.auth.rol === 'SUPERVISOR' && operador.supervisor_id !== req.auth.id){
+            res.status(403).json({ message: 'Solo puedes agregar trabajadores de tu propia hacienda.' });
+            return;
+        }
+
+        const hoy = obtenerFechaLocalEcuador();
+
+        // Regla de "una jornada por dia" - mismo chequeo que procesarMarcacion, Paso 2.
+        const asistenciaHoy = await Asistencia.findOne({ where: { operador_id: operador.id, fecha: hoy } });
+        if(asistenciaHoy){
+            res.status(400).json({ message: `El operador ${operador.nombre_completo} ya tiene una asistencia registrada hoy.` });
+            return;
+        }
+
+        /*
+        Evita dejarlo con 2 jornadas EN_JORNADA abiertas a la vez (una vieja sin cerrar, de otro dia, + esta
+        nueva) - mismo riesgo que procesarMarcacion resuelve en su Paso 1, pero aca no hay forma de preguntarle
+        al trabajador que hacer con la vieja (el Supervisor la esta agregando por el), asi que se bloquea y se
+        le pide resolverla primero (ej. "Cerrar Jornada" de ese dia atrasado).
+        */
+        const jornadaAbiertaVieja = await Asistencia.findOne({ where: { operador_id: operador.id, estado: 'EN_JORNADA' } });
+        if(jornadaAbiertaVieja){
+            res.status(400).json({ message: `Este trabajador ya tiene una jornada sin cerrar del ${jornadaAbiertaVieja.fecha}. Ciérrala antes de agregarlo a hoy.` });
+            return;
+        }
+
+        const haciendaIdDestino = await resolverHaciendaPropia(operador);
+        if(haciendaIdDestino !== null && await calcularDiaCerradoHacienda(hoy, haciendaIdDestino)){
+            res.status(403).json({ message: 'El Supervisor ya finalizo la jornada de hoy en esta hacienda.' });
+            return;
+        }
+
+        const asistencia = await Asistencia.create({
+            operador_id: operador.id,
+            fecha: hoy,
+            hora_ingreso: new Date(),
+            estado: 'EN_JORNADA',
+            admitido_por_usuario_id: req.auth?.id ?? null,
+        });
+
+        if(req.auth?.id){
+            await registrarAuditoria({
+                actorUsuarioId: req.auth.id,
+                accion: 'AGREGAR_ASISTENCIA_MANUAL',
+                objetivoTipo: 'operador',
+                objetivoId: operador.id,
+                objetivoNombre: operador.nombre_completo,
+            });
+        }
+
+        res.status(201).json({ message: 'Trabajador agregado a la lista de hoy.', asistencia });
+
+    }catch(err){
+        console.error('Error al agregar asistencia manual.', err);
+        res.status(500).json({ message: 'Error al agregar asistencia manual.' });
+    }
 };
 
 //Obtener reporte diario de asistencia

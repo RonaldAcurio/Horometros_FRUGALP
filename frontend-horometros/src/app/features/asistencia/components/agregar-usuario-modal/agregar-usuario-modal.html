@@ -1,0 +1,50 @@
+<!-- "+ Agregar Usuario": mete a la lista de hoy a un trabajador que no llegó a marcar. Solo pide a quién -
+el equipo/actividad se agregan después, con el botón ➕ de su fila (ver PanelLaboresModal). -->
+@if (visible) {
+  <div class="modal-backdrop" (click)="cerrar()">
+    <div class="modal-card agregar-usuario-card" (click)="$event.stopPropagation()">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="card-title">➕ Agregar Usuario</h3>
+        <button type="button" class="agregar-usuario-cerrar" (click)="cerrar()">✕</button>
+      </div>
+      <p class="hint-text">Busca al trabajador que no llegó a marcar hoy. Se agregará a la lista como si hubiera marcado entrada ahora mismo.</p>
+
+      <div class="form-group autocomplete-group">
+        <label class="form-label">Trabajador</label>
+        <input
+          type="text"
+          class="input-control w-full"
+          [(ngModel)]="busqueda"
+          (ngModelChange)="onBuscarChange()"
+          name="busqueda_operador"
+          placeholder="Escribe un nombre o código..."
+          autocomplete="off"
+        />
+        @if (buscando) {
+          <div class="autocomplete-opciones">
+            <div class="autocomplete-vacio">Buscando...</div>
+          </div>
+        } @else if (resultados.length > 0) {
+          <div class="autocomplete-opciones">
+            @for (op of resultados; track op.id) {
+              <div class="autocomplete-opcion" (click)="seleccionarOperador(op)">
+                {{ op.codigo_megued }} - {{ op.nombre_completo }}
+              </div>
+            }
+          </div>
+        }
+      </div>
+
+      <div class="flex gap-2 mt-4">
+        <button
+          type="button"
+          class="btn btn-primary w-full"
+          [disabled]="!operadorSeleccionado || guardando"
+          (click)="confirmarAgregar()"
+        >
+          ➕ Agregar a la lista de hoy
+        </button>
+      </div>
+    </div>
+  </div>
+}
