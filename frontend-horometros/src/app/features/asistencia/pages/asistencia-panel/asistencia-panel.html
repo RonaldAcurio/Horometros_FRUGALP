@@ -130,7 +130,41 @@
         @if (operadorSeleccionado) {
           <div class="card">
             <div class="card-header">
-              <h5 class="card-title">👤 Ficha: {{ operadorSeleccionado.nombre_completo }}</h5>
+              <!-- Nombre editable directo en el encabezado, sin modal (pedido del usuario, 2026-10-20) - mismo
+              patrón que "Usuario de acceso" más abajo: un signal alterna entre texto+lápiz y un input+cancelar,
+              y el guardado real pasa por "💾 Actualizar Ficha" más abajo. -->
+              @if (!editandoNombreFicha()) {
+                <div class="flex items-center gap-2">
+                  <h5 class="card-title">👤 Ficha: {{ operadorSeleccionado.nombre_completo }}</h5>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    title="Editar nombre"
+                    (click)="abrirEdicionNombreFicha()"
+                  >
+                    ✏️
+                  </button>
+                </div>
+              }
+              @if (editandoNombreFicha()) {
+                <div class="flex items-center gap-2">
+                  <span class="card-title">👤 Ficha:</span>
+                  <input
+                    type="text"
+                    class="input-control"
+                    [(ngModel)]="nuevoNombreFicha"
+                    placeholder="Nombre completo"
+                  />
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    (click)="cancelarEdicionNombreFicha()"
+                  >
+                    ✕ Cancelar
+                  </button>
+                </div>
+                <p class="text-muted-sm">El cambio se guarda con "💾 Actualizar Ficha" más abajo.</p>
+              }
             </div>
             <div class="card-body-grid">
               <div class="form-section">

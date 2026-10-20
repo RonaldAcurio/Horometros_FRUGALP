@@ -434,11 +434,30 @@ export const importarOperadores = async (req: Request, res: Response): Promise<v
 export const actualizarOperador = async (req:Request, res:Response):Promise<void> => {
     try{
         const { id } = req.params;
-        const { cedula, telefono, direccion, rol, seccion_id } = req.body;
+        const { cedula, telefono, direccion, rol, seccion_id, nombre_completo } = req.body;
 
         if(rol && !ROLES_OPERADOR_VALIDOS.includes(rol)){
             res.status(400).json({message: `rol debe ser uno de: ${ROLES_OPERADOR_VALIDOS.join(', ')}.`});
             return;
+        }
+
+        /*
+        nombre_completo es opcional (la mayoria de las ediciones de Ficha no lo tocan) pero, si viene, no puede
+        quedar vacio ni pasarse del limite real de la columna (ver models/operador.ts) - mismo chequeo de largo
+        que ya usa crearOperador (pedido del usuario, 2026-10-20: boton de lapiz en la Ficha para corregir el
+        nombre sin tener que eliminar y recrear el operador).
+        */
+        let nombreCompletoFinal: string | undefined;
+        if(nombre_completo !== undefined){
+            nombreCompletoFinal = typeof nombre_completo === 'string' ? nombre_completo.trim() : '';
+            if(!nombreCompletoFinal){
+                res.status(400).json({message: 'El nombre completo no puede quedar vacío.'});
+                return;
+            }
+            if(nombreCompletoFinal.length > 150){
+                res.status(400).json({message: `El nombre completo no puede tener más de 150 caracteres (tiene ${nombreCompletoFinal.length}).`});
+                return;
+            }
         }
 
         const operador = await Operador.findByPk(Number(id));
@@ -487,6 +506,7 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
         const usuarioCambio = credenciales.usuario !== null;
 
         await operador.update({
+            nombre_completo: nombreCompletoFinal ?? operador.nombre_completo,
             cedula: cedula || null, // ver nota en crearOperador: '' choca contra otro '' en el UNIQUE, null no.
             telefono,
             direccion,

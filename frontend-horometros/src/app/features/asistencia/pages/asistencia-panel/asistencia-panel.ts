@@ -82,6 +82,11 @@ export class AsistenciaPanel implements OnInit{
   editandoUsuarioFicha = signal(false);
   nuevoUsuarioFicha: string = '';
 
+  // Editar el nombre completo directo en el encabezado de la Ficha, sin modal (pedido del usuario,
+  // 2026-10-20) - mismo patrón que editandoUsuarioFicha/nuevoUsuarioFicha de arriba.
+  editandoNombreFicha = signal(false);
+  nuevoNombreFicha: string = '';
+
   // Modal: Resetear clave de un Operador que YA tiene credenciales
   mostrarModalResetClaveOperador: boolean = false;
   claveResetOperador: string = '';
@@ -359,6 +364,8 @@ export class AsistenciaPanel implements OnInit{
     this.mostrarClaveCredenciales.set(false);
     this.editandoUsuarioFicha.set(false);
     this.nuevoUsuarioFicha = '';
+    this.editandoNombreFicha.set(false);
+    this.nuevoNombreFicha = '';
     await this.generarQR(op.id);
     this.cdr.detectChanges();
   }
@@ -402,6 +409,13 @@ export class AsistenciaPanel implements OnInit{
       datos.usuario = this.nuevoUsuarioFicha.trim();
     }
 
+    // Nombre editado con el lápiz del encabezado (pedido del usuario, 2026-10-20): si no se tocó, se manda el
+    // nombre actual tal cual - el backend no lo toca si no viene, pero mandarlo siempre evita depender de que
+    // ambos lados coincidan en "qué significa no tocarlo".
+    datos.nombre_completo = this.editandoNombreFicha() && this.nuevoNombreFicha.trim()
+      ? this.nuevoNombreFicha.trim()
+      : this.operadorSeleccionado.nombre_completo;
+
     this.asistenciaService.actualizarOperador(this.operadorSeleccionado.id, datos).subscribe({
       next: (res) => {
         this.notificacionService.exito('¡Datos del operador actualizados exitosamente!');
@@ -409,6 +423,8 @@ export class AsistenciaPanel implements OnInit{
         this.credencialesOperador = { usuario: '', clave: '' };
         this.editandoUsuarioFicha.set(false);
         this.nuevoUsuarioFicha = '';
+        this.editandoNombreFicha.set(false);
+        this.nuevoNombreFicha = '';
         this.cargarOperadores();
         this.cdr.detectChanges();
       },
@@ -417,6 +433,18 @@ export class AsistenciaPanel implements OnInit{
         this.cdr.detectChanges();
       }
     });
+  }
+
+  abrirEdicionNombreFicha(): void {
+    this.nuevoNombreFicha = this.operadorSeleccionado?.nombre_completo || '';
+    this.editandoNombreFicha.set(true);
+    this.cdr.detectChanges();
+  }
+
+  cancelarEdicionNombreFicha(): void {
+    this.editandoNombreFicha.set(false);
+    this.nuevoNombreFicha = '';
+    this.cdr.detectChanges();
   }
 
   abrirEdicionUsuarioFicha(): void {
