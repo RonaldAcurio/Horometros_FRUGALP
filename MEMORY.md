@@ -1,6 +1,6 @@
 # MEMORY.md — Horómetros FRUGALP
 
-Respaldo de contexto del proyecto. Última actualización: 2026-10-19 (PR #52).
+Respaldo de contexto del proyecto. Última actualización: 2026-10-20 (PR #53).
 
 ## Qué es la aplicación
 
@@ -76,11 +76,24 @@ chips con borde (icono + texto) y :hover/:active de color, elegidos de entre 4 o
 en un mockup antes de implementar. PR
 [#52](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/52): fecha DD/MM/YYYY y orden
 alfabético A-Z por nombre en el Excel exportado. APK recompilado, confirmado 4.2MB (4.425.342
-bytes) en producción tras este merge.
+bytes) en producción tras este merge. PR
+[#53](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/53): ⚠️ **TEMPORAL** - botón "Forzar
+eliminar" en `mi-jornada.ts`, acotado a un solo trabajador (GRANIZO SALAZAR JORGE EDUARDO), para
+limpiar ~15-20 labores duplicadas por un bug de doble-toque. Solo en la web - el usuario pidió NO
+esperar el rebuild del APK esta vez, porque esto se va a revertir apenas termine de limpiar la
+cuenta (ver PENDIENTE #1, abajo).
 
 ## PENDIENTE
 
-### 1 — Token de Hacienda — Fase C (limpieza final, informe detallado)
+### 1 — Revertir el botón "Forzar eliminar" temporal (PR #53) - URGENTE una vez usado
+El usuario va a avisar cuando termine de limpiar las labores duplicadas de GRANIZO SALAZAR JORGE
+EDUARDO. En cuanto avise: revertir el commit `aac5a48` (o el merge commit `0a2ec5b`) de `main` - es
+un cambio autocontenido en `registro_actividad.controller.ts` (flag `forzar`), `mi-jornada.ts`/`.html`
+(botón acotado por `nombre_completo`) y `registro-actividad.service.ts` (parámetro `forzar` en
+`eliminar()`), sin tocar nada más - un solo revert limpio. No dejar esto sin hacer: mientras el botón
+siga en producción, salta la protección "nunca dejes un hueco" para ese trabajador puntual.
+
+### 2 — Token de Hacienda — Fase C (limpieza final, informe detallado)
 Solo cuando Fase B lleve tiempo estable en producción:
 - Quitar `haciendas.token_actual`/`token_expira_en` por completo (migración `removeColumn`, con
   `down()` que las re-crea vacías — mismo criterio que `cifrar-pii-operadores.js`: para ese punto
@@ -93,7 +106,7 @@ Solo cuando Fase B lleve tiempo estable en producción:
 - Borrar la función `tokenHaciendaVigente` y su archivo de pruebas (`utils/token-hacienda.ts`/
   `.test.ts`) — quedaron como código muerto desde Fase B.
 
-### 2 — Token por Área (informe detallado)
+### 3 — Token por Área (informe detallado)
 Motivo real: cada Área dentro de una Hacienda tiene su propio Supervisor (no comparten uno). Se
 evaluaron 2 caminos:
 - **Camino A — tabla `tokens_seccion`**: descartado. `Seccion` hoy NO tiene concepto de "su
@@ -109,7 +122,7 @@ evaluaron 2 caminos:
   de una misma finca en un solo total — el usuario lo va a investigar por su cuenta. Depende
   también de que la Fase C de Token de Hacienda esté resuelta primero.
 
-### 3 — Trabajador prestado cuenta para la hacienda receptora (implementado, SIN mergear a propósito)
+### 4 — Trabajador prestado cuenta para la hacienda receptora (implementado, SIN mergear a propósito)
 Implementado y verificado en la rama `test/prestamo-hacienda2-fecha-excel` (no mergeada - el usuario pidió
 dejarla pendiente el 2026-10-19 tras encontrar un vacío real al verificar el flujo completo, ver abajo):
 - `obtenerAsistenciaHoy`/`obtenerHistorial` (solo filtrando por hacienda): un trabajador prestado a otra
@@ -124,6 +137,6 @@ dejarla pendiente el 2026-10-19 tras encontrar un vacío real al verificar el fl
   la hacienda receptora no tiene forma de cerrarle el día. El usuario pidió dejar esto pendiente de decisión
   antes de subir el cambio a producción.
 
-### 4 — Casos borde menores, aceptados tal cual
+### 5 — Casos borde menores, aceptados tal cual
 - Una labor creada 100% sin señal no se puede cerrar hasta sincronizar (así bloquea la salida
   mientras tanto) — límite conocido del diseño offline, no es un bug.
