@@ -1,6 +1,6 @@
 # MEMORY.md — Horómetros FRUGALP
 
-Respaldo de contexto del proyecto. Última actualización: 2026-10-20 (PR #56).
+Respaldo de contexto del proyecto. Última actualización: 2026-10-20 (PR #57).
 
 ## Qué es la aplicación
 
@@ -46,6 +46,10 @@ desplegado en Railway (backend) y Vercel (frontend web + descarga del .apk).
   Operador" choca con uno de esos valores y pertenece a alguien eliminado, ofrece activarlo (mismo
   id, conserva su historial) en vez de solo bloquear. El usuario de un Operador ya activo también
   se puede editar por separado de la clave desde su Ficha (antes solo se podía resetear la clave).
+  El nombre completo también se puede corregir directo en el encabezado de la Ficha con un botón
+  de lápiz ✏️ (edición inline, sin modal — mismo patrón que "Usuario de acceso"); se guarda con el
+  botón "Actualizar Ficha" de siempre. `actualizarOperador` valida que no quede vacío ni pase de
+  150 caracteres (mismo límite que `crearOperador`).
 - **Offline-first**: crear/cerrar/editar/eliminar labores y marcar salida funcionan sin señal (se
   encola en el celular con `@capacitor/preferences` y sincroniza solo al volver la conexión).
 - **Editar/Eliminar Labor**: en el Panel de Actividades (`mi-jornada.ts`) el trabajador puede
@@ -105,7 +109,12 @@ cambios). APK recompilado, confirmado ~4.23MB (4.430.778 bytes) en producción t
 "+ Agregar Usuario" tras probar en producción - lista inicial sin escribir nada, límite 10 +
 paginación real, búsqueda en tiempo real; ADMIN ahora necesita elegir un Supervisor puntual arriba
 para habilitar el botón (`obtenerOperadores` acepta `supervisor_id` opcional para ADMIN/ASISTENTE).
-APK recompilado, confirmado ~4.23MB (4.431.118 bytes) en producción tras este merge.
+APK recompilado, confirmado ~4.23MB (4.431.118 bytes) en producción tras este merge. PR
+[#57](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/57): botón de lápiz ✏️ para editar el
+nombre completo directo en el encabezado de la Ficha (Directorio de Operadores), sin modal - mismo
+patrón ya usado para "Usuario de acceso". `actualizarOperador` antes ignoraba `nombre_completo` por
+completo aunque se lo mandaran; ahora lo valida (no vacío, máximo 150 caracteres) y lo guarda. APK
+recompilado, confirmado ~4.23MB (4.431.358 bytes) en producción tras este merge.
 
 ## Herramientas guardadas para reutilizar
 
