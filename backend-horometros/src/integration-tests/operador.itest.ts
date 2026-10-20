@@ -14,10 +14,6 @@ describe('Operador: cifrado de PII en reposo (cedula/telefono/direccion)', () =>
         tokenAdmin = login.body.token;
     });
 
-    afterAll(async () => {
-        await sequelize.close();
-    });
-
     it('crea un operador y la API devuelve la PII en texto plano', async () => {
         const res = await request(app)
             .post('/api/asistencia/operadores')
@@ -80,5 +76,82 @@ describe('Operador: cifrado de PII en reposo (cedula/telefono/direccion)', () =>
         expect(editado.status).toBe(200);
         expect(editado.body.operador.telefono).toBe('0987000000');
         expect(editado.body.operador.direccion).toBe('Nueva direccion 456');
+    });
+});
+
+/*
+Boton de lapiz en la Ficha (pedido del usuario, 2026-10-20): antes actualizarOperador ignoraba por
+completo nombre_completo, aunque se lo mandaran - estas pruebas cubren que ahora si lo guarda, con
+las mismas validaciones de largo/no-vacio que ya tenia crearOperador.
+*/
+describe('PUT /api/asistencia/operadores/:id (editar nombre_completo)', () => {
+    let tokenAdmin: string;
+    let operadorId: number;
+
+    beforeEach(async () => {
+        await limpiarBaseDeDatosTest();
+        await crearUsuarioDePrueba({ usuario: 'admin1', clave: 'claveprueba123', cargo: 'ADMIN' });
+        const login = await request(app).post('/api/auth/login').send({ usuario: 'admin1', clave: 'claveprueba123' });
+        tokenAdmin = login.body.token;
+
+        const creado = await request(app)
+            .post('/api/asistencia/operadores')
+            .set('Authorization', `Bearer ${tokenAdmin}`)
+            .send({ nombre_completo: 'Nombre Original', codigo_megued: 'ITEST-NOMBRE' });
+        operadorId = creado.body.id;
+    });
+
+    afterAll(async () => {
+        await sequelize.close();
+    });
+
+    it('cambia el nombre_completo cuando se manda', async () => {
+        const res = await request(app)
+            .put(`/api/asistencia/operadores/${operadorId}`)
+            .set('Authorization', `Bearer ${tokenAdmin}`)
+            .send({ nombre_completo: 'Nombre Corregido' });
+
+        expect(res.status).toBe(200);
+        expect(res.body.operador.nombre_completo).toBe('Nombre Corregido');
+    });
+
+    it('no toca el nombre_completo cuando no se manda (sigue el original)', async () => {
+        const res = await request(app)
+            .put(`/api/asistencia/operadores/${operadorId}`)
+            .set('Authorization', `Bearer ${tokenAdmin}`)
+            .send({ telefono: '0991112222' });
+
+        expect(res.status).toBe(200);
+        expect(res.body.operador.nombre_completo).toBe('Nombre Original');
+    });
+
+    it('rechaza un nombre_completo vacio (o solo espacios)', async () => {
+        const res = await request(app)
+            .put(`/api/asistencia/operadores/${operadorId}`)
+            .set('Authorization', `Bearer ${tokenAdmin}`)
+            .send({ nombre_completo: '   ' });
+
+        expect(res.status).toBe(400);
+        expect(res.body.message).toContain('vacío');
+    });
+
+    it('rechaza un nombre_completo de mas de 150 caracteres', async () => {
+        const res = await request(app)
+            .put(`/api/asistencia/operadores/${operadorId}`)
+            .set('Authorization', `Bearer ${tokenAdmin}`)
+            .send({ nombre_completo: 'A'.repeat(151) });
+
+        expect(res.status).toBe(400);
+        expect(res.body.message).toContain('150 caracteres');
+    });
+
+    it('recorta espacios al inicio/final antes de guardar', async () => {
+        const res = await request(app)
+            .put(`/api/asistencia/operadores/${operadorId}`)
+            .set('Authorization', `Bearer ${tokenAdmin}`)
+            .send({ nombre_completo: '  Nombre Con Espacios  ' });
+
+        expect(res.status).toBe(200);
+        expect(res.body.operador.nombre_completo).toBe('Nombre Con Espacios');
     });
 });
