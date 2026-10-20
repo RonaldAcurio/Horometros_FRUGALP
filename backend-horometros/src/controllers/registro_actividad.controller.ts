@@ -337,19 +337,10 @@ SOLO se puede eliminar la ULTIMA labor de la jornada (ver esUltimaLaborDeLaJorna
 hueco en medio de "Labores de hoy": borrar siempre achica la lista desde el final, el mismo lugar por donde
 siempre se agranda al crear. El backend verifica esto por su cuenta, nunca confia en que el boton de la
 pantalla solo aparezca ahi.
-
-TEMPORAL (pedido del usuario, 2026-10-20 - revertir una vez usado): `forzar:true` en el body salta
-UNICAMENTE el chequeo de "ultima labor" - el resto (permiso sobre la jornada, EN_JORNADA) sigue igual sin
-excepcion. Es para limpiar labores duplicadas (bug de doble-toque al crear) que quedaron atrapadas detras
-de una labor real que el trabajador queria conservar - ver el boton "Forzar eliminar" en mi-jornada.html,
-acotado a un operador_id puntual mientras este codigo siga en produccion.
 */
 export const eliminarRegistroActividad = async(req:Request, res:Response):Promise<void> => {
     try{
         const { id } = req.params;
-        // req.body || {}: un DELETE sin body (el camino normal, de siempre) no siempre llega como {} -
-        // puede llegar undefined segun el cliente, y desestructurar de undefined tira un 500.
-        const { forzar } = req.body || {};
 
         const registro = await RegistroActividad.findByPk(Number(id));
         if(!registro){
@@ -368,7 +359,7 @@ export const eliminarRegistroActividad = async(req:Request, res:Response):Promis
             return;
         }
 
-        if(!forzar && !(await esUltimaLaborDeLaJornada(registro.asistencia_id, registro.id))){
+        if(!(await esUltimaLaborDeLaJornada(registro.asistencia_id, registro.id))){
             res.status(400).json({ message: 'Solo se puede eliminar la última actividad registrada - elimina primero las que quedaron después.' });
             return;
         }

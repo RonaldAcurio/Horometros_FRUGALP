@@ -89,9 +89,7 @@ export class RegistroActividadService {
     }
 
     // Eliminar una labor - el backend exige que sea la ULTIMA de la jornada (ver eliminarRegistroActividad).
-    // forzar: TEMPORAL (pedido del usuario, 2026-10-20 - revertir una vez usado), salta esa exigencia -
-    // ver el boton "Forzar eliminar" en mi-jornada.html.
-    eliminar(id: number, forzar?: boolean): Observable<{ message: string }> {
-        return this.http.delete<{ message: string }>(`${this.baseUrl}/${id}`, { body: forzar ? { forzar: true } : undefined });
+    eliminar(id: number): Observable<{ message: string }> {
+        return this.http.delete<{ message: string }>(`${this.baseUrl}/${id}`);
     }
 }
