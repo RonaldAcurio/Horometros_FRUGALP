@@ -1,6 +1,6 @@
 # MEMORY.md — Horómetros FRUGALP
 
-Respaldo de contexto del proyecto. Última actualización: 2026-10-20 (PR #55).
+Respaldo de contexto del proyecto. Última actualización: 2026-10-20 (PR #56).
 
 ## Qué es la aplicación
 
@@ -63,7 +63,12 @@ desplegado en Railway (backend) y Vercel (frontend web + descarga del .apk).
   Excel/Historial/O-X/"Cerrar Jornada" la tratan idéntico a cualquier otra fila, sin ningún caso
   especial. Botón ➕ a la izquierda de cada fila (solo visible en `EN_JORNADA`) abre el "Panel de
   labores" de ese trabajador — mismo diseño que el Panel de Actividades propio (`mi-jornada.ts`),
-  para ver su historial de hoy y agregar una labor nueva, siempre después de la última.
+  para ver su historial de hoy y agregar una labor nueva, siempre después de la última. El buscador
+  de "+ Agregar Usuario" muestra la lista de entrada sin escribir nada (límite 10 por página, con
+  paginación y búsqueda en tiempo real); un SUPERVISOR real solo ve a sus propios trabajadores
+  (`obtenerOperadores` auto-acotado); ADMIN necesita elegir un Supervisor puntual arriba (selector
+  "Todos los Supervisores") para habilitar el botón — si no, sale deshabilitado con tooltip, mismo
+  patrón que "Imprimir General"/"Exportar a Excel" (`puedeAgregarUsuario` en `supervisor-panel.ts`).
 
 ## Recién subido a producción (2026-10-16)
 PR [#45](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/45): exigir cerrar labores antes
@@ -95,7 +100,12 @@ ver "Herramientas guardadas para reutilizar" abajo. PR
 [#55](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/55): botón "+ Agregar Usuario" (mete
 a un trabajador que no marcó a la lista de hoy, nuevo endpoint `POST /asistencia/agregar-manual`) y
 botón ➕ por fila (Panel de labores de ese trabajador, reutiliza `crearRegistroActividad` sin
-cambios). APK recompilado, confirmado ~4.23MB (4.430.778 bytes) en producción tras este merge.
+cambios). APK recompilado, confirmado ~4.23MB (4.430.778 bytes) en producción tras este merge. PR
+[#56](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/56): ajustes al buscador de
+"+ Agregar Usuario" tras probar en producción - lista inicial sin escribir nada, límite 10 +
+paginación real, búsqueda en tiempo real; ADMIN ahora necesita elegir un Supervisor puntual arriba
+para habilitar el botón (`obtenerOperadores` acepta `supervisor_id` opcional para ADMIN/ASISTENTE).
+APK recompilado, confirmado ~4.23MB (4.431.118 bytes) en producción tras este merge.
 
 ## Herramientas guardadas para reutilizar
 
