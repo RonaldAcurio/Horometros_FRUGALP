@@ -35,6 +35,15 @@ export class MiJornada implements OnInit, OnDestroy {
   esMecanico = true;
   mensajeFinal = '';
 
+  /*
+  TEMPORAL (pedido del usuario, 2026-10-20 - revertir una vez usado): botón extra "⚠️ Forzar eliminar" que
+  salta la restricción de "solo la última labor" (ver eliminarRegistro, forzar) - solo para limpiar labores
+  duplicadas de ESTE trabajador puntual (quedaron atrapadas detrás de una labor real que quería conservar).
+  Acotado por nombre_completo a propósito, para que nadie más de los 950 trabajadores lo vea mientras este
+  código siga en producción.
+  */
+  mostrarForzarEliminarTemporal = false;
+
   // --- Fase codigo ---
   codigoIngresado = '';
   procesandoCodigo = false;
@@ -205,6 +214,7 @@ export class MiJornada implements OnInit, OnDestroy {
     const perfil = this.authService.perfil();
     this.esMecanico = perfil?.rol !== 'OPERADOR';
     this.requiereCodigo = !!perfil?.hacienda_requiere_codigo;
+    this.mostrarForzarEliminarTemporal = perfil?.nombre_completo === 'GRANIZO SALAZAR JORGE EDUARDO';
 
     // Cualquier cambio en la cola offline (se agregó algo, se sincronizó, volvió la señal) refresca la vista.
     this.subCambiosOffline = this.offlineSyncService.cambios$.subscribe(() => {
@@ -773,15 +783,22 @@ export class MiJornada implements OnInit, OnDestroy {
   Eliminar (pedido del usuario, 2026-10-16) - el backend solo lo permite sobre la ULTIMA labor de la jornada
   (ver esUltimaLaborDeLaJornada/eliminarRegistroActividad), pero el template ya solo muestra el boton sobre esa
   fila (ver esUltimaActividad) para que esto nunca se intente sobre otra.
+
+  forzar: TEMPORAL (pedido del usuario, 2026-10-20 - revertir una vez usado) - salta esa exigencia en el
+  backend, para limpiar labores duplicadas atrapadas detras de una labor real que el trabajador queria
+  conservar. Ver el boton "Forzar eliminar" en mi-jornada.html, acotado a un operador puntual.
   */
-  async eliminarRegistro(reg: RegistroActividad): Promise<void> {
+  async eliminarRegistro(reg: RegistroActividad, forzar = false): Promise<void> {
     const confirmado = await this.confirmacionService.preguntar(
-      '¿Seguro que quieres eliminar esta labor? Esta acción no se puede deshacer.',
-      'Eliminar labor'
+      forzar
+        ? '⚠️ Esta labor puede NO ser la última del día - eliminarla puede dejar un hueco en el orden. ¿Eliminarla igual?'
+        : '¿Seguro que quieres eliminar esta labor? Esta acción no se puede deshacer.',
+      forzar ? 'Forzar eliminar' : 'Eliminar labor'
     );
     if (!confirmado) return;
 
-    // Pendiente de sincronizar (id negativo): se saca directo de la cola, sin red (nunca llego a existir en el servidor).
+    // Pendiente de sincronizar (id negativo): se saca directo de la cola, sin red (nunca llego a existir en el servidor) -
+    // ya se puede eliminar sin importar la posicion, 'forzar' no aplica aca (no hay restriccion que saltar).
     if (this.esPendienteDeSincronizar(reg.id)) {
       const op = this.offlineSyncService.buscarCrearLaborPendiente(reg.id);
       if (op) await this.offlineSyncService.descartar(op);
@@ -791,7 +808,7 @@ export class MiJornada implements OnInit, OnDestroy {
       return;
     }
 
-    this.registroActividadService.eliminar(reg.id).subscribe({
+    this.registroActividadService.eliminar(reg.id, forzar).subscribe({
       next: () => {
         this.notificacionService.exito('Labor eliminada.');
         this.cargarRegistros();
