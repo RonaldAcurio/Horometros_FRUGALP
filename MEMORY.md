@@ -1,6 +1,6 @@
 # MEMORY.md — Horómetros FRUGALP
 
-Respaldo de contexto del proyecto. Última actualización: 2026-10-20 (PR #54).
+Respaldo de contexto del proyecto. Última actualización: 2026-10-20 (PR #55).
 
 ## Qué es la aplicación
 
@@ -57,6 +57,13 @@ desplegado en Railway (backend) y Vercel (frontend web + descarga del .apk).
   de Equipo/Actividad (la FK apunta desde la labor hacia el catálogo, no al revés).
 - **APK**: 4.2MB (antes ~100MB — se embebía a sí mismo dentro de sus propios assets, ya
   arreglado), con R8/ProGuard activado.
+- **Panel de Supervisor — agregar trabajadores/labores a mano**: botón "+ Agregar Usuario"
+  (junto al título "Registro de Asistencia de Hoy") mete a la lista de hoy a un trabajador que no
+  llegó a marcar, creando su Asistencia en `EN_JORNADA` igual que una entrada real — por eso
+  Excel/Historial/O-X/"Cerrar Jornada" la tratan idéntico a cualquier otra fila, sin ningún caso
+  especial. Botón ➕ a la izquierda de cada fila (solo visible en `EN_JORNADA`) abre el "Panel de
+  labores" de ese trabajador — mismo diseño que el Panel de Actividades propio (`mi-jornada.ts`),
+  para ver su historial de hoy y agregar una labor nueva, siempre después de la última.
 
 ## Recién subido a producción (2026-10-16)
 PR [#45](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/45): exigir cerrar labores antes
@@ -84,7 +91,11 @@ esperar el rebuild del APK esta vez, porque esto se iba a revertir apenas termin
 cuenta. PR [#54](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/54): revertido - el botón
 "Forzar eliminar" ya cumplió su propósito (cuenta limpia) y `mi-jornada.ts` volvió exactamente a
 como estaba antes del PR #53 (`git revert -m 1` del merge commit `0a2ec5b`). El código no se perdió,
-ver "Herramientas guardadas para reutilizar" abajo.
+ver "Herramientas guardadas para reutilizar" abajo. PR
+[#55](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/55): botón "+ Agregar Usuario" (mete
+a un trabajador que no marcó a la lista de hoy, nuevo endpoint `POST /asistencia/agregar-manual`) y
+botón ➕ por fila (Panel de labores de ese trabajador, reutiliza `crearRegistroActividad` sin
+cambios). APK recompilado, confirmado ~4.23MB (4.430.778 bytes) en producción tras este merge.
 
 ## Herramientas guardadas para reutilizar
 
