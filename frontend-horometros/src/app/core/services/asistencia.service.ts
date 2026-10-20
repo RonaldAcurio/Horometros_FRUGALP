@@ -26,12 +26,15 @@ export class AsistenciaService {
         return this.http.post<{ creados: number; rechazados: { fila: number; motivo: string }[] }>(`${this.baseUrl}/operadores/importar`, { items });
     }
 
-    // GET -> https://.../api/asistencia/operadores?pagina=1&limite=20&q=... - paginado y filtrable por texto
-    // (mandar pagina/limite activa esa respuesta en el backend, ver asistencia.controller.ts), lo consume el
-    // Directorio de Operadores del Panel de Asistente.
-    obtenerOperadoresPaginado(pagina: number, limite: number, q?: string): Observable<RespuestaPaginada<Operador>> {
+    // GET -> https://.../api/asistencia/operadores?pagina=1&limite=20&q=...&supervisor_id=... - paginado y
+    // filtrable por texto (mandar pagina/limite activa esa respuesta en el backend, ver asistencia.controller.ts),
+    // lo consume el Directorio de Operadores del Panel de Asistente. supervisorId opcional: lo usa el buscador
+    // de "+ Agregar Usuario" cuando quien llama es ADMIN y ya eligió un Supervisor puntual arriba - un
+    // SUPERVISOR real lo ignora (el backend ya lo acota solo, ver obtenerOperadores).
+    obtenerOperadoresPaginado(pagina: number, limite: number, q?: string, supervisorId?: number): Observable<RespuestaPaginada<Operador>> {
         let params = new HttpParams().set('pagina', pagina).set('limite', limite);
         if (q) params = params.set('q', q);
+        if (supervisorId) params = params.set('supervisor_id', supervisorId);
         return this.http.get<RespuestaPaginada<Operador>>(`${this.baseUrl}/operadores`, { params }).pipe(
             catchError(err => {
                 console.warn('Error al obtener operadores paginados:', err);

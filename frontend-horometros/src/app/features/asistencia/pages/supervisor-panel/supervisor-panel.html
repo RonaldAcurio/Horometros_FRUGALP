@@ -112,8 +112,16 @@
         📊 Registro de Asistencia {{ fechaSeleccionada ? 'del ' + fechaSeleccionada : 'de Hoy' }}
       </h5>
       <!-- "+ Agregar Usuario" (pedido del usuario, 2026-10-20): mete a la lista de hoy a un trabajador que
-      no llegó a marcar por cualquier motivo - ver AgregarUsuarioModal. -->
-      <button type="button" class="btn btn-primary btn-sm" (click)="abrirAgregarUsuario()">
+      no llegó a marcar por cualquier motivo - ver AgregarUsuarioModal. ADMIN necesita elegir un Supervisor
+      puntual arriba primero (ver puedeAgregarUsuario) - mismo patrón que "Imprimir General"/"Exportar a
+      Excel" un poco más abajo. -->
+      <button
+        type="button"
+        class="btn btn-primary btn-sm"
+        [disabled]="!puedeAgregarUsuario"
+        [title]="puedeAgregarUsuario ? '' : 'Elige un Supervisor específico arriba para poder agregar un trabajador'"
+        (click)="abrirAgregarUsuario()"
+      >
         ➕ Agregar Usuario
       </button>
     </div>

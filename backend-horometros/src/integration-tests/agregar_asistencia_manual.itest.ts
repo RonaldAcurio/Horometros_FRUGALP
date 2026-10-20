@@ -137,8 +137,10 @@ describe('POST /api/asistencia/agregar-manual', () => {
     });
 });
 
-describe('GET /api/asistencia/operadores (acotado para SUPERVISOR)', () => {
+describe('GET /api/asistencia/operadores (acotado para SUPERVISOR, opcional para ADMIN)', () => {
     let tokenSupervisor: string;
+    let tokenAdmin: string;
+    let supervisorId: number;
 
     beforeEach(async () => {
         await limpiarBaseDeDatosTest();
@@ -149,21 +151,54 @@ describe('GET /api/asistencia/operadores (acotado para SUPERVISOR)', () => {
         const supervisor = await crearUsuarioDePrueba({
             usuario: 'supervisor1', clave: 'claveprueba123', cargo: 'SUPERVISOR', hacienda_id: hacienda.id,
         });
+        supervisorId = supervisor.id;
         const supervisorAjeno = await crearUsuarioDePrueba({
             usuario: 'supervisorAjeno', clave: 'claveprueba123', cargo: 'SUPERVISOR', hacienda_id: haciendaAjena.id,
         });
+        await crearUsuarioDePrueba({ usuario: 'admin1', clave: 'claveprueba123', cargo: 'ADMIN' });
 
         await Operador.create({ nombre_completo: 'Operador Propio', codigo_megued: 'OP-PROPIO', supervisor_id: supervisor.id });
         await Operador.create({ nombre_completo: 'Operador Ajeno', codigo_megued: 'OP-AJENO', supervisor_id: supervisorAjeno.id });
 
         const login = await request(app).post('/api/auth/login').send({ usuario: 'supervisor1', clave: 'claveprueba123' });
         tokenSupervisor = login.body.token;
+        const loginAdmin = await request(app).post('/api/auth/login').send({ usuario: 'admin1', clave: 'claveprueba123' });
+        tokenAdmin = loginAdmin.body.token;
     });
 
     it('un SUPERVISOR solo ve a sus propios trabajadores, nunca los de otra hacienda', async () => {
         const res = await request(app)
             .get('/api/asistencia/operadores?pagina=1&limite=20')
             .set('Authorization', `Bearer ${tokenSupervisor}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.data).toHaveLength(1);
+        expect(res.body.data[0].nombre_completo).toBe('Operador Propio');
+    });
+
+    it('un SUPERVISOR no puede saltarse su propio alcance mandando supervisor_id de otro', async () => {
+        const res = await request(app)
+            .get('/api/asistencia/operadores?pagina=1&limite=20&supervisor_id=999999')
+            .set('Authorization', `Bearer ${tokenSupervisor}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.data).toHaveLength(1);
+        expect(res.body.data[0].nombre_completo).toBe('Operador Propio');
+    });
+
+    it('ADMIN sin supervisor_id ve el directorio completo (ambos trabajadores)', async () => {
+        const res = await request(app)
+            .get('/api/asistencia/operadores?pagina=1&limite=20')
+            .set('Authorization', `Bearer ${tokenAdmin}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.data).toHaveLength(2);
+    });
+
+    it('ADMIN con supervisor_id solo ve a los trabajadores de ESE supervisor', async () => {
+        const res = await request(app)
+            .get(`/api/asistencia/operadores?pagina=1&limite=20&supervisor_id=${supervisorId}`)
+            .set('Authorization', `Bearer ${tokenAdmin}`);
 
         expect(res.status).toBe(200);
         expect(res.body.data).toHaveLength(1);

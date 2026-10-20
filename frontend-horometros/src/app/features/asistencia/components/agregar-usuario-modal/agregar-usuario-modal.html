@@ -1,5 +1,7 @@
 <!-- "+ Agregar Usuario": mete a la lista de hoy a un trabajador que no llegó a marcar. Solo pide a quién -
-el equipo/actividad se agregan después, con el botón ➕ de su fila (ver PanelLaboresModal). -->
+el equipo/actividad se agregan después, con el botón ➕ de su fila (ver PanelLaboresModal). La lista sale de
+una vez al abrir (sin escribir nada), con límite de 10 y paginación - igual que "Registro de Asistencia de
+Hoy" en el panel principal. -->
 @if (visible) {
   <div class="modal-backdrop" (click)="cerrar()">
     <div class="modal-card agregar-usuario-card" (click)="$event.stopPropagation()">
@@ -9,7 +11,7 @@ el equipo/actividad se agregan después, con el botón ➕ de su fila (ver Panel
       </div>
       <p class="hint-text">Busca al trabajador que no llegó a marcar hoy. Se agregará a la lista como si hubiera marcado entrada ahora mismo.</p>
 
-      <div class="form-group autocomplete-group">
+      <div class="form-group">
         <label class="form-label">Trabajador</label>
         <input
           type="text"
@@ -20,20 +22,45 @@ el equipo/actividad se agregan después, con el botón ➕ de su fila (ver Panel
           placeholder="Escribe un nombre o código..."
           autocomplete="off"
         />
-        @if (buscando) {
-          <div class="autocomplete-opciones">
+      </div>
+
+      @if (!operadorSeleccionado) {
+        <div class="agregar-usuario-lista">
+          @if (buscando) {
             <div class="autocomplete-vacio">Buscando...</div>
-          </div>
-        } @else if (resultados.length > 0) {
-          <div class="autocomplete-opciones">
+          } @else if (resultados.length === 0) {
+            <div class="autocomplete-vacio">Sin resultados.</div>
+          } @else {
             @for (op of resultados; track op.id) {
               <div class="autocomplete-opcion" (click)="seleccionarOperador(op)">
                 {{ op.codigo_megued }} - {{ op.nombre_completo }}
               </div>
             }
+          }
+        </div>
+
+        @if (totalResultados > 0) {
+          <div class="pagination-bar">
+            <span>Página {{ paginaActual }} de {{ totalPaginas }} ({{ totalResultados }} resultados)</span>
+            <div class="flex gap-2">
+              <button
+                [disabled]="paginaActual === 1 || buscando"
+                (click)="cambiarPagina(paginaActual - 1)"
+                class="btn btn-secondary btn-sm"
+              >
+                ◀
+              </button>
+              <button
+                [disabled]="paginaActual === totalPaginas || buscando"
+                (click)="cambiarPagina(paginaActual + 1)"
+                class="btn btn-secondary btn-sm"
+              >
+                ▶
+              </button>
+            </div>
           </div>
         }
-      </div>
+      }
 
       <div class="flex gap-2 mt-4">
         <button

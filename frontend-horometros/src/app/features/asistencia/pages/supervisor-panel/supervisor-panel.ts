@@ -415,8 +415,20 @@ export class SupervisorPanel implements OnInit {
 
   // ==================== "+ Agregar Usuario" / Panel de labores por fila ====================
 
+  /*
+  ADMIN necesita un Supervisor puntual elegido arriba para que el buscador tenga sentido (si no, el
+  directorio completo trae ~950 trabajadores de TODAS las haciendas mezclados) - mismo criterio que
+  puedeExportarGeneral, pero SIN su chequeo de "ya hay asistencias hoy": acá es al revés, el caso mas tipico
+  es justo agregar al primer trabajador de un dia que todavia esta vacio. Un SUPERVISOR real no necesita
+  elegir nada: el backend ya lo acota solo a sus propios trabajadores (ver obtenerOperadores).
+  */
+  get puedeAgregarUsuario(): boolean {
+    return this.esAdmin ? this.supervisorIdFiltro !== null : true;
+  }
+
   abrirAgregarUsuario(): void {
-    this.agregarUsuarioModal.abrir();
+    if (!this.puedeAgregarUsuario) return;
+    this.agregarUsuarioModal.abrir(this.esAdmin ? this.supervisorIdFiltro : undefined);
   }
 
   // Botón ➕ a la izquierda de cada fila (pedido del usuario, 2026-10-20): abre el Panel de Actividades de
