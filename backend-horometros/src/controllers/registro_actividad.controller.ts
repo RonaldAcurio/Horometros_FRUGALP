@@ -7,6 +7,30 @@ import { Actividad } from "../models/actividad";
 import { Seccion } from "../models/seccion";
 import { Operador } from "../models/operador";
 import { horaEsAnteriorARegistrosPrevios } from "../utils/validar-orden-horas";
+import { calcularDiaCerradoDeAsistencia } from "./asistencia.controller";
+
+/*
+ADMIN/SUPERVISOR actuando sobre la jornada de OTRO (nunca el propio operador, ver abajo) desde el Panel de
+Supervisor (pedido del usuario, 2026-10-21): pueden seguir agregando/editando/eliminando labores de un
+trabajador aunque su jornada ya no siga EN_JORNADA (se le olvido marcar salida, ya marco, etc.) - mientras el
+DIA no haya cerrado de verdad con "Cerrar Jornada" (ver calcularDiaCerradoDeAsistencia). ASISTENTE queda
+afuera a proposito, aunque puedeOperarSobreAsistencia ya le de permiso irrestricto sobre estas 4 funciones -
+ASISTENTE nunca entra al Panel de Supervisor (ver app.routes.ts, roleGuard) y nunca pidio esta capacidad, asi
+que se le cierra la puerta tambien aca, no solo en la pantalla. Un OPERADOR en su propia jornada (mi-jornada.ts)
+nunca pasa por aca: req.auth.tipo siempre es 'usuario' para quien SI puede forzar.
+*/
+const puedeForzarComoSupervisor = (req: Request): boolean =>
+    req.auth?.tipo === 'usuario' && (req.auth.rol === 'ADMIN' || req.auth.rol === 'SUPERVISOR');
+
+/*
+Un trabajador marcado OBSERVANDO (la X del Supervisor, "no vino") queda afuera de la excepcion de arriba a
+proposito, mismo criterio que ya excluye OBSERVANDO del Excel/Imprimir en todo el sistema - no tiene sentido
+registrarle labores/horas a alguien que el propio Supervisor dijo que no trabajo ese dia.
+*/
+const puedeForzarEnEstaAsistencia = async (req: Request, asistencia: Asistencia): Promise<boolean> =>
+    asistencia.estado !== 'OBSERVANDO'
+    && puedeForzarComoSupervisor(req)
+    && !(await calcularDiaCerradoDeAsistencia(asistencia));
 
 /*
 Un Mecanico/Operador solo puede tocar su PROPIA jornada. ADMIN/ASISTENTE pueden tocar cualquiera (correcciones,
@@ -82,7 +106,7 @@ export const crearRegistroActividad = async(req:Request, res:Response):Promise<v
             return;
         }
 
-        if(asistencia.estado !== 'EN_JORNADA'){
+        if(asistencia.estado !== 'EN_JORNADA' && !(await puedeForzarEnEstaAsistencia(req, asistencia))){
             res.status(400).json({ message: 'Esta jornada ya no esta activa: no se puede agregar mas labores.'});
             return;
         }
@@ -233,15 +257,17 @@ const esUltimaLaborDeLaJornada = async (asistenciaId: number, registroId: number
 
 /*
 Editar una labor ya registrada (pedido del usuario, 2026-10-16: corregir un equipo/actividad/observacion mal
-elegidos, sin tener que borrar y re-crear todo). Deliberadamente NO lee hora_inicio ni hora_fin del body -
-ni siquiera se desestructuran aca abajo - para que sea estructuralmente imposible que este endpoint mueva una
-hora, que es lo unico que podria desordenar "Labores de hoy" (ver horaEsAnteriorARegistrosPrevios, que sigue
-intacta: esta funcion nunca le da motivo para fallar). Mismos permisos y mismo limite EN_JORNADA que crear.
+elegidos, sin tener que borrar y re-crear todo). Para el trabajador editando su PROPIA jornada, sigue siendo
+estructuralmente imposible mover hora_inicio/hora_fin - ni se leen del body en ese caso (lo unico que podria
+desordenar "Labores de hoy", ver horaEsAnteriorARegistrosPrevios). Excepcion (pedido del usuario, 2026-10-21):
+si puedeForzarEnEstaAsistencia es true (ADMIN/SUPERVISOR editando desde el Panel de Supervisor), SI se leen y
+aplican - ahi la unica validacion es que hora_fin no quede antes de hora_inicio, sin comparar contra las demas
+labores del dia (es justo la herramienta para corregir ese desorden a mano).
 */
 export const editarRegistroActividad = async(req:Request, res:Response):Promise<void> => {
     try{
         const { id } = req.params;
-        const { equipo_id, actividad_id, area, seccion_id, horometro_inicio, horometro_final, observaciones } = req.body;
+        const { equipo_id, actividad_id, area, seccion_id, horometro_inicio, horometro_final, observaciones, hora_inicio, hora_fin } = req.body;
 
         const registro = await RegistroActividad.findByPk(Number(id));
         if(!registro){
@@ -255,9 +281,40 @@ export const editarRegistroActividad = async(req:Request, res:Response):Promise<
             return;
         }
 
-        if(asistencia.estado !== 'EN_JORNADA'){
+        const puedeForzar = await puedeForzarEnEstaAsistencia(req, asistencia);
+
+        if(asistencia.estado !== 'EN_JORNADA' && !puedeForzar){
             res.status(400).json({ message: 'Esta jornada ya no esta activa: no se pueden editar sus labores.'});
             return;
+        }
+
+        let horaInicioFinal = registro.hora_inicio;
+        let horaFinFinal = registro.hora_fin;
+        if(puedeForzar){
+            if(hora_inicio !== undefined){
+                const parseada = new Date(hora_inicio);
+                if(isNaN(parseada.getTime())){
+                    res.status(400).json({ message: 'hora_inicio no es una fecha valida.'});
+                    return;
+                }
+                horaInicioFinal = parseada;
+            }
+            if(hora_fin !== undefined){
+                if(hora_fin === null || hora_fin === ''){
+                    horaFinFinal = null;
+                } else {
+                    const parseada = new Date(hora_fin);
+                    if(isNaN(parseada.getTime())){
+                        res.status(400).json({ message: 'hora_fin no es una fecha valida.'});
+                        return;
+                    }
+                    horaFinFinal = parseada;
+                }
+            }
+            if(horaFinFinal && horaFinFinal.getTime() < horaInicioFinal.getTime()){
+                res.status(400).json({ message: 'hora_fin no puede ser anterior a hora_inicio.' });
+                return;
+            }
         }
 
         let equipoIdFinal = registro.equipo_id;
@@ -306,6 +363,8 @@ export const editarRegistroActividad = async(req:Request, res:Response):Promise<
                 ? (horometro_final !== null && horometro_final !== '' ? Number(horometro_final) : null)
                 : registro.horometro_final,
             observaciones: observaciones !== undefined ? (observaciones || null) : registro.observaciones,
+            hora_inicio: horaInicioFinal,
+            hora_fin: horaFinFinal,
         });
 
         // Recarga con los catalogos (equipo/actividad) para que el frontend pueda repintar la fila sin pedir
@@ -354,12 +413,23 @@ export const eliminarRegistroActividad = async(req:Request, res:Response):Promis
             return;
         }
 
-        if(asistencia.estado !== 'EN_JORNADA'){
+        const puedeForzar = await puedeForzarEnEstaAsistencia(req, asistencia);
+
+        if(asistencia.estado !== 'EN_JORNADA' && !puedeForzar){
             res.status(400).json({ message: 'Esta jornada ya no esta activa: no se pueden eliminar sus labores.'});
             return;
         }
 
-        if(!(await esUltimaLaborDeLaJornada(registro.asistencia_id, registro.id))){
+        /*
+        'forzar' (pedido del usuario, 2026-10-21): salta UNICAMENTE el chequeo de "ultima labor" de abajo, para
+        que ADMIN/SUPERVISOR puedan limpiar labores duplicadas/mal registradas sin importar su posicion en la
+        jornada - nunca tiene efecto si puedeForzar es false (un trabajador que mande forzar:true a mano sobre
+        su propia jornada no consigue nada distinto a lo de siempre).
+        req.body || {}: un DELETE sin body (el camino normal) no siempre llega como {} - puede llegar undefined
+        segun el cliente, y desestructurar de undefined tira un 500.
+        */
+        const { forzar } = req.body || {};
+        if(!(forzar && puedeForzar) && !(await esUltimaLaborDeLaJornada(registro.asistencia_id, registro.id))){
             res.status(400).json({ message: 'Solo se puede eliminar la última actividad registrada - elimina primero las que quedaron después.' });
             return;
         }

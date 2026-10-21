@@ -187,15 +187,27 @@ export class PanelLaboresModal {
     return { hh: fecha.getHours(), mm: fecha.getMinutes() };
   }
 
-  // Mismo criterio que mi-jornada.ts (horaComponentesAIso): combina HH/MM con HOY en hora local y lo manda
-  // como ISO, para que el backend lo interprete tal cual el Supervisor lo escribió.
+  // Mismo criterio que mi-jornada.ts (horaComponentesAIso): combina HH/MM con la FECHA de la jornada en hora
+  // local y lo manda como ISO. A diferencia de mi-jornada.ts (el trabajador siempre registra SU jornada de
+  // hoy), acá la fecha base es la de la propia asistencia (asistencia.fecha) y no la de HOY - el Supervisor
+  // puede seguir agregando/editando labores de un día anterior ya finalizado (pedido del usuario, 2026-10-21:
+  // el ➕ ya no desaparece al finalizar), y usar "hoy" ahí movería la hora al día equivocado.
   private horaComponentesAIso(hh: number | null, mm: number | null): string | undefined {
     if (hh === null || hh === undefined || mm === null || mm === undefined || isNaN(hh) || isNaN(mm)) return undefined;
     const horas = Math.min(23, Math.max(0, Math.trunc(hh)));
     const minutos = Math.min(59, Math.max(0, Math.trunc(mm)));
-    const fecha = new Date();
+    const fecha = this.fechaBaseAsistencia();
     fecha.setHours(horas, minutos, 0, 0);
     return fecha.toISOString();
+  }
+
+  private fechaBaseAsistencia(): Date {
+    const fecha = this.asistencia?.fecha;
+    if (fecha) {
+      const [anio, mes, dia] = fecha.split('-').map(Number);
+      if (anio && mes && dia) return new Date(anio, mes - 1, dia);
+    }
+    return new Date();
   }
 
   private limpiarFormularioNuevoRegistro(): void {
@@ -253,6 +265,23 @@ export class PanelLaboresModal {
     };
     this.equipoBusqueda = reg.equipo ? `${reg.equipo.codigo_megued} - ${reg.equipo.nombre_equipo}` : '';
     this.actividadBusqueda = reg.actividad ? `${reg.actividad.codigo_megued} - ${reg.actividad.description}` : '';
+
+    /*
+    Hora de inicio/fin editables SOLO en este modal (Panel de Supervisor, pedido del usuario, 2026-10-21) - ver
+    editarRegistroActividad/puedeForzarComoSupervisor. mi-jornada.ts nunca llama a este método con estos campos
+    habilitados (ahí Hora Inicio sigue [disabled] y no existe un campo de Hora Fin en el editar).
+    */
+    const inicio = new Date(reg.hora_inicio);
+    this.horaInicioHH = inicio.getHours();
+    this.horaInicioMM = inicio.getMinutes();
+    if (reg.hora_fin) {
+      const fin = new Date(reg.hora_fin);
+      this.horaFinHH = fin.getHours();
+      this.horaFinMM = fin.getMinutes();
+    } else {
+      this.horaFinHH = null;
+      this.horaFinMM = null;
+    }
     this.cdr.detectChanges();
   }
 
@@ -265,6 +294,7 @@ export class PanelLaboresModal {
   private guardarEdicionRegistro(): void {
     const id = this.editandoRegistroId;
     if (id === null || !this.nuevoRegistro.equipo_id || !this.nuevoRegistro.actividad_id) return;
+    if (this.horaInicioHH === null || this.horaInicioMM === null) return;
 
     const cambios = {
       equipo_id: this.nuevoRegistro.equipo_id,
@@ -272,6 +302,10 @@ export class PanelLaboresModal {
       area: this.esMecanico ? this.nuevoRegistro.area : undefined,
       horometro_inicio: !this.esMecanico && this.nuevoRegistro.horometro_inicio !== null ? this.nuevoRegistro.horometro_inicio : undefined,
       observaciones: this.nuevoRegistro.observaciones || undefined,
+      // El backend solo aplica estas dos si quien edita es ADMIN/SUPERVISOR desde el Panel de Supervisor (ver
+      // puedeForzarComoSupervisor) - si lo manda el propio trabajador, las ignora igual que siempre.
+      hora_inicio: this.horaComponentesAIso(this.horaInicioHH, this.horaInicioMM),
+      hora_fin: this.horaComponentesAIso(this.horaFinHH, this.horaFinMM),
     };
 
     this.guardandoRegistro = true;
@@ -292,14 +326,22 @@ export class PanelLaboresModal {
     });
   }
 
-  async eliminarRegistro(reg: RegistroActividad): Promise<void> {
+  /*
+  forzar (pedido del usuario, 2026-10-21): salta el chequeo de "última labor" - sirve para limpiar labores
+  duplicadas/mal registradas sin importar su posición en la jornada. Siempre visible en este modal (es
+  exclusivo del Panel de Supervisor) pero el backend solo le hace caso si quien llama es ADMIN/SUPERVISOR
+  (ver puedeForzarComoSupervisor) - no reemplaza al "Eliminar" normal, se agrega al lado.
+  */
+  async eliminarRegistro(reg: RegistroActividad, forzar = false): Promise<void> {
     const confirmado = await this.confirmacionService.preguntar(
-      '¿Seguro que quieres eliminar esta labor? Esta acción no se puede deshacer.',
-      'Eliminar labor'
+      forzar
+        ? '⚠️ Vas a eliminar esta labor sin importar su posición ni la hora en la jornada. Esta acción no se puede deshacer. ¿Seguro que quieres continuar?'
+        : '¿Seguro que quieres eliminar esta labor? Esta acción no se puede deshacer.',
+      forzar ? 'Forzar eliminar' : 'Eliminar labor'
     );
     if (!confirmado) return;
 
-    this.registroActividadService.eliminar(reg.id).subscribe({
+    this.registroActividadService.eliminar(reg.id, forzar).subscribe({
       next: () => {
         this.notificacionService.exito('Labor eliminada.');
         this.cargarRegistros();

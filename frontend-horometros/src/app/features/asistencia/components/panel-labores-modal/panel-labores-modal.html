@@ -83,16 +83,30 @@ oficina) ni flujo de QR/código - solo crear/editar/finalizar/eliminar sobre la 
         <div class="form-group">
           <label class="form-label">Hora de inicio</label>
           <div class="hora-hhmm">
-            <input type="number" class="input-control hora-hhmm-input" [(ngModel)]="horaInicioHH" name="hora_inicio_hh" min="0" max="23" placeholder="HH" [disabled]="editandoRegistroId !== null" required />
+            <input type="number" class="input-control hora-hhmm-input" [(ngModel)]="horaInicioHH" name="hora_inicio_hh" min="0" max="23" placeholder="HH" required />
             <span class="hora-hhmm-separador">:</span>
-            <input type="number" class="input-control hora-hhmm-input" [(ngModel)]="horaInicioMM" name="hora_inicio_mm" min="0" max="59" placeholder="MM" [disabled]="editandoRegistroId !== null" required />
+            <input type="number" class="input-control hora-hhmm-input" [(ngModel)]="horaInicioMM" name="hora_inicio_mm" min="0" max="59" placeholder="MM" required />
           </div>
           @if (editandoRegistroId === null) {
             <p class="hint-text">Tiene que quedar después de la última labor de este trabajador.</p>
           } @else {
-            <p class="hint-text">La hora de inicio no se puede editar.</p>
+            <p class="hint-text">Se puede editar, sin comparar con las demás labores del día.</p>
           }
         </div>
+        <!-- Hora de fin (pedido del usuario, 2026-10-21): solo al EDITAR desde este modal - deja corregir
+        ambas horas juntas en vez de tener que usar "Finalizar" por separado. El backend solo la aplica si
+        quien edita es ADMIN/SUPERVISOR (ver puedeForzarComoSupervisor). -->
+        @if (editandoRegistroId !== null) {
+          <div class="form-group">
+            <label class="form-label">Hora de fin</label>
+            <div class="hora-hhmm">
+              <input type="number" class="input-control hora-hhmm-input" [(ngModel)]="horaFinHH" name="hora_fin_hh_editar" min="0" max="23" placeholder="HH" />
+              <span class="hora-hhmm-separador">:</span>
+              <input type="number" class="input-control hora-hhmm-input" [(ngModel)]="horaFinMM" name="hora_fin_mm_editar" min="0" max="59" placeholder="MM" />
+            </div>
+            <p class="hint-text">Déjala vacía si la labor todavía sigue abierta.</p>
+          </div>
+        }
         <div class="form-group">
           <label class="form-label">Observaciones</label>
           <input type="text" class="input-control w-full" [(ngModel)]="nuevoRegistro.observaciones" name="observaciones" />
@@ -105,7 +119,8 @@ oficina) ni flujo de QR/código - solo crear/editar/finalizar/eliminar sobre la 
               guardandoRegistro ||
               !nuevoRegistro.equipo_id ||
               !nuevoRegistro.actividad_id ||
-              (editandoRegistroId === null && (horaInicioHH === null || horaInicioMM === null))
+              horaInicioHH === null ||
+              horaInicioMM === null
             "
           >
             @if (editandoRegistroId === null) {
@@ -176,6 +191,11 @@ oficina) ni flujo de QR/código - solo crear/editar/finalizar/eliminar sobre la 
                       @if (esUltimaActividad(reg)) {
                         <button class="btn-chip btn-chip-eliminar" (click)="eliminarRegistro(reg)">🗑️ Eliminar</button>
                       }
+                      <!-- "Forzar eliminar" (pedido del usuario, 2026-10-21): exclusivo del Panel de Supervisor,
+                      se agrega AL LADO del "Eliminar" normal (nunca lo reemplaza) - salta el chequeo de
+                      "última labor" para poder limpiar labores duplicadas/mal registradas sin importar su
+                      posición en la jornada. -->
+                      <button class="btn-chip btn-chip-forzar" (click)="eliminarRegistro(reg, true)">⚠️ Forzar eliminar</button>
                     </div>
                   }
                 </td>

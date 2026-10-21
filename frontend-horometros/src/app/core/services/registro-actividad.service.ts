@@ -79,17 +79,23 @@ export class RegistroActividadService {
         });
     }
 
-    // Editar una labor ya registrada (equipo/actividad/OT/horometros/observaciones) - a propósito nunca manda
-    // hora_inicio/hora_fin, el backend ni siquiera los lee (ver editarRegistroActividad).
+    // Editar una labor ya registrada (equipo/actividad/OT/horometros/observaciones). hora_inicio/hora_fin son
+    // EXTRA (pedido del usuario, 2026-10-21): el backend solo los aplica si quien llama es ADMIN/SUPERVISOR
+    // desde el Panel de Supervisor (ver puedeForzarComoSupervisor, editarRegistroActividad) - si los manda el
+    // propio trabajador, los ignora igual que siempre.
     editar(id: number, datos: {
         equipo_id?: number; actividad_id?: number; area?: string;
         horometro_inicio?: number; horometro_final?: number; observaciones?: string;
+        hora_inicio?: string; hora_fin?: string | null;
     }): Observable<{ message: string; registro: RegistroActividad }> {
         return this.http.put<{ message: string; registro: RegistroActividad }>(`${this.baseUrl}/${id}`, datos);
     }
 
     // Eliminar una labor - el backend exige que sea la ULTIMA de la jornada (ver eliminarRegistroActividad).
-    eliminar(id: number): Observable<{ message: string }> {
-        return this.http.delete<{ message: string }>(`${this.baseUrl}/${id}`);
+    // forzar (pedido del usuario, 2026-10-21): salta esa exigencia, pero el backend solo le hace caso si quien
+    // llama es ADMIN/SUPERVISOR desde el Panel de Supervisor (ver puedeForzarComoSupervisor) - mandarlo en
+    // cualquier otro caso no tiene ningun efecto.
+    eliminar(id: number, forzar?: boolean): Observable<{ message: string }> {
+        return this.http.delete<{ message: string }>(`${this.baseUrl}/${id}`, { body: forzar ? { forzar: true } : undefined });
     }
 }
