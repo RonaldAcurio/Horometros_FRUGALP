@@ -6,6 +6,7 @@ import { Equipo } from "../models/equipo";
 import { Actividad } from "../models/actividad";
 import { Seccion } from "../models/seccion";
 import { Operador } from "../models/operador";
+import { Usuario } from "../models/usuario";
 import { horaEsAnteriorARegistrosPrevios } from "../utils/validar-orden-horas";
 import { calcularDiaCerradoDeAsistencia } from "./asistencia.controller";
 
@@ -31,6 +32,32 @@ const puedeForzarEnEstaAsistencia = async (req: Request, asistencia: Asistencia)
     asistencia.estado !== 'OBSERVANDO'
     && puedeForzarComoSupervisor(req)
     && !(await calcularDiaCerradoDeAsistencia(asistencia));
+
+/*
+TEMPORAL - diagnostico en vivo (pedido del usuario, 2026-10-21): el bypass de PR #58 no esta aplicando para
+ADMIN sobre asistencias reales de produccion (bloquea cuando no deberia, o guarda todo menos la hora), y no
+se pudo reproducir en pruebas de integracion limpias. Esta funcion arma un texto con los valores intermedios
+reales de ESTA peticion (sin tocar ningun permiso ni logica) para pegarlo directo en el mensaje que ya ve el
+usuario en pantalla - se quita en cuanto se encuentre la causa real.
+*/
+const armarDebugForzar = async (req: Request, asistencia: Asistencia, puedeForzar: boolean): Promise<string> => {
+    let supervisorId: number | null = null;
+    let haciendaResuelta: number | null = null;
+    if(asistencia.hacienda_prestamo_id !== null){
+        haciendaResuelta = asistencia.hacienda_prestamo_id;
+    } else {
+        const op = await Operador.findByPk(asistencia.operador_id, { attributes: ['supervisor_id'] });
+        supervisorId = op?.supervisor_id ?? null;
+        if(supervisorId !== null){
+            const sup = await Usuario.findByPk(supervisorId, { attributes: ['hacienda_id'] });
+            haciendaResuelta = sup?.hacienda_id ?? null;
+        }
+    }
+    const cerrado = await calcularDiaCerradoDeAsistencia(asistencia);
+    return `[DEBUG tipo=${req.auth?.tipo} rol=${req.auth?.rol} estado=${asistencia.estado} fecha=${asistencia.fecha}` +
+        ` prestamo=${asistencia.hacienda_prestamo_id} supervisorId=${supervisorId} hacienda=${haciendaResuelta}` +
+        ` cerrado=${cerrado} puedeForzar=${puedeForzar}]`;
+};
 
 /*
 Un Mecanico/Operador solo puede tocar su PROPIA jornada. ADMIN/ASISTENTE pueden tocar cualquiera (correcciones,
@@ -284,7 +311,8 @@ export const editarRegistroActividad = async(req:Request, res:Response):Promise<
         const puedeForzar = await puedeForzarEnEstaAsistencia(req, asistencia);
 
         if(asistencia.estado !== 'EN_JORNADA' && !puedeForzar){
-            res.status(400).json({ message: 'Esta jornada ya no esta activa: no se pueden editar sus labores.'});
+            const debug = await armarDebugForzar(req, asistencia, puedeForzar);
+            res.status(400).json({ message: `Esta jornada ya no esta activa: no se pueden editar sus labores. ${debug}`});
             return;
         }
 
@@ -377,7 +405,8 @@ export const editarRegistroActividad = async(req:Request, res:Response):Promise<
             ],
         });
 
-        res.json({ message: 'Labor actualizada correctamente.', registro });
+        const debug = await armarDebugForzar(req, asistencia, puedeForzar);
+        res.json({ message: `Labor actualizada correctamente. ${debug}`, registro });
 
     }catch(err){
         console.error('Error al editar el registro de actividad.', err);
