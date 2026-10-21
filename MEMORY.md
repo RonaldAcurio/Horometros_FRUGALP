@@ -1,6 +1,6 @@
 # MEMORY.md — Horómetros FRUGALP
 
-Respaldo de contexto del proyecto. Última actualización: 2026-10-20 (PR #57).
+Respaldo de contexto del proyecto. Última actualización: 2026-10-21 (PR #58).
 
 ## Qué es la aplicación
 
@@ -65,14 +65,25 @@ desplegado en Railway (backend) y Vercel (frontend web + descarga del .apk).
   (junto al título "Registro de Asistencia de Hoy") mete a la lista de hoy a un trabajador que no
   llegó a marcar, creando su Asistencia en `EN_JORNADA` igual que una entrada real — por eso
   Excel/Historial/O-X/"Cerrar Jornada" la tratan idéntico a cualquier otra fila, sin ningún caso
-  especial. Botón ➕ a la izquierda de cada fila (solo visible en `EN_JORNADA`) abre el "Panel de
-  labores" de ese trabajador — mismo diseño que el Panel de Actividades propio (`mi-jornada.ts`),
-  para ver su historial de hoy y agregar una labor nueva, siempre después de la última. El buscador
-  de "+ Agregar Usuario" muestra la lista de entrada sin escribir nada (límite 10 por página, con
+  especial. Botón ➕ a la izquierda de cada fila (visible mientras el trabajador no esté OBSERVANDO
+  y el día no haya cerrado — ya NO desaparece al finalizar su jornada) abre el "Panel de labores" de
+  ese trabajador — mismo diseño que el Panel de Actividades propio (`mi-jornada.ts`), para ver su
+  historial de hoy y agregar una labor nueva, siempre después de la última. El buscador de
+  "+ Agregar Usuario" muestra la lista de entrada sin escribir nada (límite 10 por página, con
   paginación y búsqueda en tiempo real); un SUPERVISOR real solo ve a sus propios trabajadores
   (`obtenerOperadores` auto-acotado); ADMIN necesita elegir un Supervisor puntual arriba (selector
   "Todos los Supervisores") para habilitar el botón — si no, sale deshabilitado con tooltip, mismo
   patrón que "Imprimir General"/"Exportar a Excel" (`puedeAgregarUsuario` en `supervisor-panel.ts`).
+  Dentro de ese Panel de labores, ADMIN/SUPERVISOR (nunca ASISTENTE ni el propio trabajador, tanto a
+  nivel de pantalla como de backend) tienen 3 capacidades extra que `mi-jornada.ts` no tiene:
+  pueden seguir creando/editando/eliminando labores aunque la jornada ya no esté `EN_JORNADA`
+  (mientras el DÍA no haya cerrado con "Cerrar Jornada" — nuevo `calcularDiaCerradoDeAsistencia`,
+  que respeta esa promesa de "datos congelados" sin excepción ni para ADMIN); un botón
+  "⚠️ Forzar eliminar" siempre visible junto al "Eliminar" normal que salta el chequeo de "última
+  labor" (`forzar` en el body de `eliminarRegistroActividad`); y "Editar" permite mover Hora de
+  Inicio y agrega un campo Hora de Fin al lado, para corregir ambas en el mismo formulario sin pasar
+  por "Finalizar" (solo valida que Fin quede después de Inicio, sin comparar contra las demás
+  labores del día). Un trabajador OBSERVANDO queda excluido de las 3.
 
 ## Recién subido a producción (2026-10-16)
 PR [#45](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/45): exigir cerrar labores antes
@@ -114,7 +125,16 @@ APK recompilado, confirmado ~4.23MB (4.431.118 bytes) en producción tras este m
 nombre completo directo en el encabezado de la Ficha (Directorio de Operadores), sin modal - mismo
 patrón ya usado para "Usuario de acceso". `actualizarOperador` antes ignoraba `nombre_completo` por
 completo aunque se lo mandaran; ahora lo valida (no vacío, máximo 150 caracteres) y lo guarda. APK
-recompilado, confirmado ~4.23MB (4.431.358 bytes) en producción tras este merge.
+recompilado, confirmado ~4.23MB (4.431.358 bytes) en producción tras este merge. PR
+[#58](https://github.com/RonaldAcurio/Horometros_FRUGALP/pull/58): 3 ampliaciones al Panel de
+labores del Supervisor (➕ por fila) - botón "⚠️ Forzar eliminar" siempre visible junto al
+"Eliminar" normal (salta el chequeo de "última labor"); el ➕ ya no desaparece al finalizar la
+jornada del trabajador (ADMIN/SUPERVISOR pueden seguir agregando/editando/eliminando labores
+mientras el día no haya cerrado con "Cerrar Jornada", nuevo `calcularDiaCerradoDeAsistencia`); y
+"Editar" permite mover Hora de Inicio y agrega Hora de Fin al lado, para corregir ambas juntas sin
+pasar por "Finalizar". Las 3 quedan exclusivas de ADMIN/SUPERVISOR también a nivel de backend
+(ASISTENTE y el propio trabajador quedan afuera) y OBSERVANDO excluido de las 3. `mi-jornada.ts`
+sin cambios. APK recompilado, confirmado ~4.23MB (4.431.762 bytes) en producción tras este merge.
 
 ## Herramientas guardadas para reutilizar
 
