@@ -1451,6 +1451,26 @@ const calcularDiaCerradoHacienda = async (fecha: string, haciendaId: number): Pr
 };
 
 /*
+Version "por ASISTENCIA puntual" de calcularDiaCerradoHacienda (arriba) - a diferencia de las otras 2
+versiones, que resuelven la hacienda a partir de QUIEN LLAMA (el Supervisor logueado), esta resuelve la
+hacienda a partir de la propia Asistencia objetivo (prestamo primero, si no la de CASA del operador via
+resolverHaciendaPropia - mismo criterio que ya usa finalizarDia para haciendaIdsAInvalidar). La usan las
+ampliaciones del Panel de Supervisor (registro_actividad.controller.ts, pedido del usuario 2026-10-21): un
+ADMIN/SUPERVISOR puede seguir creando/editando/eliminando labores de un trabajador aunque su jornada ya no
+este EN_JORNADA, pero SOLO mientras el DIA no haya cerrado de verdad ("Cerrar Jornada" promete datos
+congelados - esa promesa se respeta siempre, sin excepcion ni para ADMIN).
+*/
+export const calcularDiaCerradoDeAsistencia = async (asistencia: Asistencia): Promise<boolean> => {
+    let haciendaId: number | null = asistencia.hacienda_prestamo_id ?? null;
+    if(haciendaId === null){
+        const operador = await Operador.findByPk(asistencia.operador_id, { attributes: ['supervisor_id'] });
+        haciendaId = operador ? await resolverHaciendaPropia(operador) : null;
+    }
+    if(haciendaId === null) return false;
+    return calcularDiaCerradoHacienda(asistencia.fecha, haciendaId);
+};
+
+/*
 El Supervisor agrega manualmente a un trabajador que no llego a marcar su entrada hoy (olvido el celular,
 sin senal, etc. - pedido del usuario, 2026-10-20). Crea la Asistencia EXACTAMENTE igual que si el trabajador
 hubiera marcado entrada el mismo (estado EN_JORNADA, hora_ingreso = ahora) - a proposito, para que de ahi en

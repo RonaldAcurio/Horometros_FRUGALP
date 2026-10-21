@@ -4,27 +4,52 @@ import app from '../app';
 import { sequelize } from '../config/database';
 import { Asistencia } from '../models/asistencias';
 import { Operador } from '../models/operador';
+import { Hacienda } from '../models/hacienda';
+import { CierreJornada } from '../models/cierre_jornada';
+import { generarToken } from '../services/jwt.service';
 import { limpiarBaseDeDatosTest, crearUsuarioDePrueba } from '../test-setup/helpers';
 
 /*
 Editar/Eliminar labor (pedido del usuario, 2026-10-16: corregir equipo/actividad/observacion equivocados, o
-borrar por completo una labor mal registrada). Se prueba con un ADMIN autenticado (no un operador) a proposito:
-el chequeo de permisos (puedeOperarSobreAsistencia) ya esta cubierto por el resto del sistema y no es lo que
-este feature cambia - lo que SI es nuevo (y lo que estas pruebas cubren) es: el eliminar nunca abre un hueco
-(solo la ULTIMA labor), el editar JAMAS mueve hora_inicio/hora_fin aunque se lo manden, y ninguno de los dos
-toca el catalogo de Equipo/Actividad.
+borrar por completo una labor mal registrada). El eliminar nunca abre un hueco (solo la ULTIMA labor), ninguno
+de los dos toca el catalogo de Equipo/Actividad, y mover hora_inicio/hora_fin al editar sigue siendo
+estructuralmente imposible para el propio trabajador (tipo 'operador'), se lo pida o no.
+
+Ampliacion (pedido del usuario, 2026-10-21, ver registro_actividad.controller.ts puedeForzarComoSupervisor):
+ADMIN/SUPERVISOR SI pueden, desde el Panel de Supervisor: crear/editar/eliminar labores de un trabajador aunque
+su jornada ya no siga EN_JORNADA (mientras el DIA no haya cerrado de verdad con "Cerrar Jornada"), eliminar
+saltandose el chequeo de "ultima labor" via 'forzar', y mover hora_inicio/hora_fin al editar. ASISTENTE y un
+OPERADOR sobre su propia jornada quedan afuera de las 3 cosas, aunque el primero ya tenga permiso irrestricto
+sobre estos endpoints (puedeOperarSobreAsistencia) - ver el describe de abajo.
 */
 describe('PUT/DELETE /api/registro-actividades/:id (editar/eliminar labor)', () => {
     let tokenAdmin: string;
+    let tokenSupervisor: string;
+    let tokenAsistente: string;
+    let tokenOperador: string;
     let asistenciaId: number;
     let equipoId: number;
     let actividadId: number;
+    let haciendaId: number;
+    let adminId: number;
 
     beforeEach(async () => {
         await limpiarBaseDeDatosTest();
-        await crearUsuarioDePrueba({ usuario: 'admin1', clave: 'claveprueba123', cargo: 'ADMIN' });
+        const admin = await crearUsuarioDePrueba({ usuario: 'admin1', clave: 'claveprueba123', cargo: 'ADMIN' });
+        adminId = admin.id;
         const login = await request(app).post('/api/auth/login').send({ usuario: 'admin1', clave: 'claveprueba123' });
         tokenAdmin = login.body.token;
+
+        const hacienda = await Hacienda.create({ nombre: 'Hacienda Itest' });
+        haciendaId = hacienda.id;
+
+        const supervisor = await crearUsuarioDePrueba({ usuario: 'supervisor1', clave: 'claveprueba123', cargo: 'SUPERVISOR', hacienda_id: haciendaId });
+        const loginSupervisor = await request(app).post('/api/auth/login').send({ usuario: 'supervisor1', clave: 'claveprueba123' });
+        tokenSupervisor = loginSupervisor.body.token;
+
+        await crearUsuarioDePrueba({ usuario: 'asistente1', clave: 'claveprueba123', cargo: 'ASISTENTE' });
+        const loginAsistente = await request(app).post('/api/auth/login').send({ usuario: 'asistente1', clave: 'claveprueba123' });
+        tokenAsistente = loginAsistente.body.token;
 
         const equipo = await request(app)
             .post('/api/equipos')
@@ -38,7 +63,13 @@ describe('PUT/DELETE /api/registro-actividades/:id (editar/eliminar labor)', () 
             .send({ codigo_megued: 'ACT-ITEST', description: 'Arado de prueba' });
         actividadId = actividad.body.id;
 
-        const operador = await Operador.create({ nombre_completo: 'Operador Itest', codigo_megued: 'OP-ITEST' });
+        const operador = await Operador.create({
+            nombre_completo: 'Operador Itest',
+            codigo_megued: 'OP-ITEST',
+            supervisor_id: supervisor.id,
+        });
+        tokenOperador = generarToken({ id: operador.id, tipo: 'operador', rol: 'OPERADOR', hacienda_id: haciendaId });
+
         const asistencia = await Asistencia.create({
             operador_id: operador.id,
             fecha: new Date().toISOString().slice(0, 10),
@@ -52,10 +83,10 @@ describe('PUT/DELETE /api/registro-actividades/:id (editar/eliminar labor)', () 
         await sequelize.close();
     });
 
-    const crearLabor = (horaInicio: string) =>
+    const crearLabor = (horaInicio: string, token: string = tokenAdmin) =>
         request(app)
             .post('/api/registro-actividades')
-            .set('Authorization', `Bearer ${tokenAdmin}`)
+            .set('Authorization', `Bearer ${token}`)
             .send({ asistencia_id: asistenciaId, equipo_id: equipoId, actividad_id: actividadId, hora_inicio: horaInicio });
 
     it('solo deja eliminar la ULTIMA labor de la jornada - rechaza una de en medio (no abre huecos)', async () => {
@@ -112,7 +143,7 @@ describe('PUT/DELETE /api/registro-actividades/:id (editar/eliminar labor)', () 
         expect(nueva.status).toBe(201);
     });
 
-    it('editar corrige equipo/actividad/observaciones pero JAMAS mueve hora_inicio/hora_fin, aunque se lo manden', async () => {
+    it('editar corrige equipo/actividad/observaciones sin tocar hora_inicio/hora_fin si no se piden', async () => {
         const creada = await crearLabor('2026-10-16T07:00:00.000Z');
         const horaOriginal = creada.body.hora_inicio;
 
@@ -127,9 +158,6 @@ describe('PUT/DELETE /api/registro-actividades/:id (editar/eliminar labor)', () 
             .send({
                 equipo_id: equipo2.body.id,
                 observaciones: 'Corregido via editar',
-                // Intento deliberado de mover la hora - el controller ni siquiera los lee.
-                hora_inicio: '2099-01-01T00:00:00.000Z',
-                hora_fin: '2099-01-01T01:00:00.000Z',
             });
 
         expect(editada.status).toBe(200);
@@ -139,19 +167,151 @@ describe('PUT/DELETE /api/registro-actividades/:id (editar/eliminar labor)', () 
         expect(editada.body.registro.hora_fin).toBeNull();
     });
 
-    it('rechaza editar/eliminar una labor de una jornada que ya no esta EN_JORNADA', async () => {
-        const creada = await crearLabor('2026-10-16T07:00:00.000Z');
+    it('rechaza editar/eliminar una labor de una jornada que ya no esta EN_JORNADA (operador sobre su propia jornada)', async () => {
+        const creada = await crearLabor('2026-10-16T07:00:00.000Z', tokenOperador);
         await Asistencia.update({ estado: 'FINALIZADO', hora_salida: new Date() }, { where: { id: asistenciaId } });
 
         const editar = await request(app)
             .put(`/api/registro-actividades/${creada.body.id}`)
-            .set('Authorization', `Bearer ${tokenAdmin}`)
+            .set('Authorization', `Bearer ${tokenOperador}`)
             .send({ observaciones: 'no deberia aplicar' });
         expect(editar.status).toBe(400);
 
         const eliminar = await request(app)
             .delete(`/api/registro-actividades/${creada.body.id}`)
-            .set('Authorization', `Bearer ${tokenAdmin}`);
+            .set('Authorization', `Bearer ${tokenOperador}`);
         expect(eliminar.status).toBe(400);
+    });
+
+    describe('ampliaciones del Panel de Supervisor (forzar fuera de EN_JORNADA, "forzar eliminar", editar horas)', () => {
+        it('ADMIN/SUPERVISOR pueden crear, editar y eliminar labores aunque la jornada ya no este EN_JORNADA, si el día no cerró', async () => {
+            await Asistencia.update({ estado: 'FINALIZADO', hora_salida: new Date() }, { where: { id: asistenciaId } });
+
+            const creadaAdmin = await crearLabor('2026-10-16T07:00:00.000Z', tokenAdmin);
+            expect(creadaAdmin.status).toBe(201);
+
+            const creadaSupervisor = await crearLabor('2026-10-16T08:00:00.000Z', tokenSupervisor);
+            expect(creadaSupervisor.status).toBe(201);
+
+            const editada = await request(app)
+                .put(`/api/registro-actividades/${creadaSupervisor.body.id}`)
+                .set('Authorization', `Bearer ${tokenSupervisor}`)
+                .send({ observaciones: 'corregido fuera de EN_JORNADA' });
+            expect(editada.status).toBe(200);
+
+            const eliminada = await request(app)
+                .delete(`/api/registro-actividades/${creadaSupervisor.body.id}`)
+                .set('Authorization', `Bearer ${tokenSupervisor}`);
+            expect(eliminada.status).toBe(200);
+        });
+
+        it('se rechaza el bypass de EN_JORNADA si el DIA ya cerró con "Cerrar Jornada" - ni ADMIN lo salta', async () => {
+            await Asistencia.update({ estado: 'FINALIZADO', hora_salida: new Date() }, { where: { id: asistenciaId } });
+            await CierreJornada.create({
+                hacienda_id: haciendaId,
+                fecha: new Date().toISOString().slice(0, 10),
+                cerrado_por_usuario_id: adminId,
+            });
+
+            const rechazada = await crearLabor('2026-10-16T09:00:00.000Z', tokenAdmin);
+            expect(rechazada.status).toBe(400);
+        });
+
+        it('un OPERADOR en su propia jornada no puede saltarse EN_JORNADA aunque mande forzar:true', async () => {
+            await Asistencia.update({ estado: 'FINALIZADO', hora_salida: new Date() }, { where: { id: asistenciaId } });
+
+            const creada = await crearLabor('2026-10-16T07:00:00.000Z', tokenOperador);
+            expect(creada.status).toBe(400);
+        });
+
+        it('ASISTENTE no tiene el bypass de EN_JORNADA aunque el permiso normal ya lo deje operar sobre cualquier asistencia', async () => {
+            await Asistencia.update({ estado: 'FINALIZADO', hora_salida: new Date() }, { where: { id: asistenciaId } });
+
+            const creada = await crearLabor('2026-10-16T07:00:00.000Z', tokenAsistente);
+            expect(creada.status).toBe(400);
+        });
+
+        it('un trabajador marcado OBSERVANDO queda afuera del bypass de EN_JORNADA, aunque lo pida ADMIN', async () => {
+            await Asistencia.update({ estado: 'OBSERVANDO' }, { where: { id: asistenciaId } });
+
+            const creada = await crearLabor('2026-10-16T07:00:00.000Z', tokenAdmin);
+            expect(creada.status).toBe(400);
+        });
+
+        it('"forzar" elimina una labor que no es la última, cuando lo pide ADMIN/SUPERVISOR', async () => {
+            const l1 = await crearLabor('2026-10-16T07:00:00.000Z');
+            const l2 = await crearLabor('2026-10-16T09:00:00.000Z');
+
+            const aceptada = await request(app)
+                .delete(`/api/registro-actividades/${l1.body.id}`)
+                .set('Authorization', `Bearer ${tokenAdmin}`)
+                .send({ forzar: true });
+            expect(aceptada.status).toBe(200);
+
+            const restantes = await request(app)
+                .get(`/api/registro-actividades?asistencia_id=${asistenciaId}`)
+                .set('Authorization', `Bearer ${tokenAdmin}`);
+            expect(restantes.body).toHaveLength(1);
+            expect(restantes.body[0].id).toBe(l2.body.id);
+        });
+
+        it('"forzar" nunca tiene efecto para un OPERADOR sobre su propia jornada - sigue sin poder eliminar del medio', async () => {
+            const l1 = await crearLabor('2026-10-16T07:00:00.000Z', tokenOperador);
+            await crearLabor('2026-10-16T09:00:00.000Z', tokenOperador);
+
+            const rechazada = await request(app)
+                .delete(`/api/registro-actividades/${l1.body.id}`)
+                .set('Authorization', `Bearer ${tokenOperador}`)
+                .send({ forzar: true });
+            expect(rechazada.status).toBe(400);
+        });
+
+        it('ADMIN/SUPERVISOR pueden mover hora_inicio Y hora_fin de una labor al editarla', async () => {
+            const creada = await crearLabor('2026-10-16T07:00:00.000Z');
+
+            const editada = await request(app)
+                .put(`/api/registro-actividades/${creada.body.id}`)
+                .set('Authorization', `Bearer ${tokenSupervisor}`)
+                .send({
+                    hora_inicio: '2026-10-16T06:00:00.000Z',
+                    hora_fin: '2026-10-16T08:00:00.000Z',
+                });
+
+            expect(editada.status).toBe(200);
+            expect(new Date(editada.body.registro.hora_inicio).toISOString()).toBe('2026-10-16T06:00:00.000Z');
+            expect(new Date(editada.body.registro.hora_fin).toISOString()).toBe('2026-10-16T08:00:00.000Z');
+        });
+
+        it('rechaza mover la hora si hora_fin queda antes de hora_inicio, aunque lo pida ADMIN/SUPERVISOR', async () => {
+            const creada = await crearLabor('2026-10-16T07:00:00.000Z');
+
+            const rechazada = await request(app)
+                .put(`/api/registro-actividades/${creada.body.id}`)
+                .set('Authorization', `Bearer ${tokenAdmin}`)
+                .send({
+                    hora_inicio: '2026-10-16T08:00:00.000Z',
+                    hora_fin: '2026-10-16T07:00:00.000Z',
+                });
+
+            expect(rechazada.status).toBe(400);
+        });
+
+        it('un OPERADOR editando su propia jornada sigue sin poder mover hora_inicio/hora_fin aunque las mande', async () => {
+            const creada = await crearLabor('2026-10-16T07:00:00.000Z', tokenOperador);
+            const horaOriginal = creada.body.hora_inicio;
+
+            const editada = await request(app)
+                .put(`/api/registro-actividades/${creada.body.id}`)
+                .set('Authorization', `Bearer ${tokenOperador}`)
+                .send({
+                    observaciones: 'intento de mover hora',
+                    hora_inicio: '2099-01-01T00:00:00.000Z',
+                    hora_fin: '2099-01-01T01:00:00.000Z',
+                });
+
+            expect(editada.status).toBe(200);
+            expect(new Date(editada.body.registro.hora_inicio).toISOString()).toBe(new Date(horaOriginal).toISOString());
+            expect(editada.body.registro.hora_fin).toBeNull();
+        });
     });
 });

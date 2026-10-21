@@ -258,6 +258,19 @@ lado del otro en el ancho angosto de la columna "Acción" (ver mi-jornada.html).
   background-color: rgba(122, 31, 61, 0.16);
 }
 
+/* "Forzar eliminar" (Panel de Supervisor, PanelLaboresModal, pedido del usuario 2026-10-21): color de
+advertencia propio (amarillo) para que nunca se confunda con el "Eliminar" normal (vino) - este salta el
+chequeo de "última labor" y solo tiene efecto para ADMIN/SUPERVISOR (ver eliminarRegistroActividad). */
+.btn-chip-forzar {
+  border-color: var(--amarillo-hover);
+  color: #7a5b00;
+}
+
+.btn-chip-forzar:hover:not(:disabled),
+.btn-chip-forzar:active:not(:disabled) {
+  background-color: rgba(214, 168, 0, 0.18);
+}
+
 /* FORMULARIOS E INPUTS */
 .form-group {
   margin-bottom: 0.75rem;
