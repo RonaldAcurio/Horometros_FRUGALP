@@ -313,5 +313,51 @@ describe('PUT/DELETE /api/registro-actividades/:id (editar/eliminar labor)', () 
             expect(new Date(editada.body.registro.hora_inicio).toISOString()).toBe(new Date(horaOriginal).toISOString());
             expect(editada.body.registro.hora_fin).toBeNull();
         });
+
+        /*
+        Reproduccion del bug reportado en produccion, 2026-10-21 (ver MEMORY.md/plan): un ADMIN (no un
+        SUPERVISOR autenticado directo) edita la hora de una labor de una asistencia FINALIZADA, sin
+        hacienda_prestamo_id, con el dia de la hacienda SIN cerrar. Esperado: 200, igual que ya cubre la
+        prueba de arriba con tokenSupervisor - esta prueba usa tokenAdmin a proposito para descartar que el
+        bug sea especifico del rol ADMIN vs SUPERVISOR.
+        */
+        it('[reproduccion] ADMIN puede editar la hora de una labor FINALIZADA (sin prestamo, dia abierto)', async () => {
+            await Asistencia.update({ estado: 'FINALIZADO', hora_salida: new Date() }, { where: { id: asistenciaId } });
+            const creada = await crearLabor('2026-10-16T07:00:00.000Z', tokenAdmin);
+
+            const editada = await request(app)
+                .put(`/api/registro-actividades/${creada.body.id}`)
+                .set('Authorization', `Bearer ${tokenAdmin}`)
+                .send({
+                    hora_inicio: '2026-10-16T06:00:00.000Z',
+                    hora_fin: '2026-10-16T08:00:00.000Z',
+                });
+
+            expect(editada.status).toBe(200);
+            expect(new Date(editada.body.registro.hora_inicio).toISOString()).toBe('2026-10-16T06:00:00.000Z');
+            expect(new Date(editada.body.registro.hora_fin).toISOString()).toBe('2026-10-16T08:00:00.000Z');
+        });
+
+        /*
+        Reproduccion del segundo sintoma reportado: ADMIN editando la hora de una labor de una asistencia que
+        SIGUE EN_JORNADA (no finalizada) - el reporte decia que el guardado "funciona" (200, otros campos
+        cambian) pero la hora editada nunca se refleja. Si esta prueba falla en la aserción de la hora (pero
+        pasa en el status 200), confirma exactamente ese sintoma.
+        */
+        it('[reproduccion] ADMIN puede editar la hora de una labor EN_JORNADA (sin finalizar, sin prestamo)', async () => {
+            const creada = await crearLabor('2026-10-16T07:00:00.000Z', tokenAdmin);
+
+            const editada = await request(app)
+                .put(`/api/registro-actividades/${creada.body.id}`)
+                .set('Authorization', `Bearer ${tokenAdmin}`)
+                .send({
+                    hora_inicio: '2026-10-16T06:00:00.000Z',
+                    hora_fin: '2026-10-16T08:00:00.000Z',
+                });
+
+            expect(editada.status).toBe(200);
+            expect(new Date(editada.body.registro.hora_inicio).toISOString()).toBe('2026-10-16T06:00:00.000Z');
+            expect(new Date(editada.body.registro.hora_fin).toISOString()).toBe('2026-10-16T08:00:00.000Z');
+        });
     });
 });
