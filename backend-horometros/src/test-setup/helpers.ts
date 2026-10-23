@@ -9,6 +9,7 @@ import { RegistroActividad } from '../models/registro_actividad';
 import { Asistencia } from '../models/asistencias';
 import { Equipo } from '../models/equipo';
 import { Actividad } from '../models/actividad';
+import { TokenHacienda } from '../models/token_hacienda';
 
 /*
 Helpers compartidos por las pruebas de integracion (ver CLAUDE.md, "Pruebas de integracion"). Todo esto corre
@@ -29,6 +30,10 @@ export const limpiarBaseDeDatosTest = async (): Promise<void> => {
     await Asistencia.destroy({ where: {}, force: true });
     await RegistroAuditoria.destroy({ where: {}, force: true });
     await CierreJornada.destroy({ where: {}, force: true });
+    // TokenHacienda referencia tanto a Hacienda como a Usuario (generado_por_usuario_id) - tiene que ir ANTES
+    // que los dos o Postgres rechaza esos DELETE por la FK (mismo patron que el resto de esta funcion; bug real
+    // encontrado al agregar specs e2e que generan un Token de Hacienda).
+    await TokenHacienda.destroy({ where: {}, force: true });
     await Operador.destroy({ where: {}, force: true });
     await Equipo.destroy({ where: {}, force: true });
     await Actividad.destroy({ where: {}, force: true });
