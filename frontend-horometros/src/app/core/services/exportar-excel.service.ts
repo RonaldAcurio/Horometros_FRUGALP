@@ -24,17 +24,92 @@ export class ExportarExcelService {
     nombreHacienda: string,
     nombreSupervisor: string,
   ): Promise<void> {
-    // 'fecha' es un string YYYY-MM-DD puro (sin hora) - se interpreta en UTC a proposito (new Date() de un
-    // string asi SIEMPRE cae en UTC medianoche) para que el dia de la semana no cambie segun la zona horaria
-    // de quien genera el reporte.
+    const wb = new Workbook();
+    const idImagen = await this.cargarLogo(wb);
+    this.construirHojaHacienda(wb, 'Hoja1', idImagen, bloques, fecha, nombreSupervisor);
+
+    const [anio, mes, dia] = fecha.split('-');
+    const fechaDDMMYYYY = `${dia}${mes}${anio}`;
+    const buffer = await wb.xlsx.writeBuffer();
+    const nombreArchivo = `TALLER ${nombreHacienda.toUpperCase()} ${fechaDDMMYYYY}.xlsx`;
+    await this.descargarArchivo(buffer as ArrayBuffer, nombreArchivo);
+  }
+
+  /*
+  Exportar TODAS las haciendas en un solo archivo (pedido del usuario, 2026-10-23): ADMIN/ASISTENTE ya no
+  necesitan elegir una Hacienda/Supervisor puntual para exportar (el backend ya devuelve datos de todas las
+  haciendas sin filtro, ver obtenerHistorial/asistencia.controller.ts) - un solo .xlsx con una hoja por
+  hacienda, en ORDEN ALFABETICO (mismo criterio que ya ordena A-Z a los trabajadores dentro de cada hoja, ver
+  construirHojaHacienda). El logo se carga UNA sola vez para todo el workbook y se reusa en cada hoja (ExcelJS
+  registra la imagen a nivel de Workbook, no hace falta volver a pedirla por hacienda).
+  */
+  async generarYDescargarTodasLasHaciendas(
+    porHacienda: { nombreHacienda: string; nombreSupervisor: string; bloques: { operador: Operador; registros: RegistroActividad[] }[] }[],
+    fecha: string,
+  ): Promise<void> {
+    const wb = new Workbook();
+    const idImagen = await this.cargarLogo(wb);
+
+    const ordenadoPorHacienda = [...porHacienda].sort((a, b) =>
+      a.nombreHacienda.localeCompare(b.nombreHacienda, 'es', { sensitivity: 'base' })
+    );
+
+    const nombresDeHojaUsados = new Set<string>();
+    for (const grupo of ordenadoPorHacienda) {
+      const nombreHoja = this.nombreDeHojaUnico(grupo.nombreHacienda, nombresDeHojaUsados);
+      this.construirHojaHacienda(wb, nombreHoja, idImagen, grupo.bloques, fecha, grupo.nombreSupervisor);
+    }
+
+    const [anio, mes, dia] = fecha.split('-');
+    const fechaDDMMYYYY = `${dia}${mes}${anio}`;
+    const buffer = await wb.xlsx.writeBuffer();
+    await this.descargarArchivo(buffer as ArrayBuffer, `TALLER TODOS ${fechaDDMMYYYY}.xlsx`);
+  }
+
+  private async cargarLogo(wb: Workbook): Promise<number | undefined> {
+    try {
+      const respLogo = await fetch('/logo-excel.png');
+      const bufferLogo = await respLogo.arrayBuffer();
+      const base64Logo = btoa(new Uint8Array(bufferLogo).reduce((s, b) => s + String.fromCharCode(b), ''));
+      return wb.addImage({ base64: base64Logo, extension: 'png' });
+    } catch {
+      // Si el logo no carga (ej. sin red), el Excel se genera igual, solo sin la imagen.
+      return undefined;
+    }
+  }
+
+  // Excel exige nombres de hoja de maximo 31 caracteres, sin \ / * ? : [ ], y unicos dentro del workbook -
+  // nombreHacienda puede no cumplir ninguna de las 3 cosas, asi que se sanea y se desambigua aca.
+  private nombreDeHojaUnico(nombreHacienda: string, usados: Set<string>): string {
+    const base = nombreHacienda.replace(/[\\/*?:[\]]/g, ' ').trim().slice(0, 31) || 'Hacienda';
+    let nombre = base;
+    let sufijo = 2;
+    while (usados.has(nombre.toLowerCase())) {
+      const sufijoTexto = ` (${sufijo})`;
+      nombre = `${base.slice(0, 31 - sufijoTexto.length)}${sufijoTexto}`;
+      sufijo++;
+    }
+    usados.add(nombre.toLowerCase());
+    return nombre;
+  }
+
+  // 'fecha' es un string YYYY-MM-DD puro (sin hora) - se interpreta en UTC a proposito (new Date() de un
+  // string asi SIEMPRE cae en UTC medianoche) para que el dia de la semana no cambie segun la zona horaria
+  // de quien genera el reporte. Arma UNA hoja (de una hacienda puntual) dentro del Workbook ya creado por el
+  // llamador - no escribe ni descarga nada, eso lo hacen generarYDescargar/generarYDescargarTodasLasHaciendas.
+  private construirHojaHacienda(
+    wb: Workbook,
+    nombreHoja: string,
+    idImagen: number | undefined,
+    bloques: { operador: Operador; registros: RegistroActividad[] }[],
+    fecha: string,
+    nombreSupervisor: string,
+  ): void {
     const fechaDate = new Date(`${fecha}T00:00:00Z`);
     const diaSemana = this.DIAS_SEMANA_ES[fechaDate.getUTCDay()];
     const semana = this.numeroSemanaISO(fechaDate);
-    const [anio, mes, dia] = fecha.split('-');
-    const fechaDDMMYYYY = `${dia}${mes}${anio}`;
 
-    const wb = new Workbook();
-    const ws = wb.addWorksheet('Hoja1', { views: [{ showGridLines: false }] });
+    const ws = wb.addWorksheet(nombreHoja, { views: [{ showGridLines: false }] });
 
     // Anchos de columna (los que trae medidos la plantilla real; el resto se deja en un ancho razonable).
     const anchos = [6, 12, 8, 27.66, 10, 11.5, 9, 12.33, 12, 23.83, 16.33, 14.33, 12, 10, 32];
@@ -70,15 +145,9 @@ export class ExportarExcelService {
     del ancho de A:D (~375px via los anchos de columna de arriba) sin invadir la columna E, donde empieza
     "RESPONSABLE:".
     */
-    try {
-      const respLogo = await fetch('/logo-excel.png');
-      const bufferLogo = await respLogo.arrayBuffer();
-      const base64Logo = btoa(new Uint8Array(bufferLogo).reduce((s, b) => s + String.fromCharCode(b), ''));
-      const idImagen = wb.addImage({ base64: base64Logo, extension: 'png' });
+    if (idImagen !== undefined) {
       ws.mergeCells('A1:D6');
       ws.addImage(idImagen, { tl: { col: 0, row: 0 }, ext: { width: 370, height: 100 } });
-    } catch {
-      // Si el logo no carga (ej. sin red), el Excel se genera igual, solo sin la imagen.
     }
 
     // Titulo
@@ -180,10 +249,6 @@ export class ExportarExcelService {
     ws.mergeCells(`M${filaFirma1}:O${filaFirma1}`); celda(`M${filaFirma1}`, 'FIRMA DE TTHH', { bold: true });
     ws.mergeCells(`A${filaFirma2}:D${filaFirma2}`); celda(`A${filaFirma2}`, 'NOMBRE:');
     ws.mergeCells(`M${filaFirma2}:O${filaFirma2}`); celda(`M${filaFirma2}`, 'DIGITADO POR:');
-
-    const buffer = await wb.xlsx.writeBuffer();
-    const nombreArchivo = `TALLER ${nombreHacienda.toUpperCase()} ${fechaDDMMYYYY}.xlsx`;
-    await this.descargarArchivo(buffer as ArrayBuffer, nombreArchivo);
   }
 
   /*
