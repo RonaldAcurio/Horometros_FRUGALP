@@ -1,3 +1,19 @@
+/* Resumen de horas antes de cerrar jornada (pedido del usuario, 2026-10-23) - H1 grande y en negrita a
+propósito, para que el total sea lo primero y más legible que vea el trabajador antes de decidir. */
+.resumen-horas-trabajadas {
+  font-size: 2.5rem;
+  font-weight: 800;
+  text-align: center;
+  color: var(--verde);
+  margin: 1rem 0 1.5rem 0;
+}
+
+.resumen-horas-acciones {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
 .jornada-container {
   display: flex;
   flex-direction: column;

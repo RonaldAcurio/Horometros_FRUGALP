@@ -121,6 +121,27 @@
     </div>
   }
 
+  <!-- Resumen de horas antes de cerrar jornada (pedido del usuario, 2026-10-23): se muestra ANTES de disparar
+  cualquiera de los 3 caminos de salida (código/QR/préstamo) - "Editar mi jornada" solo lo cierra y lo regresa
+  al Panel de Actividades, sin tocar nada más. -->
+  @if (confirmandoSalida) {
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <h3 class="modal-title">Resumen de tu jornada</h3>
+        <p>Hoy registraste un total de:</p>
+        <h1 class="resumen-horas-trabajadas">{{ horasTrabajadasHoyTexto }}</h1>
+        <div class="resumen-horas-acciones">
+          <button type="button" class="btn btn-primary w-full" (click)="confirmarCierreJornada()">
+            ✅ Está de acuerdo, proceder a cerrar la jornada
+          </button>
+          <button type="button" class="btn btn-secondary w-full" (click)="cancelarCierreJornada()">
+            ✏️ Editar mi jornada
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
   <!-- FASE: PANEL DE ACTIVIDADES (ya escaneado, jornada abierta) -->
   @if (fase === 'actividades') {
     <div class="panel-actividades">

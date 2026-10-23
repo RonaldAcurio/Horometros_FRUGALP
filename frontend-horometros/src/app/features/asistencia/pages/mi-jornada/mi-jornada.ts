@@ -12,6 +12,7 @@ import { ConfirmacionService } from '../../../../core/services/confirmacion.serv
 import { OfflineSyncService } from '../../../../core/services/offline-sync.service';
 import { Equipo, Actividad, RegistroActividad } from '../../../../core/models/asistencia.model';
 import { OperacionCrearLabor, OperacionEditarLabor } from '../../../../core/models/offline.model';
+import { formatearHorasTrabajadas } from '../../../../core/utils/horas-trabajadas.util';
 
 type FaseJornada = 'cargando' | 'codigo' | 'qr' | 'actividades' | 'terminado';
 
@@ -901,7 +902,43 @@ export class MiJornada implements OnInit, OnDestroy {
   }
 
   /*
-  Termina la jornada desde el Panel de Actividades - el camino depende de cómo entró el trabajador:
+  Resumen de horas antes de cerrar jornada (pedido del usuario, 2026-10-23): al tocar "Marcar salida" ya no se
+  procede directo - primero se muestra cuántas horas trabajó hoy (suma de sus labores YA CERRADAS, mismo
+  criterio que ya usa el backend para "Horas Trabajadas" en obtenerHistorial - ver asistencia.controller.ts,
+  nunca el rango entrada→salida) para que confirme o, si ve que algo quedó mal, vuelva a editar su jornada
+  antes de cerrarla. Se calcula 100% en el celular, sin pedir nada al servidor - funciona igual sin señal,
+  porque `this.registros` ya incluye lo creado/editado offline (ver recalcularVistaRegistros).
+  */
+  confirmandoSalida = false;
+  horasTrabajadasHoyTexto = '';
+
+  private calcularHorasTrabajadasHoy(): number {
+    const milisegundos = this.registros.reduce((acumulado, reg) => {
+      if (!reg.hora_fin) return acumulado;
+      return acumulado + (new Date(reg.hora_fin).getTime() - new Date(reg.hora_inicio).getTime());
+    }, 0);
+    return Math.round((milisegundos / (1000 * 60 * 60)) * 100) / 100;
+  }
+
+  /*
+  Termina la jornada desde el Panel de Actividades - antes de arrancar cualquiera de los 3 caminos (ver
+  confirmarCierreJornada), primero muestra el resumen de horas de arriba. "Editar mi jornada" solo cierra este
+  paso (cancelarCierreJornada) y lo regresa al Panel tal cual estaba - no dispara ninguna otra lógica.
+  */
+  async marcarSalida(): Promise<void> {
+    if (this.bloquearSiHayLaboresAbiertas()) return;
+    this.horasTrabajadasHoyTexto = formatearHorasTrabajadas(this.calcularHorasTrabajadasHoy());
+    this.confirmandoSalida = true;
+    this.cdr.detectChanges();
+  }
+
+  cancelarCierreJornada(): void {
+    this.confirmandoSalida = false;
+    this.cdr.detectChanges();
+  }
+
+  /*
+  El camino depende de cómo entró el trabajador:
   - Si la jornada de hoy es de PRÉSTAMO (esPrestamoHoy, entró vía "¿Hoy trabajas en otra hacienda?" más abajo),
     SIEMPRE vuelve a mostrar el QR, aunque su hacienda propia use código - tiene que salir por donde entró (que
     lo escaneen de nuevo en la hacienda prestada), nunca por el código de su hacienda propia, que ni siquiera
@@ -912,8 +949,8 @@ export class MiJornada implements OnInit, OnDestroy {
   - Si no requiere código (QR normal, sin préstamo): vuelve a mostrar el QR flotante de siempre.
   Las actividades se derivan solas de lo ya cargado en el Panel, sin checklist, en los 3 casos.
   */
-  async marcarSalida(): Promise<void> {
-    if (this.bloquearSiHayLaboresAbiertas()) return;
+  async confirmarCierreJornada(): Promise<void> {
+    this.confirmandoSalida = false;
     if (this.requiereCodigo && !this.esPrestamoHoy) {
       this.fase = 'codigo';
       this.errorCodigo = '';

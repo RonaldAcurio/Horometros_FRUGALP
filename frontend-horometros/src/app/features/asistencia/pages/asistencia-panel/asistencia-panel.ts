@@ -1,5 +1,5 @@
 import { Component, ChangeDetectorRef, OnInit, ViewChild, signal } from '@angular/core';
-import { Observable, forkJoin, map } from 'rxjs';
+import { Observable, forkJoin, map, of, switchMap } from 'rxjs';
 import { Operador, Asistencia, RegistroActividad, Equipo, Actividad } from '../../../../core/models/asistencia.model';
 import * as QRCode from 'qrcode';
 import { Capacitor } from '@capacitor/core';
@@ -786,19 +786,22 @@ export class AsistenciaPanel implements OnInit{
   /*
   ==================== "Exportar a Excel" (Historial) ====================
   Reporte SIEMPRE de un solo dia (asi lo manejan en papel) calcando el diseno real "REGISTRO DE LABORES
-  DIARIAS" que ya usan - plantilla provista por el usuario, 2026-10-01. Requiere Fecha+Hacienda+Supervisor
-  puntuales (ver puedeExportarExcel): sin eso no habria un unico RESPONSABLE para el encabezado, ni forma de
-  evitar mezclar trabajadores de haciendas distintas en la misma hoja.
+  DIARIAS" que ya usan - plantilla provista por el usuario, 2026-10-01. Requiere Fecha puntual (ver
+  puedeExportarExcel). Hacienda/Supervisor son opcionales (pedido del usuario, 2026-10-23): si se dejan en
+  "Todos"/"Todas", se exporta un solo archivo con una hoja por cada hacienda que tenga datos ese dia (ver
+  exportarExcelTodasLasHaciendas) - el backend (obtenerHistorial) ya devuelve datos de TODAS las haciendas sin
+  filtro, asi que esto no abre ningun acceso nuevo, solo deja de forzar pedirlo de a una.
   */
   get puedeExportarExcel(): boolean {
-    return !!this.fechaInicioFiltro
-      && this.fechaInicioFiltro === this.fechaFinFiltro
-      && this.haciendaIdFiltro !== null
-      && this.supervisorIdFiltro !== null;
+    return !!this.fechaInicioFiltro && this.fechaInicioFiltro === this.fechaFinFiltro;
   }
 
   exportarExcelDiario(): void {
     if (!this.puedeExportarExcel || this.exportandoExcel) return;
+    if (this.haciendaIdFiltro === null || this.supervisorIdFiltro === null) {
+      this.exportarExcelTodasLasHaciendas();
+      return;
+    }
     const fecha = this.fechaInicioFiltro;
     const hacienda = this.haciendas.find((h) => h.id === this.haciendaIdFiltro);
     const supervisor = this.supervisores.find((s) => s.id === this.supervisorIdFiltro);
@@ -840,6 +843,89 @@ export class AsistenciaPanel implements OnInit{
         forkJoin(peticiones).subscribe({
           next: (bloques) => {
             this.exportarExcelService.generarYDescargar(bloques, fecha, hacienda.nombre, supervisor.nombre_completo)
+              .catch((err) => {
+                console.error('Error al generar el Excel:', err);
+                this.notificacionService.error('No se pudo generar el archivo Excel. Intenta de nuevo.');
+              })
+              .finally(() => {
+                this.exportandoExcel = false;
+                this.cdr.detectChanges();
+              });
+          },
+          error: (err) => {
+            this.exportandoExcel = false;
+            this.notificacionService.error(err.error?.message || 'Error al generar el Excel.');
+            this.cdr.detectChanges();
+          },
+        });
+      },
+      error: (err) => {
+        this.exportandoExcel = false;
+        this.notificacionService.error(err.error?.message || 'Error al generar el Excel.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  // Pide TODAS las paginas del Historial de ese dia (sin filtrar hacienda/supervisor) - obtenerHistorial pagina
+  // de a 100, y con todas las haciendas juntas facilmente se pasa de esa primera pagina.
+  private obtenerHistorialDelDiaCompleto(fecha: string): Observable<Asistencia[]> {
+    return this.asistenciaService.obtenerHistorial(fecha, fecha, 1, 100).pipe(
+      switchMap((primera) => {
+        if (primera.totalPaginas <= 1) return of(primera.data);
+        const restantes = Array.from({ length: primera.totalPaginas - 1 }, (_, i) =>
+          this.asistenciaService.obtenerHistorial(fecha, fecha, i + 2, 100)
+        );
+        return forkJoin(restantes).pipe(
+          map((paginas) => paginas.reduce((acc, p) => acc.concat(p.data), primera.data))
+        );
+      })
+    );
+  }
+
+  private exportarExcelTodasLasHaciendas(): void {
+    const fecha = this.fechaInicioFiltro;
+    this.exportandoExcel = true;
+    this.cdr.detectChanges();
+
+    this.obtenerHistorialDelDiaCompleto(fecha).subscribe({
+      next: (data) => {
+        // Mismo criterio de operadoresUnicos()/OBSERVANDO de arriba, pero agrupando por hacienda
+        // (operador.supervisor.hacienda_id - ver "Solo viene en obtenerHistorial" en asistencia.model.ts).
+        const operadoresPorHacienda = new Map<number, Map<number, Operador>>();
+        for (const reg of data) {
+          const haciendaId = reg.operador?.supervisor?.hacienda_id;
+          const nombreHacienda = reg.operador?.supervisor?.hacienda?.nombre;
+          if (!reg.operador || reg.estado === 'OBSERVANDO' || haciendaId == null || !nombreHacienda) continue;
+          if (!operadoresPorHacienda.has(haciendaId)) operadoresPorHacienda.set(haciendaId, new Map());
+          const operadores = operadoresPorHacienda.get(haciendaId)!;
+          if (!operadores.has(reg.operador_id)) operadores.set(reg.operador_id, reg.operador);
+        }
+        if (operadoresPorHacienda.size === 0) {
+          this.exportandoExcel = false;
+          this.notificacionService.error('No hay trabajadores registrados ese día.');
+          this.cdr.detectChanges();
+          return;
+        }
+
+        const todosLosOperadores = Array.from(operadoresPorHacienda.values()).flatMap((m) => Array.from(m.values()));
+        const peticiones = todosLosOperadores.map((op) =>
+          this.registroActividadService.obtenerPorOperador(op.id, fecha, fecha).pipe(
+            map((registros) => ({ operador: op, registros }))
+          )
+        );
+        forkJoin(peticiones).subscribe({
+          next: (bloques) => {
+            const porHacienda = Array.from(operadoresPorHacienda.entries()).map(([haciendaId, operadores]) => {
+              const idsDeEstaHacienda = new Set(operadores.keys());
+              return {
+                nombreHacienda: this.haciendas.find((h) => h.id === haciendaId)?.nombre ?? '',
+                nombreSupervisor: this.supervisores.find((s) => s.hacienda_id === haciendaId)?.nombre_completo ?? '',
+                bloques: bloques.filter((b) => idsDeEstaHacienda.has(b.operador.id)),
+              };
+            });
+
+            this.exportarExcelService.generarYDescargarTodasLasHaciendas(porHacienda, fecha)
               .catch((err) => {
                 console.error('Error al generar el Excel:', err);
                 this.notificacionService.error('No se pudo generar el archivo Excel. Intenta de nuevo.');
