@@ -68,8 +68,8 @@ describe('AsistenciaPanel', () => {
       id: 2, codigo_megued: 'OP-2', nombre_completo: 'Trabajador Zapote',
       supervisor: { hacienda_id: 20, hacienda: { nombre: 'Zapote' } },
     };
-    // Marcado OBSERVANDO (el Supervisor dijo "no vino") - el Excel es el reporte OFICIAL de horas
-    // trabajadas, así que debe quedar afuera, igual que en el camino de una sola hacienda.
+    // Marcado OBSERVANDO (el Supervisor dijo "no vino") - YA debe aparecer en el Excel, marcado como
+    // ausente, igual que en el camino de una sola hacienda (pedido del usuario, 2026-10-27).
     const operadorObservando: Operador = {
       id: 3, codigo_megued: 'OP-3', nombre_completo: 'No Vino',
       supervisor: { hacienda_id: 10, hacienda: { nombre: 'Andes' } },
@@ -93,7 +93,7 @@ describe('AsistenciaPanel', () => {
       ];
     });
 
-    it('agrupa por hacienda, descarta OBSERVANDO, y llama a generarYDescargarTodasLasHaciendas', async () => {
+    it('agrupa por hacienda, incluye también a los marcados OBSERVANDO, y llama a generarYDescargarTodasLasHaciendas', async () => {
       const generarSpy = vi.spyOn(exportarExcelService, 'generarYDescargarTodasLasHaciendas').mockResolvedValue(undefined);
 
       component.exportarExcelDiario();
@@ -108,6 +108,7 @@ describe('AsistenciaPanel', () => {
 
       httpMock.expectOne((r) => r.urlWithParams.includes('por-operador') && r.urlWithParams.includes('operador_id=1')).flush([]);
       httpMock.expectOne((r) => r.urlWithParams.includes('por-operador') && r.urlWithParams.includes('operador_id=2')).flush([]);
+      httpMock.expectOne((r) => r.urlWithParams.includes('por-operador') && r.urlWithParams.includes('operador_id=3')).flush([]);
 
       await fixture.whenStable();
 
@@ -118,7 +119,7 @@ describe('AsistenciaPanel', () => {
 
       const grupoAndes = porHacienda.find((g) => g.nombreHacienda === 'Andes');
       expect(grupoAndes?.nombreSupervisor).toBe('Sup Andes');
-      expect(grupoAndes?.bloques.map((b) => b.operador.id)).toEqual([1]); // operadorObservando no entra.
+      expect(grupoAndes?.bloques.map((b) => b.operador.id)).toEqual([1, 3]); // operadorObservando SÍ entra.
 
       const grupoZapote = porHacienda.find((g) => g.nombreHacienda === 'Zapote');
       expect(grupoZapote?.nombreSupervisor).toBe('Sup Zapote');

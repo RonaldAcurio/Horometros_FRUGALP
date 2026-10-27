@@ -135,6 +135,70 @@ describe('POST /api/asistencia/agregar-manual', () => {
 
         expect(res.status).toBe(404);
     });
+
+    /*
+    "+ Agregar Usuario" en fechas pasadas (pedido del usuario, 2026-10-27): el Supervisor tambien necesita
+    poder agregar a un trabajador que falto marcar un dia ANTERIOR, no solo hoy, mientras esa hacienda no haya
+    cerrado ya esa jornada - y la hora de ingreso para un dia pasado la escribe el propio Supervisor a mano
+    (no se inventa ninguna hora).
+    */
+    it('agrega a una fecha anterior con hora_ingreso manual - queda EN_JORNADA con esa fecha y esa hora exactas', async () => {
+        const res = await request(app)
+            .post('/api/asistencia/agregar-manual')
+            .set('Authorization', `Bearer ${tokenSupervisor}`)
+            .send({ operador_id: operadorPropioId, fecha: '2026-10-20', hora_ingreso: '2026-10-20T13:30:00.000Z' });
+
+        expect(res.status).toBe(201);
+        expect(res.body.asistencia.fecha).toBe('2026-10-20');
+        expect(res.body.asistencia.estado).toBe('EN_JORNADA');
+        expect(new Date(res.body.asistencia.hora_ingreso).toISOString()).toBe('2026-10-20T13:30:00.000Z');
+        expect(res.body.message).toContain('2026-10-20');
+    });
+
+    it('rechaza una fecha futura', async () => {
+        const manana = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const res = await request(app)
+            .post('/api/asistencia/agregar-manual')
+            .set('Authorization', `Bearer ${tokenSupervisor}`)
+            .send({ operador_id: operadorPropioId, fecha: manana });
+
+        expect(res.status).toBe(400);
+    });
+
+    it('rechaza hora_ingreso invalida', async () => {
+        const res = await request(app)
+            .post('/api/asistencia/agregar-manual')
+            .set('Authorization', `Bearer ${tokenSupervisor}`)
+            .send({ operador_id: operadorPropioId, fecha: '2026-10-20', hora_ingreso: 'no-es-una-fecha' });
+
+        expect(res.status).toBe(400);
+    });
+
+    it('rechaza una fecha anterior si esa hacienda YA cerro esa jornada puntual (no solo la de hoy)', async () => {
+        await CierreJornada.create({
+            hacienda_id: haciendaId,
+            fecha: '2026-10-20',
+            cerrado_por_usuario_id: supervisorId,
+        });
+
+        const res = await request(app)
+            .post('/api/asistencia/agregar-manual')
+            .set('Authorization', `Bearer ${tokenSupervisor}`)
+            .send({ operador_id: operadorPropioId, fecha: '2026-10-20', hora_ingreso: '2026-10-20T13:00:00.000Z' });
+
+        expect(res.status).toBe(403);
+    });
+
+    it('sin fecha ni hora_ingreso sigue agregando a HOY con la hora del clic, como antes', async () => {
+        const res = await request(app)
+            .post('/api/asistencia/agregar-manual')
+            .set('Authorization', `Bearer ${tokenSupervisor}`)
+            .send({ operador_id: operadorPropioId });
+
+        expect(res.status).toBe(201);
+        expect(res.body.asistencia.fecha).toBe(obtenerFechaLocalEcuador());
+        expect(res.body.message).toBe('Trabajador agregado a la lista de hoy.');
+    });
 });
 
 describe('GET /api/asistencia/operadores (acotado para SUPERVISOR, opcional para ADMIN)', () => {

@@ -228,6 +228,44 @@ export class SupervisorPanel implements OnInit {
         this.cdr.detectChanges();
       },
     });
+    // Roster completo (pedido del usuario, 2026-10-27): aparte, siempre que se refresca la asistencia del
+    // día, se refresca también la lista de quién de la hacienda TODAVÍA no tiene ninguna asistencia ese día -
+    // ver cargarTrabajadoresSinMarcar.
+    this.cargarTrabajadoresSinMarcar();
+  }
+
+  // --- Roster completo: trabajadores que aún no tienen ninguna Asistencia este día (pedido del usuario,
+  // 2026-10-27) ---
+  trabajadoresSinMarcar: Operador[] = [];
+  cargandoRoster = false;
+
+  /*
+  El Panel de Hoy (tabla paginada de arriba) solo muestra a quien YA tiene Asistencia ese día - los
+  trabajadores piden ver SIEMPRE la lista completa de la hacienda, para que ningún reporte deje a nadie
+  afuera. Se arma aparte (no se mezcla con la tabla paginada de asistencias reales, que sigue intacta): el
+  roster completo de la hacienda (obtenerOperadoresCompleto, sin paginar) menos quien ya tiene asistencia ese
+  día (hasta 100, el mismo tope que ya usa el resto de la app para listados de un día - de sobra para la
+  cuadrilla de una sola hacienda). Un trabajador de esta lista entra a la tabla de arriba en cuanto se le
+  agrega una Asistencia real (ver onOperadorAgregado/abrirMarcarAusente) - deja de aparecer aquí solo.
+  */
+  private cargarTrabajadoresSinMarcar(): void {
+    this.cargandoRoster = true;
+    const supervisorId = this.supervisorIdFiltro || undefined;
+    forkJoin({
+      roster: this.asistenciaService.obtenerOperadoresCompleto(supervisorId),
+      asistenciasDelDia: this.asistenciaService.obtenerAsistenciasHoy(this.fechaSeleccionada || undefined, 1, 100, supervisorId),
+    }).subscribe({
+      next: ({ roster, asistenciasDelDia }) => {
+        const idsConAsistencia = new Set(asistenciasDelDia.data.map((a) => a.operador_id));
+        this.trabajadoresSinMarcar = roster.filter((op) => !idsConAsistencia.has(op.id));
+        this.cargandoRoster = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.cargandoRoster = false;
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   onCambioFecha():void{
@@ -426,9 +464,44 @@ export class SupervisorPanel implements OnInit {
     return this.esAdmin ? this.supervisorIdFiltro !== null : true;
   }
 
+  // Marca si el modal "Agregar Usuario" se abrió desde el flujo de "marcar ausente" del roster completo
+  // (ver abrirMarcarAusente más abajo) - decide qué hacer en onOperadorAgregado() cuando se confirma.
+  private marcandoAusenteDesdeRoster = false;
+
   abrirAgregarUsuario(): void {
     if (!this.puedeAgregarUsuario) return;
-    this.agregarUsuarioModal.abrir(this.esAdmin ? this.supervisorIdFiltro : undefined);
+    this.marcandoAusenteDesdeRoster = false;
+    this.agregarUsuarioModal.abrir({
+      supervisorId: this.esAdmin ? this.supervisorIdFiltro : undefined,
+      fecha: this.fechaSeleccionada || undefined,
+    });
+  }
+
+  // Botón X de una fila del roster completo (alguien que nunca marcó ese día, pedido del usuario, 2026-10-27):
+  // dispara el mismo modal "Agregar Usuario", ya con este operador fijo (sin buscarlo) y pidiendo la hora de
+  // ingreso a mano - ver onOperadorAgregado, que al terminar abre el PanelLaboresModal automáticamente.
+  abrirMarcarAusente(op: Operador): void {
+    this.marcandoAusenteDesdeRoster = true;
+    this.agregarUsuarioModal.abrir({
+      supervisorId: this.esAdmin ? this.supervisorIdFiltro : undefined,
+      fecha: this.fechaSeleccionada || undefined,
+      operadorFijo: op,
+    });
+  }
+
+  /*
+  Se completó "Agregar Usuario" (pedido del usuario, 2026-10-27): si vino del flujo normal del botón "+",
+  solo refresca la tabla, como siempre. Si vino de tocar X sobre alguien del roster completo que nunca marcó
+  (abrirMarcarAusente), además abre de una vez el PanelLaboresModal sobre la Asistencia recién creada, para
+  que el Supervisor le agregue las actividades - la X real (OBSERVANDO) se marca después, una vez agregadas,
+  porque el backend ya no deja agregar labores a una Asistencia OBSERVANDO (ver puedeForzarEnEstaAsistencia).
+  */
+  onOperadorAgregado(asistencia: Asistencia): void {
+    this.cargarAsistencias();
+    if (this.marcandoAusenteDesdeRoster) {
+      this.marcandoAusenteDesdeRoster = false;
+      this.panelLaboresModal.abrir(asistencia);
+    }
   }
 
   // Botón ➕ a la izquierda de cada fila (pedido del usuario, 2026-10-20): abre el Panel de Actividades de
@@ -493,11 +566,12 @@ export class SupervisorPanel implements OnInit {
     const fecha = this.fechaSeleccionada || this.asistenciasHoy[0]?.fecha;
     if (!fecha) return;
 
-    // Un dia OBSERVANDO (la X del Supervisor, "no vino") no debe imprimirse como si se hubiera trabajado -
-    // mismo motivo que exportarExcel mas abajo (pedido del usuario, 2026-10-16).
+    // Un dia OBSERVANDO (la X del Supervisor, "no vino") YA aparece en el reporte, igual que cualquier otro
+    // (pedido del usuario, 2026-10-27, reemplaza la exclusion que tenia esto desde el 2026-10-16) - mismo
+    // criterio que exportarExcel mas abajo.
     const operadoresUnicos = new Map<number, Operador>();
     for (const asis of this.asistenciasHoy) {
-      if (asis.operador && asis.estado !== 'OBSERVANDO' && !operadoresUnicos.has(asis.operador_id)) {
+      if (asis.operador && !operadoresUnicos.has(asis.operador_id)) {
         operadoresUnicos.set(asis.operador_id, asis.operador);
       }
     }
@@ -559,11 +633,11 @@ export class SupervisorPanel implements OnInit {
       return;
     }
 
-    // Mismo motivo que imprimirGeneral: un operador marcado OBSERVANDO (X) no debe aparecer en el Excel
-    // oficial como si hubiera trabajado (pedido del usuario, 2026-10-16).
+    // Mismo motivo que imprimirGeneral: un operador marcado OBSERVANDO (X) YA aparece en el Excel oficial,
+    // marcado como ausente (pedido del usuario, 2026-10-27).
     const operadoresUnicos = new Map<number, Operador>();
     for (const asis of this.asistenciasHoy) {
-      if (asis.operador && asis.estado !== 'OBSERVANDO' && !operadoresUnicos.has(asis.operador_id)) {
+      if (asis.operador && !operadoresUnicos.has(asis.operador_id)) {
         operadoresUnicos.set(asis.operador_id, asis.operador);
       }
     }

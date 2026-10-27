@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AsistenciaService } from '../../../../core/services/asistencia.service';
 import { NotificacionService } from '../../../../core/services/notificacion.service';
-import { Operador } from '../../../../core/models/asistencia.model';
+import { Asistencia, Operador } from '../../../../core/models/asistencia.model';
 
 const LIMITE_RESULTADOS = 10;
 
@@ -27,8 +27,11 @@ se escribía algo, y traía hasta 20 de golpe sin forma de ver más.
 })
 export class AgregarUsuarioModal {
   // El padre (supervisor-panel.ts) refresca su tabla cuando esto se emite - mismo patrón de comunicación que
-  // usan otros modales de la pantalla en vez de que este componente conozca al padre.
-  @Output() agregado = new EventEmitter<void>();
+  // usan otros modales de la pantalla en vez de que este componente conozca al padre. Emite la Asistencia
+  // recién creada (no solo un "listo" vacío, pedido del usuario 2026-10-27): cuando este modal lo abrió el
+  // flujo de "marcar ausente" sobre un trabajador del roster completo, el padre necesita ese id para abrir a
+  // continuación el PanelLaboresModal sobre ESA asistencia puntual.
+  @Output() agregado = new EventEmitter<Asistencia>();
 
   visible = false;
   busqueda = '';
@@ -40,6 +43,31 @@ export class AgregarUsuarioModal {
   paginaActual = 1;
   totalPaginas = 1;
   totalResultados = 0;
+
+  /*
+  Fecha pasada + hora manual (pedido del usuario, 2026-10-27): "+ Agregar Usuario" ya no está limitado a hoy -
+  el Supervisor puede agregar a alguien que faltó marcar un día ANTERIOR, mientras esa hacienda no haya
+  cerrado ya esa jornada. Para hoy, la hora de ingreso sigue siendo "ahora mismo" (como antes, sin pedir nada
+  extra) - para un día pasado, o cuando este modal lo abre directamente el flujo de "marcar ausente" sobre un
+  trabajador del roster completo que nunca marcó (operadorFijo, ver supervisor-panel.ts), no hay una hora real
+  que inferir: el Supervisor la escribe a mano, nunca se inventa.
+  */
+  fecha = '';
+  esHoy = true;
+  horaIngresoHH: number | null = null;
+  horaIngresoMM: number | null = null;
+  // Cuando el modal lo abre el flujo de "marcar ausente" sobre UN trabajador puntual del roster completo
+  // (ver supervisor-panel.ts), ya se sabe a quién se agrega - se salta el buscador por completo.
+  operadorFijo: Operador | null = null;
+
+  get requiereHoraManual(): boolean {
+    return !this.esHoy || !!this.operadorFijo;
+  }
+
+  get fechaFormateada(): string {
+    const [anio, mes, dia] = this.fecha.split('-');
+    return `${dia}/${mes}/${anio}`;
+  }
 
   // Solo tiene valor cuando quien abre el modal es ADMIN y ya eligió un Supervisor puntual arriba (ver
   // supervisor-panel.ts, abrirAgregarUsuario) - un SUPERVISOR real no lo necesita, el backend ya lo acota
@@ -54,18 +82,28 @@ export class AgregarUsuarioModal {
     private cdr: ChangeDetectorRef,
   ) {}
 
-  abrir(supervisorId?: number | null): void {
+  private hoyEcuador(): string {
+    return new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Guayaquil' });
+  }
+
+  abrir(opciones?: { supervisorId?: number | null; fecha?: string; operadorFijo?: Operador }): void {
     this.visible = true;
-    this.supervisorId = supervisorId ?? null;
+    this.supervisorId = opciones?.supervisorId ?? null;
+    this.fecha = opciones?.fecha || this.hoyEcuador();
+    this.esHoy = this.fecha === this.hoyEcuador();
+    this.horaIngresoHH = null;
+    this.horaIngresoMM = null;
+    this.operadorFijo = opciones?.operadorFijo ?? null;
     this.busqueda = '';
     this.resultados = [];
-    this.operadorSeleccionado = null;
+    this.operadorSeleccionado = this.operadorFijo;
     this.paginaActual = 1;
     this.totalPaginas = 1;
     this.totalResultados = 0;
     this.cdr.detectChanges();
-    // Carga inicial (pedido del usuario): la lista sale de una vez, sin tener que escribir nada primero.
-    this.buscar('', 1);
+    // Carga inicial (pedido del usuario): la lista sale de una vez, sin tener que escribir nada primero -
+    // salvo que ya se sepa a quién se agrega (operadorFijo), ahí no hace falta buscar nada.
+    if (!this.operadorFijo) this.buscar('', 1);
   }
 
   cerrar(): void {
@@ -115,14 +153,29 @@ export class AgregarUsuarioModal {
     this.cdr.detectChanges();
   }
 
+  // Combina HH/MM con `this.fecha` (no "hoy", a diferencia de mi-jornada.ts) usando setHours en hora LOCAL del
+  // navegador - mismo criterio que horaComponentesAIso en mi-jornada.ts, solo que aquí la fecha base es la
+  // seleccionada, no necesariamente la de hoy.
+  private horaIngresoAIso(): string | undefined {
+    if (this.horaIngresoHH === null || this.horaIngresoMM === null) return undefined;
+    const horas = Math.min(23, Math.max(0, Math.trunc(this.horaIngresoHH)));
+    const minutos = Math.min(59, Math.max(0, Math.trunc(this.horaIngresoMM)));
+    const fecha = new Date(`${this.fecha}T00:00:00`);
+    fecha.setHours(horas, minutos, 0, 0);
+    return fecha.toISOString();
+  }
+
   confirmarAgregar(): void {
     if (!this.operadorSeleccionado) return;
+    if (this.requiereHoraManual && (this.horaIngresoHH === null || this.horaIngresoMM === null)) return;
     this.guardando = true;
-    this.asistenciaService.agregarAsistenciaManual(this.operadorSeleccionado.id).subscribe({
-      next: () => {
-        this.notificacionService.exito(`${this.operadorSeleccionado?.nombre_completo} agregado a la lista de hoy.`);
+    const fechaParaEnviar = this.esHoy ? undefined : this.fecha;
+    this.asistenciaService.agregarAsistenciaManual(this.operadorSeleccionado.id, fechaParaEnviar, this.horaIngresoAIso()).subscribe({
+      next: (res) => {
+        const destino = this.esHoy ? 'la lista de hoy' : `la lista del ${this.fechaFormateada}`;
+        this.notificacionService.exito(`${this.operadorSeleccionado?.nombre_completo} agregado a ${destino}.`);
         this.guardando = false;
-        this.agregado.emit();
+        this.agregado.emit(res.asistencia);
         this.cerrar();
       },
       error: (err) => {
