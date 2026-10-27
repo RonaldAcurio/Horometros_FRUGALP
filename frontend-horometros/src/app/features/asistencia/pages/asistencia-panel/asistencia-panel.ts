@@ -735,23 +735,11 @@ export class AsistenciaPanel implements OnInit{
   imprimirHojasRangoHistorial(): void {
     if (!this.fechaInicioFiltro || !this.fechaFinFiltro) return;
 
-    /*
-    Mismo motivo que exportarExcelDiario: obtenerHistorial incluye a proposito los dias OBSERVANDO (la X del
-    Supervisor) para auditoria en esta pantalla, pero "Imprimir Hojas del rango" es un reporte oficial - un
-    dia que el Supervisor marco como NO presente no debe imprimirse como si se hubiera trabajado (pedido del
-    usuario, 2026-10-16). Un operador puede tener ALGUNOS dias normales y OTROS en X dentro del mismo rango,
-    asi que el filtro es por dia puntual (operador+fecha), no por operador completo - diasObservando guarda
-    esas combinaciones para descartar solo esos grupos despues de agruparPorDia.
-    */
-    const diasObservando = new Set(
-      this.historial
-        .filter((reg) => reg.estado === 'OBSERVANDO')
-        .map((reg) => `${reg.operador_id}_${reg.fecha}`)
-    );
-
+    // Un dia OBSERVANDO (la X del Supervisor, "no vino") YA se imprime, marcado como ausente - igual que
+    // cualquier otro dia del rango (pedido del usuario, 2026-10-27).
     const operadoresUnicos = new Map<number, Operador>();
     for (const reg of this.historial) {
-      if (reg.operador && reg.estado !== 'OBSERVANDO' && !operadoresUnicos.has(reg.operador_id)) {
+      if (reg.operador && !operadoresUnicos.has(reg.operador_id)) {
         operadoresUnicos.set(reg.operador_id, reg.operador);
       }
     }
@@ -765,8 +753,7 @@ export class AsistenciaPanel implements OnInit{
       this.registroActividadService.obtenerPorOperador(op.id, this.fechaInicioFiltro, this.fechaFinFiltro).pipe(
         // Rango de varios días: se muestra la hacienda PERMANENTE del operador (no tiene sentido mostrar una
         // sola hacienda "de préstamo" cuando el rango puede cruzar varios días distintos).
-        map((registros) => this.agruparPorDia(op, registros, resolverHaciendaJornada(op))
-          .filter((grupo) => !diasObservando.has(`${op.id}_${grupo.fecha}`)))
+        map((registros) => this.agruparPorDia(op, registros, resolverHaciendaJornada(op)))
       )
     );
 
@@ -815,16 +802,12 @@ export class AsistenciaPanel implements OnInit{
     // tope real del backend - ver obtenerHistorial - de sobra para la cuadrilla de un solo Supervisor en un dia).
     this.asistenciaService.obtenerHistorial(fecha, fecha, 1, 100, hacienda.id, undefined, supervisor.id).subscribe({
       next: (res) => {
-        /*
-        obtenerHistorial (backend) incluye a proposito los registros OBSERVANDO (la X del Supervisor, "no vino")
-        junto a los que si trabajaron - asi quedan visibles para auditoria en ESTA pantalla (ver comentario de
-        obtenerHistorial en asistencia.controller.ts). Pero el Excel es el reporte OFICIAL de horas trabajadas:
-        un operador que el Supervisor marco como NO presente no debe aparecer aca como si hubiera trabajado
-        (pedido del usuario, 2026-10-16) - se filtra antes de armar la lista de operadores a exportar.
-        */
+        // obtenerHistorial (backend) incluye a proposito los registros OBSERVANDO (la X del Supervisor, "no
+        // vino") junto a los que si trabajaron - YA se incluyen tal cual en el Excel, marcados como ausentes
+        // (pedido del usuario, 2026-10-27).
         const operadoresUnicos = new Map<number, Operador>();
         for (const reg of res.data) {
-          if (reg.operador && reg.estado !== 'OBSERVANDO' && !operadoresUnicos.has(reg.operador_id)) {
+          if (reg.operador && !operadoresUnicos.has(reg.operador_id)) {
             operadoresUnicos.set(reg.operador_id, reg.operador);
           }
         }
@@ -890,13 +873,13 @@ export class AsistenciaPanel implements OnInit{
 
     this.obtenerHistorialDelDiaCompleto(fecha).subscribe({
       next: (data) => {
-        // Mismo criterio de operadoresUnicos()/OBSERVANDO de arriba, pero agrupando por hacienda
-        // (operador.supervisor.hacienda_id - ver "Solo viene en obtenerHistorial" en asistencia.model.ts).
+        // Mismo criterio de operadoresUnicos() de arriba (los OBSERVANDO YA se incluyen), pero agrupando por
+        // hacienda (operador.supervisor.hacienda_id - ver "Solo viene en obtenerHistorial" en asistencia.model.ts).
         const operadoresPorHacienda = new Map<number, Map<number, Operador>>();
         for (const reg of data) {
           const haciendaId = reg.operador?.supervisor?.hacienda_id;
           const nombreHacienda = reg.operador?.supervisor?.hacienda?.nombre;
-          if (!reg.operador || reg.estado === 'OBSERVANDO' || haciendaId == null || !nombreHacienda) continue;
+          if (!reg.operador || haciendaId == null || !nombreHacienda) continue;
           if (!operadoresPorHacienda.has(haciendaId)) operadoresPorHacienda.set(haciendaId, new Map());
           const operadores = operadoresPorHacienda.get(haciendaId)!;
           if (!operadores.has(reg.operador_id)) operadores.set(reg.operador_id, reg.operador);

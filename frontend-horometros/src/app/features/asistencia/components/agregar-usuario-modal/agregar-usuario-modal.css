@@ -57,3 +57,20 @@ abajo (ver .pagination-bar, global en styles.css). */
   color: #6b7768;
   text-align: center;
 }
+
+/* Hora de ingreso manual (fecha pasada / marcar ausente) - mismo patrón que mi-jornada.css/panel-labores-modal.css. */
+.hora-hhmm {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.hora-hhmm-input {
+  width: 4rem;
+  text-align: center;
+}
+
+.hora-hhmm-separador {
+  font-weight: 700;
+  color: #6b7768;
+}

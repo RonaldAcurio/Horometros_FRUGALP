@@ -1481,7 +1481,7 @@ este endpoint solo mete al trabajador en la lista de hoy.
 */
 export const registrarAsistenciaManual = async(req:Request, res:Response):Promise<void> => {
     try{
-        const { operador_id } = req.body;
+        const { operador_id, fecha, hora_ingreso } = req.body;
         if(!operador_id){
             res.status(400).json({ message: 'operador_id es obligatorio.' });
             return;
@@ -1502,10 +1502,22 @@ export const registrarAsistenciaManual = async(req:Request, res:Response):Promis
 
         const hoy = obtenerFechaLocalEcuador();
 
+        /*
+        'fecha' es OPCIONAL (pedido del usuario, 2026-10-27): el Supervisor tambien necesita poder agregar a
+        un trabajador que faltó marcar en un día ANTERIOR (no solo hoy), mientras esa hacienda no haya cerrado
+        ya esa jornada - antes esta funcion solo aceptaba "hoy", hardcodeado. No se acepta una fecha futura:
+        no tiene sentido "agregar" a un día que todavía no llega.
+        */
+        const fechaFinal = typeof fecha === 'string' && fecha ? fecha : hoy;
+        if(fechaFinal > hoy){
+            res.status(400).json({ message: 'No se puede agregar a una fecha futura.' });
+            return;
+        }
+
         // Regla de "una jornada por dia" - mismo chequeo que procesarMarcacion, Paso 2.
-        const asistenciaHoy = await Asistencia.findOne({ where: { operador_id: operador.id, fecha: hoy } });
-        if(asistenciaHoy){
-            res.status(400).json({ message: `El operador ${operador.nombre_completo} ya tiene una asistencia registrada hoy.` });
+        const asistenciaDelDia = await Asistencia.findOne({ where: { operador_id: operador.id, fecha: fechaFinal } });
+        if(asistenciaDelDia){
+            res.status(400).json({ message: `El operador ${operador.nombre_completo} ya tiene una asistencia registrada ese día.` });
             return;
         }
 
@@ -1517,20 +1529,36 @@ export const registrarAsistenciaManual = async(req:Request, res:Response):Promis
         */
         const jornadaAbiertaVieja = await Asistencia.findOne({ where: { operador_id: operador.id, estado: 'EN_JORNADA' } });
         if(jornadaAbiertaVieja){
-            res.status(400).json({ message: `Este trabajador ya tiene una jornada sin cerrar del ${jornadaAbiertaVieja.fecha}. Ciérrala antes de agregarlo a hoy.` });
+            res.status(400).json({ message: `Este trabajador ya tiene una jornada sin cerrar del ${jornadaAbiertaVieja.fecha}. Ciérrala antes de agregarlo de nuevo.` });
             return;
         }
 
         const haciendaIdDestino = await resolverHaciendaPropia(operador);
-        if(haciendaIdDestino !== null && await calcularDiaCerradoHacienda(hoy, haciendaIdDestino)){
-            res.status(403).json({ message: 'El Supervisor ya finalizo la jornada de hoy en esta hacienda.' });
+        if(haciendaIdDestino !== null && await calcularDiaCerradoHacienda(fechaFinal, haciendaIdDestino)){
+            res.status(403).json({ message: 'El Supervisor ya finalizo esa jornada en esta hacienda.' });
             return;
+        }
+
+        /*
+        'hora_ingreso' es OPCIONAL: para "hoy" sigue siendo el momento del clic (como antes). Para una fecha
+        ANTERIOR no hay forma de inferir una hora real - el Supervisor la escribe a mano (pedido explicito del
+        usuario: "que el Supervisor la escriba a mano", no inventar una hora fija). Mismo patron de parseo que
+        ya usa crearRegistroActividad para 'hora_inicio'.
+        */
+        let horaIngresoFinal = new Date();
+        if(hora_ingreso){
+            const parseada = new Date(hora_ingreso);
+            if(isNaN(parseada.getTime())){
+                res.status(400).json({ message: 'hora_ingreso no es una fecha valida.' });
+                return;
+            }
+            horaIngresoFinal = parseada;
         }
 
         const asistencia = await Asistencia.create({
             operador_id: operador.id,
-            fecha: hoy,
-            hora_ingreso: new Date(),
+            fecha: fechaFinal,
+            hora_ingreso: horaIngresoFinal,
             estado: 'EN_JORNADA',
             admitido_por_usuario_id: req.auth?.id ?? null,
         });
@@ -1545,7 +1573,10 @@ export const registrarAsistenciaManual = async(req:Request, res:Response):Promis
             });
         }
 
-        res.status(201).json({ message: 'Trabajador agregado a la lista de hoy.', asistencia });
+        res.status(201).json({
+            message: fechaFinal === hoy ? 'Trabajador agregado a la lista de hoy.' : `Trabajador agregado a la lista del ${fechaFinal}.`,
+            asistencia,
+        });
 
     }catch(err){
         console.error('Error al agregar asistencia manual.', err);

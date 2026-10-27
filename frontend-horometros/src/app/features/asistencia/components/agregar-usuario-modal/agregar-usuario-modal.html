@@ -9,67 +9,117 @@ Hoy" en el panel principal. -->
         <h3 class="card-title">➕ Agregar Usuario</h3>
         <button type="button" class="agregar-usuario-cerrar" (click)="cerrar()">✕</button>
       </div>
-      <p class="hint-text">Busca al trabajador que no llegó a marcar hoy. Se agregará a la lista como si hubiera marcado entrada ahora mismo.</p>
-
-      <div class="form-group">
-        <label class="form-label">Trabajador</label>
-        <input
-          type="text"
-          class="input-control w-full"
-          [(ngModel)]="busqueda"
-          (ngModelChange)="onBuscarChange()"
-          name="busqueda_operador"
-          placeholder="Escribe un nombre o código..."
-          autocomplete="off"
-        />
-      </div>
-
-      @if (!operadorSeleccionado) {
-        <div class="agregar-usuario-lista">
-          @if (buscando) {
-            <div class="autocomplete-vacio">Buscando...</div>
-          } @else if (resultados.length === 0) {
-            <div class="autocomplete-vacio">Sin resultados.</div>
+      @if (operadorFijo) {
+        <p class="hint-text">
+          Vas a marcar a <strong>{{ operadorFijo.nombre_completo }}</strong> como ausente
+          {{ esHoy ? 'hoy' : ('el ' + fechaFormateada) }}. Escribe la hora de ingreso para poder agregarle
+          después sus actividades.
+        </p>
+      } @else {
+        <p class="hint-text">
+          @if (esHoy) {
+            Busca al trabajador que no llegó a marcar hoy. Se agregará a la lista como si hubiera marcado
+            entrada ahora mismo.
           } @else {
-            @for (op of resultados; track op.id) {
-              <div class="autocomplete-opcion" (click)="seleccionarOperador(op)">
-                {{ op.codigo_megued }} - {{ op.nombre_completo }}
-              </div>
-            }
+            Busca al trabajador que no llegó a marcar el {{ fechaFormateada }}. Escribe la hora en la que
+            ingresó ese día.
           }
+        </p>
+      }
+
+      @if (!operadorFijo) {
+        <div class="form-group">
+          <label class="form-label">Trabajador</label>
+          <input
+            type="text"
+            class="input-control w-full"
+            [(ngModel)]="busqueda"
+            (ngModelChange)="onBuscarChange()"
+            name="busqueda_operador"
+            placeholder="Escribe un nombre o código..."
+            autocomplete="off"
+          />
         </div>
 
-        @if (totalResultados > 0) {
-          <div class="pagination-bar">
-            <span>Página {{ paginaActual }} de {{ totalPaginas }} ({{ totalResultados }} resultados)</span>
-            <div class="flex gap-2">
-              <button
-                [disabled]="paginaActual === 1 || buscando"
-                (click)="cambiarPagina(paginaActual - 1)"
-                class="btn btn-secondary btn-sm"
-              >
-                ◀
-              </button>
-              <button
-                [disabled]="paginaActual === totalPaginas || buscando"
-                (click)="cambiarPagina(paginaActual + 1)"
-                class="btn btn-secondary btn-sm"
-              >
-                ▶
-              </button>
-            </div>
+        @if (!operadorSeleccionado) {
+          <div class="agregar-usuario-lista">
+            @if (buscando) {
+              <div class="autocomplete-vacio">Buscando...</div>
+            } @else if (resultados.length === 0) {
+              <div class="autocomplete-vacio">Sin resultados.</div>
+            } @else {
+              @for (op of resultados; track op.id) {
+                <div class="autocomplete-opcion" (click)="seleccionarOperador(op)">
+                  {{ op.codigo_megued }} - {{ op.nombre_completo }}
+                </div>
+              }
+            }
           </div>
+
+          @if (totalResultados > 0) {
+            <div class="pagination-bar">
+              <span>Página {{ paginaActual }} de {{ totalPaginas }} ({{ totalResultados }} resultados)</span>
+              <div class="flex gap-2">
+                <button
+                  [disabled]="paginaActual === 1 || buscando"
+                  (click)="cambiarPagina(paginaActual - 1)"
+                  class="btn btn-secondary btn-sm"
+                >
+                  ◀
+                </button>
+                <button
+                  [disabled]="paginaActual === totalPaginas || buscando"
+                  (click)="cambiarPagina(paginaActual + 1)"
+                  class="btn btn-secondary btn-sm"
+                >
+                  ▶
+                </button>
+              </div>
+            </div>
+          }
         }
+      }
+
+      <!-- Hora de ingreso manual (pedido del usuario, 2026-10-27): para un día pasado, o cuando se marca
+      ausente a alguien del roster completo, no hay una hora real que inferir - el Supervisor la escribe. -->
+      @if (requiereHoraManual) {
+        <div class="form-group">
+          <label class="form-label">Hora de ingreso</label>
+          <div class="hora-hhmm">
+            <input
+              type="number"
+              class="input-control hora-hhmm-input"
+              [(ngModel)]="horaIngresoHH"
+              name="hora_ingreso_hh"
+              min="0"
+              max="23"
+              placeholder="HH"
+            />
+            <span class="hora-hhmm-separador">:</span>
+            <input
+              type="number"
+              class="input-control hora-hhmm-input"
+              [(ngModel)]="horaIngresoMM"
+              name="hora_ingreso_mm"
+              min="0"
+              max="59"
+              placeholder="MM"
+            />
+          </div>
+        </div>
       }
 
       <div class="flex gap-2 mt-4">
         <button
           type="button"
           class="btn btn-primary w-full"
-          [disabled]="!operadorSeleccionado || guardando"
+          [disabled]="
+            !operadorSeleccionado || guardando ||
+            (requiereHoraManual && (horaIngresoHH === null || horaIngresoMM === null))
+          "
           (click)="confirmarAgregar()"
         >
-          ➕ Agregar a la lista de hoy
+          ➕ {{ esHoy ? 'Agregar a la lista de hoy' : 'Agregar a la lista del ' + fechaFormateada }}
         </button>
       </div>
     </div>

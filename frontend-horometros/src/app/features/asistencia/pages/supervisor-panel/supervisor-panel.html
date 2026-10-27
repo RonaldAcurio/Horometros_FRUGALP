@@ -340,9 +340,54 @@
     }
   </div>
 
+  <!-- Roster completo: quién de la hacienda TODAVÍA no tiene asistencia este día (pedido del usuario,
+  2026-10-27) - no se mezcla con la tabla paginada de arriba (esa sigue siendo solo asistencias reales), es
+  una lista aparte para que ningún trabajador quede fuera del reporte. Tocar X los marca ausentes - primero
+  pide la hora de ingreso (nadie la disparó automático, nunca usaron el Token/QR) y después deja agregarles
+  las actividades, igual que a cualquier otro trabajador (ver abrirMarcarAusente). -->
+  @if (trabajadoresSinMarcar.length > 0) {
+    <div class="card mt-section">
+      <div class="card-header">
+        <h5 class="card-title">
+          🕗 Trabajadores que aún no marcan {{ fechaSeleccionada ? 'el ' + fechaSeleccionada : 'hoy' }}
+          ({{ trabajadoresSinMarcar.length }})
+        </h5>
+      </div>
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Operador</th>
+              <th>Código</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (op of trabajadoresSinMarcar; track op.id) {
+              <tr>
+                <td class="nombre-operador">{{ op.nombre_completo }}</td>
+                <td>{{ op.codigo_megued }}</td>
+                <td>
+                  <button
+                    class="btn btn-warning btn-sm"
+                    [disabled]="diaCerrado"
+                    [title]="diaCerrado ? 'La jornada ya está cerrada' : 'Marcar como ausente'"
+                    (click)="abrirMarcarAusente(op)"
+                  >
+                    ✗ Marcar ausente
+                  </button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+
   <app-hoja-actividades-modal #hojaModal></app-hoja-actividades-modal>
   <app-panel-labores-modal #panelLaboresModal></app-panel-labores-modal>
-  <app-agregar-usuario-modal #agregarUsuarioModal (agregado)="cargarAsistencias()"></app-agregar-usuario-modal>
+  <app-agregar-usuario-modal #agregarUsuarioModal (agregado)="onOperadorAgregado($event)"></app-agregar-usuario-modal>
 
   <!-- MODAL DE OBSERVACION -->
   @if (observacionEditandoId !== null) {

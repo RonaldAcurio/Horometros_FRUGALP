@@ -43,6 +43,21 @@ export class AsistenciaService {
         );
     }
 
+    // GET -> /api/asistencia/operadores sin pagina/limite - el backend (ver obtenerOperadores) devuelve el
+    // roster COMPLETO sin paginar cuando no se le manda ninguno de los dos. Lo usa el roster completo del
+    // Panel de Supervisor (pedido del usuario, 2026-10-27): para saber quién de toda la hacienda todavía no
+    // tiene asistencia ese día, hace falta la lista entera, no una página.
+    obtenerOperadoresCompleto(supervisorId?: number): Observable<Operador[]> {
+        let params = new HttpParams();
+        if (supervisorId) params = params.set('supervisor_id', supervisorId);
+        return this.http.get<Operador[]>(`${this.baseUrl}/operadores`, { params }).pipe(
+            catchError(err => {
+                console.warn('Error al obtener el roster completo de operadores:', err);
+                return of([]);
+            })
+        );
+    }
+
     // PUT -> https://.../api/asistencia/operadores/:id
     actualizarOperador(id: number, datos: Partial<Operador>): Observable<any> {
         return this.http.put(`${this.baseUrl}/operadores/${id}`, datos);
@@ -61,11 +76,17 @@ export class AsistenciaService {
     }
 
     // POST -> /api/asistencia/agregar-manual - botón "+ Agregar Usuario" del Panel de Supervisor: mete a la
-    // lista de hoy a un trabajador que no llegó a marcar (crea la Asistencia igual que una entrada normal,
+    // lista de un día a un trabajador que no llegó a marcar (crea la Asistencia igual que una entrada normal,
     // EN_JORNADA). El buscador de ese modal reutiliza obtenerOperadoresPaginado de arriba (el backend ya lo
     // acota a los propios trabajadores cuando quien llama es SUPERVISOR).
-    agregarAsistenciaManual(operadorId: number): Observable<{ message: string; asistencia: Asistencia }> {
-        return this.http.post<{ message: string; asistencia: Asistencia }>(`${this.baseUrl}/agregar-manual`, { operador_id: operadorId });
+    // fecha/horaIngreso opcionales (pedido del usuario, 2026-10-27): sin ellos agrega a HOY con la hora del
+    // clic, igual que antes - con fecha pasada, horaIngreso es obligatoria en los hechos (el Supervisor la
+    // escribe a mano, el backend no la inventa).
+    agregarAsistenciaManual(operadorId: number, fecha?: string, horaIngreso?: string): Observable<{ message: string; asistencia: Asistencia }> {
+        const body: { operador_id: number; fecha?: string; hora_ingreso?: string } = { operador_id: operadorId };
+        if (fecha) body.fecha = fecha;
+        if (horaIngreso) body.hora_ingreso = horaIngreso;
+        return this.http.post<{ message: string; asistencia: Asistencia }>(`${this.baseUrl}/agregar-manual`, body);
     }
 
     // PUT -> /api/asistencia/operadores/:id/clave (requiere JWT con rol ADMIN o ASISTENTE)
