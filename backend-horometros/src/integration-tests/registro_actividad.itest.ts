@@ -231,10 +231,32 @@ describe('PUT/DELETE /api/registro-actividades/:id (editar/eliminar labor)', () 
             expect(creada.status).toBe(400);
         });
 
-        it('un trabajador marcado OBSERVANDO queda afuera del bypass de EN_JORNADA, aunque lo pida ADMIN', async () => {
+        it('un trabajador marcado OBSERVANDO YA NO queda afuera del bypass de EN_JORNADA (pedido del usuario, 2026-10-27: O/X es solo un contador)', async () => {
             await Asistencia.update({ estado: 'OBSERVANDO' }, { where: { id: asistenciaId } });
 
-            const creada = await crearLabor('2026-10-16T07:00:00.000Z', tokenAdmin);
+            const creadaAdmin = await crearLabor('2026-10-16T07:00:00.000Z', tokenAdmin);
+            expect(creadaAdmin.status).toBe(201);
+
+            const creadaSupervisor = await crearLabor('2026-10-16T08:00:00.000Z', tokenSupervisor);
+            expect(creadaSupervisor.status).toBe(201);
+
+            // Tambien se puede editar y eliminar, igual que con cualquier otro estado fuera de EN_JORNADA.
+            const editada = await request(app)
+                .put(`/api/registro-actividades/${creadaSupervisor.body.id}`)
+                .set('Authorization', `Bearer ${tokenSupervisor}`)
+                .send({ observaciones: 'corregido aunque este OBSERVANDO' });
+            expect(editada.status).toBe(200);
+
+            const eliminada = await request(app)
+                .delete(`/api/registro-actividades/${creadaSupervisor.body.id}`)
+                .set('Authorization', `Bearer ${tokenSupervisor}`);
+            expect(eliminada.status).toBe(200);
+        });
+
+        it('un OPERADOR en su propia jornada marcada OBSERVANDO sigue sin poder saltarse EN_JORNADA', async () => {
+            await Asistencia.update({ estado: 'OBSERVANDO' }, { where: { id: asistenciaId } });
+
+            const creada = await crearLabor('2026-10-16T07:00:00.000Z', tokenOperador);
             expect(creada.status).toBe(400);
         });
 

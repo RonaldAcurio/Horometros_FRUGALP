@@ -23,13 +23,14 @@ const puedeForzarComoSupervisor = (req: Request): boolean =>
     req.auth?.tipo === 'usuario' && (req.auth.rol === 'ADMIN' || req.auth.rol === 'SUPERVISOR');
 
 /*
-Un trabajador marcado OBSERVANDO (la X del Supervisor, "no vino") queda afuera de la excepcion de arriba a
-proposito, mismo criterio que ya excluye OBSERVANDO del Excel/Imprimir en todo el sistema - no tiene sentido
-registrarle labores/horas a alguien que el propio Supervisor dijo que no trabajo ese dia.
+Un trabajador marcado OBSERVANDO (la X del Supervisor, "no vino") YA NO queda afuera de esta excepcion
+(pedido del usuario, 2026-10-27): O/X pasa a ser solo un contador para poder cerrar la jornada (ver
+finalizarDia en asistencia.controller.ts), no un bloqueo de permisos - el Supervisor necesita poder seguir
+agregando/editando/eliminando labores (equipo/actividad) de alguien marcado ausente, igual que ya puede
+hacerlo con FINALIZADO/SALIDA_OLVIDADA desde el 2026-10-21.
 */
 const puedeForzarEnEstaAsistencia = async (req: Request, asistencia: Asistencia): Promise<boolean> =>
-    asistencia.estado !== 'OBSERVANDO'
-    && puedeForzarComoSupervisor(req)
+    puedeForzarComoSupervisor(req)
     && !(await calcularDiaCerradoDeAsistencia(asistencia));
 
 /*

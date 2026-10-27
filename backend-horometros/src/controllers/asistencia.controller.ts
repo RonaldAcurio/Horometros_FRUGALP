@@ -2447,7 +2447,21 @@ export const confirmarAsistencia = async(req:Request, res:Response):Promise<void
         }
 
         if(presente){
-            await asistencia.update({ confirmado_por_supervisor: true });
+            /*
+            "O" desatasca una X previa (pedido del usuario, 2026-10-27): O/X ahora es solo un contador para
+            poder cerrar la jornada (ver finalizarDia, exige confirmado_por_supervisor no nulo en cada fila -
+            eso no cambia aqui), ya no debe quedar bloqueando el "+"/Ver/Imprimir para siempre. Si el estado
+            ya estaba en OBSERVANDO, "O" lo regresa al estado que le toca segun si ya marco su propia salida
+            o no - PENDIENTE_REVISION espera igual que cualquier otro trabajador a que "Cerrar Jornada" lo
+            pase a FINALIZADO, EN_JORNADA sigue abierto para seguir agregandole actividades.
+            */
+            const actualizacion: { confirmado_por_supervisor: boolean; estado?: 'EN_JORNADA' | 'PENDIENTE_REVISION' } = {
+                confirmado_por_supervisor: true,
+            };
+            if(asistencia.estado === 'OBSERVANDO'){
+                actualizacion.estado = asistencia.hora_salida ? 'PENDIENTE_REVISION' : 'EN_JORNADA';
+            }
+            await asistencia.update(actualizacion);
         }else{
             const nota = `[${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })}] Marcado como NO presente por el supervisor.`;
             await asistencia.update({

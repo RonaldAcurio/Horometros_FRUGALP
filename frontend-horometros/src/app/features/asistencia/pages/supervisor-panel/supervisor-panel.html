@@ -150,9 +150,10 @@
                   (ver PanelLaboresModal). Sigue visible aunque el trabajador ya haya finalizado su jornada
                   (pedido del usuario, 2026-10-21): el backend deja a ADMIN/SUPERVISOR seguir agregando/
                   editando/eliminando labores mientras el DIA no haya cerrado (ver puedeForzarComoSupervisor,
-                  registro_actividad.controller.ts) - solo se oculta si el trabajador quedó OBSERVANDO (no
-                  vino) o si el día ya cerró con "Cerrar Jornada". -->
-                  @if (asis.estado !== 'OBSERVANDO' && !diaCerrado) {
+                  registro_actividad.controller.ts). También sigue visible si el trabajador quedó OBSERVANDO
+                  (pedido del usuario, 2026-10-27: O/X ahora es solo un contador para cerrar la jornada, ya
+                  no bloquea agregar actividades) - solo se oculta si el día ya cerró con "Cerrar Jornada". -->
+                  @if (!diaCerrado) {
                     <button
                       type="button"
                       class="btn btn-secondary btn-sm"
@@ -250,30 +251,26 @@
                 </button>
               </td>
               <td>
-                <!-- OBSERVANDO (la X del Supervisor, "no vino"): no hay nada real que ver/imprimir de ese
-                dia - pedido del usuario, 2026-10-16 (mismo criterio que excluirlo del Excel/Imprimir
-                General). -->
-                @if (asis.estado !== 'OBSERVANDO') {
-                  <div class="flex gap-1">
-                    <button
-                      class="btn btn-secondary btn-sm"
-                      [disabled]="cargandoReporteImpresion"
-                      (click)="verHojaFila(asis)"
-                    >
-                      👁️ Ver
-                    </button>
-                    <button
-                      class="btn btn-secondary btn-sm"
-                      [disabled]="cargandoReporteImpresion"
-                      (click)="imprimirHojaFila(asis)"
-                    >
-                      🖨️ Imprimir
-                    </button>
-                  </div>
-                }
-                @if (asis.estado === 'OBSERVANDO') {
-                  <span class="text-muted-sm">No aplica</span>
-                }
+                <!-- Ver/Imprimir ya no se oculta para OBSERVANDO (pedido del usuario, 2026-10-27: O/X es
+                solo un contador, y como ahora SÍ puede tener actividades agregadas con el "+", tiene sentido
+                poder verlas/imprimirlas igual que cualquier otro trabajador - reemplaza la exclusión del
+                2026-10-16). -->
+                <div class="flex gap-1">
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    [disabled]="cargandoReporteImpresion"
+                    (click)="verHojaFila(asis)"
+                  >
+                    👁️ Ver
+                  </button>
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    [disabled]="cargandoReporteImpresion"
+                    (click)="imprimirHojaFila(asis)"
+                  >
+                    🖨️ Imprimir
+                  </button>
+                </div>
               </td>
             </tr>
           }
