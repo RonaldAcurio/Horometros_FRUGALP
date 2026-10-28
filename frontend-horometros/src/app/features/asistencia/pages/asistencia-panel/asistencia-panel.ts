@@ -16,8 +16,8 @@ import { Usuario } from '../../../../core/models/usuario.model';
 import { Hacienda } from '../../../../core/models/hacienda.model';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
-import { VisorFoto } from '../../components/visor-foto/visor-foto';
 import { HojaActividadesModal, HojaGrupo, resolverHaciendaJornada } from '../../components/hoja-actividades-modal/hoja-actividades-modal';
+import { FilaHistorialAsistencia } from '../../components/fila-historial-asistencia/fila-historial-asistencia';
 import { NotificacionService } from '../../../../core/services/notificacion.service';
 import { ConfirmacionService } from '../../../../core/services/confirmacion.service';
 import { leerFilasExcel, descargarPlantillaExcel } from '../../../../core/utils/excel-importar.util';
@@ -32,7 +32,7 @@ interface ResultadoImportacion {
 
 @Component({
   standalone:true,
-  imports: [CommonModule, FormsModule, VisorFoto, HojaActividadesModal],
+  imports: [CommonModule, FormsModule, HojaActividadesModal, FilaHistorialAsistencia],
   selector: 'app-asistencia-panel',
   styleUrl: './asistencia-panel.css',
   templateUrl: './asistencia-panel.html',

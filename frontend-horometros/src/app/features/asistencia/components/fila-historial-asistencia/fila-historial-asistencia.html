@@ -1,0 +1,54 @@
+@if (mostrarOperador) {
+  <td>
+    <strong class="nombre-operador">{{ reg.operador?.nombre_completo || 'N/A' }}</strong>
+  </td>
+}
+<td>{{ reg.fecha }}</td>
+<td>
+  <span class="time-badge">{{ reg.hora_ingreso | date: 'HH:mm:ss' : '-0500' }}</span>
+</td>
+<td>
+  @if (reg.hora_salida) {
+    <span class="time-badge">{{ reg.hora_salida | date: 'HH:mm:ss' : '-0500' }}</span>
+  } @else {
+    <span class="text-muted-sm">Sin salida</span>
+  }
+</td>
+<td>{{ formatearHorasTrabajadas(reg.total_horas) }}</td>
+<td>
+  <!-- OBSERVANDO = el Supervisor marco la X ("no vino") - unico estado que vale la pena resaltar aca,
+  el resto (FINALIZADO/SALIDA_OLVIDADA) son dias normales trabajados. -->
+  @if (reg.estado === 'OBSERVANDO') {
+    <span class="badge-status status-observando">❌ No presente</span>
+  } @else {
+    <span class="text-muted-sm">—</span>
+  }
+</td>
+<td>
+  <!-- Ver/Imprimir SIEMPRE visibles (pedido del usuario, 2026-10-27) - O/X es solo un contador para
+  cerrar la jornada, ya no un gate de qué se puede ver/imprimir (reemplaza la exclusión del 2026-10-16,
+  ya quitada en supervisor-panel.html vía PR #63 - acá vive en un solo lugar para que no se repita). -->
+  <div class="flex gap-1">
+    <button
+      class="btn btn-secondary btn-sm"
+      [disabled]="cargandoReporteImpresion"
+      (click)="ver.emit(reg)"
+    >
+      👁️ Ver
+    </button>
+    <button
+      class="btn btn-secondary btn-sm"
+      [disabled]="cargandoReporteImpresion"
+      (click)="imprimir.emit(reg)"
+    >
+      🖨️ Imprimir
+    </button>
+  </div>
+</td>
+<td>
+  <app-visor-foto
+    [asistenciaId]="reg.id"
+    [tieneFoto]="!!reg.tiene_foto"
+  ></app-visor-foto>
+</td>
+<td>{{ reg.observaciones || '—' }}</td>

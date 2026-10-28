@@ -366,72 +366,14 @@
             </thead>
             <tbody>
               @for (reg of historial; track reg) {
-                <tr>
-                  <td>
-                    <strong class="nombre-operador">{{
-                      reg.operador?.nombre_completo || 'N/A'
-                    }}</strong>
-                  </td>
-                  <td>{{ reg.fecha }}</td>
-                  <td>
-                    <span class="time-badge">{{
-                      reg.hora_ingreso | date: 'HH:mm:ss' : '-0500'
-                    }}</span>
-                  </td>
-                  <td>
-                    @if (reg.hora_salida) {
-                      <span class="time-badge">{{
-                        reg.hora_salida | date: 'HH:mm:ss' : '-0500'
-                      }}</span>
-                    }
-                    @if (!reg.hora_salida) {
-                      <span class="text-muted-sm">Sin salida</span>
-                    }
-                  </td>
-                  <td>{{ formatearHorasTrabajadas(reg.total_horas) }}</td>
-                  <td>
-                    <!-- OBSERVANDO = el Supervisor marco la X ("no vino") - unico estado que vale la pena
-                    resaltar aca, el resto (FINALIZADO/SALIDA_OLVIDADA) son dias normales trabajados. -->
-                    @if (reg.estado === 'OBSERVANDO') {
-                      <span class="badge-status status-observando">❌ No presente</span>
-                    }
-                    @if (reg.estado !== 'OBSERVANDO') {
-                      <span class="text-muted-sm">—</span>
-                    }
-                  </td>
-                  <td>
-                    <!-- Un dia "X" no tiene nada real que ver/imprimir (pedido del usuario, 2026-10-16) -
-                    mismo criterio que excluirlo de "Exportar a Excel"/"Imprimir Hojas del rango". -->
-                    @if (reg.estado !== 'OBSERVANDO') {
-                    <div class="flex gap-1">
-                      <button
-                        class="btn btn-secondary btn-sm"
-                        [disabled]="cargandoReporteImpresion"
-                        (click)="verHojaFilaHistorial(reg)"
-                      >
-                        👁️ Ver
-                      </button>
-                      <button
-                        class="btn btn-secondary btn-sm"
-                        [disabled]="cargandoReporteImpresion"
-                        (click)="imprimirHojaFilaHistorial(reg)"
-                      >
-                        🖨️ Imprimir
-                      </button>
-                    </div>
-                    }
-                    @if (reg.estado === 'OBSERVANDO') {
-                      <span class="text-muted-sm">No aplica</span>
-                    }
-                  </td>
-                  <td>
-                    <app-visor-foto
-                      [asistenciaId]="reg.id"
-                      [tieneFoto]="!!reg.tiene_foto"
-                    ></app-visor-foto>
-                  </td>
-                  <td>{{ reg.observaciones || '—' }}</td>
-                </tr>
+                <tr
+                  app-fila-historial-asistencia
+                  [reg]="reg"
+                  [mostrarOperador]="true"
+                  [cargandoReporteImpresion]="cargandoReporteImpresion"
+                  (ver)="verHojaFilaHistorial($event)"
+                  (imprimir)="imprimirHojaFilaHistorial($event)"
+                ></tr>
               }
               @if (cargandoHistorial) {
                 <tr>
@@ -1444,63 +1386,14 @@ Historial general, ya filtrado a este operador (reutiliza GET /historial con ope
             </thead>
             <tbody>
               @for (reg of historialOperadorRegistros; track reg) {
-                <tr>
-                  <td>{{ reg.fecha }}</td>
-                  <td>
-                    <span class="time-badge">{{
-                      reg.hora_ingreso | date: 'HH:mm:ss' : '-0500'
-                    }}</span>
-                  </td>
-                  <td>
-                    @if (reg.hora_salida) {
-                      <span class="time-badge">{{
-                        reg.hora_salida | date: 'HH:mm:ss' : '-0500'
-                      }}</span>
-                    }
-                    @if (!reg.hora_salida) {
-                      <span class="text-muted-sm">Sin salida</span>
-                    }
-                  </td>
-                  <td>{{ formatearHorasTrabajadas(reg.total_horas) }}</td>
-                  <td>
-                    @if (reg.estado === 'OBSERVANDO') {
-                      <span class="badge-status status-observando">❌ No presente</span>
-                    }
-                    @if (reg.estado !== 'OBSERVANDO') {
-                      <span class="text-muted-sm">—</span>
-                    }
-                  </td>
-                  <td>
-                    @if (reg.estado !== 'OBSERVANDO') {
-                    <div class="flex gap-1">
-                      <button
-                        class="btn btn-secondary btn-sm"
-                        [disabled]="cargandoReporteImpresion"
-                        (click)="verHojaFilaHistorial(reg)"
-                      >
-                        👁️ Ver
-                      </button>
-                      <button
-                        class="btn btn-secondary btn-sm"
-                        [disabled]="cargandoReporteImpresion"
-                        (click)="imprimirHojaFilaHistorial(reg)"
-                      >
-                        🖨️ Imprimir
-                      </button>
-                    </div>
-                    }
-                    @if (reg.estado === 'OBSERVANDO') {
-                      <span class="text-muted-sm">No aplica</span>
-                    }
-                  </td>
-                  <td>
-                    <app-visor-foto
-                      [asistenciaId]="reg.id"
-                      [tieneFoto]="!!reg.tiene_foto"
-                    ></app-visor-foto>
-                  </td>
-                  <td>{{ reg.observaciones || '—' }}</td>
-                </tr>
+                <tr
+                  app-fila-historial-asistencia
+                  [reg]="reg"
+                  [mostrarOperador]="false"
+                  [cargandoReporteImpresion]="cargandoReporteImpresion"
+                  (ver)="verHojaFilaHistorial($event)"
+                  (imprimir)="imprimirHojaFilaHistorial($event)"
+                ></tr>
               }
               @if (!cargandoHistorialOperador && historialOperadorRegistros.length === 0) {
                 <tr>
