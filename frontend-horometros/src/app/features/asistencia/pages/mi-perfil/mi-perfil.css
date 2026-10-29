@@ -1,0 +1,181 @@
+/*
+Rediseño mobile-first (pedido del usuario, 2026-10-29): tarjeta única centrada, ancho máximo cómodo para
+celular - es el único dispositivo que usan MECANICO/OPERADOR, aunque también se vea bien en PC.
+*/
+.mi-perfil-container {
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem 1rem;
+}
+
+.mi-perfil-card {
+  width: 100%;
+  max-width: 28rem;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.mi-perfil-qr-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 1rem;
+  background: #fff;
+  border-radius: 0.75rem;
+}
+
+.mi-perfil-qr {
+  width: 11rem;
+  height: 11rem;
+}
+
+.mi-perfil-nombre {
+  font-size: 1.25rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.mi-perfil-seccion {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.mi-perfil-separador {
+  border-top: 1px solid var(--border-card);
+}
+
+.mi-perfil-dato-fila {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.mi-perfil-dato-label {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.mi-perfil-dato-valor {
+  color: var(--text-main);
+  font-weight: 600;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.mi-perfil-btn-ancho {
+  width: 100%;
+}
+
+.mi-perfil-volver {
+  text-align: center;
+  color: var(--verde);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.mi-perfil-volver:hover {
+  color: var(--verde-hover);
+  text-decoration: underline;
+}
+
+/* Modal del historial - mismo patrón visual que .historial-operador-card (asistencia-panel.css), más ancho
+que .modal-card (28rem) a propósito: la tabla necesita espacio para 8 columnas. */
+.mi-perfil-historial-card {
+  max-width: 60rem;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.mi-perfil-historial-barra {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  position: sticky;
+  top: 0;
+  background: var(--bg-card);
+}
+
+.mi-perfil-historial-cerrar {
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 0.25rem 0.5rem;
+}
+
+.mi-perfil-historial-cerrar:hover {
+  color: var(--text-main);
+}
+
+/* Filtro Desde/Hasta del historial - mismas reglas que asistencia-panel.css (sin hoja compartida de filtros
+en el proyecto todavía). */
+.filter-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  background-color: #ffffff;
+  border: 1px solid #dbe6d3;
+  padding: 1rem 1.5rem;
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.filter-label {
+  color: #1c2620;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.date-input {
+  background-color: #ffffff;
+  border: 1px solid #dbe6d3;
+  color: #1c2620;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  outline: none;
+}
+
+.date-input:focus {
+  border-color: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
+}
+
+@media (max-width: 640px) {
+  .filter-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-group {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .filter-group .date-input,
+  .filter-group .input-control {
+    width: 100%;
+    min-width: 0;
+  }
+}

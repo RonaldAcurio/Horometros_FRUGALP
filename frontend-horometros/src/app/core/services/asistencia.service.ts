@@ -236,6 +236,32 @@ export class AsistenciaService {
             `${this.baseUrl}/historial`, { params });
     }
 
+    // GET -> /api/asistencia/mi-historial?fecha_inicio=YYYY-MM-DD&fecha_fin=YYYY-MM-DD (autoservicio: "Mi
+    // Perfil" del trabajador, pedido del usuario, 2026-10-28). Mismo formato de respuesta que obtenerHistorial
+    // de arriba, pero sin operadorId/haciendaId/supervisorId - el backend ya fuerza el propio operador_id del
+    // token, nunca acepta ninguno de esos filtros aqui.
+    obtenerMiHistorial(fechaInicio?: string, fechaFin?: string, pagina:number=1, limite:number=30
+    ): Observable<{data:Asistencia[]; total:number; pagina:number; totalPaginas:number}>{
+        let params = new HttpParams().set('pagina', pagina).set('limite', limite);
+        if(fechaInicio) params = params.set('fecha_inicio', fechaInicio);
+        if(fechaFin) params = params.set('fecha_fin', fechaFin);
+
+        return this.http.get<{data:Asistencia[]; total:number; pagina:number; totalPaginas:number}>(
+            `${this.baseUrl}/mi-historial`, { params });
+    }
+
+    // PUT -> /api/asistencia/mi-usuario (autoservicio: "Mi Perfil" cambia el usuario - el backend invalida
+    // la sesion actual al guardar, asi que quien llama debe cerrar sesion despues).
+    cambiarMiUsuario(usuario: string): Observable<{ message: string; usuario: string }> {
+        return this.http.put<{ message: string; usuario: string }>(`${this.baseUrl}/mi-usuario`, { usuario });
+    }
+
+    // PUT -> /api/asistencia/mi-clave (autoservicio, pedido del usuario, 2026-10-29: "Mi Perfil" pone una
+    // clave nueva sin pedir la actual - mismo criterio que cambiarMiUsuario, misma invalidacion de sesion).
+    cambiarMiClave(clave: string): Observable<{ message: string }> {
+        return this.http.put<{ message: string }>(`${this.baseUrl}/mi-clave`, { clave });
+    }
+
     // GET -> /api/asistencia/:id/foto (se pide UNICAMENTE cuando el usuario hace clic en "Ver Evidencia"
     // - los listados de arriba ya no traen la foto completa)
     obtenerFotoAsistencia(id:number):Observable<{ foto_ingreso:string }>{
