@@ -60,6 +60,20 @@ export class AuthService {
     );
   }
 
+  /*
+  "Mi Perfil" (pedido del usuario, 2026-10-29): despues de editar telefono/direccion con exito, se actualiza
+  el perfil guardado (signal + localStorage) con lo que el propio backend devolvio - mismo patron que
+  aceptarTerminos de arriba, generalizado para no repetirlo por cada campo editable que no fuerza logout
+  (a diferencia de usuario/clave, que SI lo fuerzan y no necesitan esto).
+  */
+  actualizarPerfilLocal(cambios: Partial<PerfilCuenta>): void {
+    const perfilActual = this.perfil();
+    if (!perfilActual) return;
+    const perfilActualizado: PerfilCuenta = { ...perfilActual, ...cambios };
+    localStorage.setItem(CLAVE_PERFIL, JSON.stringify(perfilActualizado));
+    this.perfil.set(perfilActualizado);
+  }
+
   private guardarSesion(respuesta: RespuestaLogin): void {
     localStorage.setItem(CLAVE_TOKEN, respuesta.token);
     localStorage.setItem(CLAVE_PERFIL, JSON.stringify(respuesta.perfil));

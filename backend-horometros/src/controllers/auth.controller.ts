@@ -154,6 +154,13 @@ export const login = async(req: Request, res: Response):Promise<void> => {
                     hacienda_id: haciendaId,
                     hacienda_requiere_codigo: haciendaRequiereCodigo,
                     terminos_aceptados: !!cuentaOperador.terminos_aceptados_en,
+                    // "Mi Perfil" (pedido del usuario, 2026-10-28, ampliado 2026-10-29) los necesita para
+                    // mostrar el usuario/telefono/direccion/cedula actuales sin pedir un GET aparte - ya
+                    // vienen descifrados por los getters del modelo (ver models/operador.ts).
+                    usuario: cuentaOperador.usuario ?? null,
+                    telefono: cuentaOperador.telefono ?? null,
+                    direccion: cuentaOperador.direccion ?? null,
+                    cedula: cuentaOperador.cedula ?? null,
                 },
             });
             return;

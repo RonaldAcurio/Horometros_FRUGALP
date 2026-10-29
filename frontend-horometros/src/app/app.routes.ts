@@ -77,6 +77,13 @@ export const routes: Routes = [
         loadComponent: () => import('./features/asistencia/pages/mi-jornada/mi-jornada').then(m => m.MiJornada)
     },
     {
+        // "Mi Perfil" (pedido del usuario, 2026-10-28): el propio trabajador ve su historial y cambia su
+        // usuario (nunca la clave). Mismo guard que /mi-jornada - no abre esta pantalla a ningun otro rol.
+        path: 'mi-perfil',
+        canActivate: [authGuard, roleGuard('MECANICO', 'OPERADOR')],
+        loadComponent: () => import('./features/asistencia/pages/mi-perfil/mi-perfil').then(m => m.MiPerfil)
+    },
+    {
         path: '**',
         canActivate: [authGuard, homeRedirectGuard],
         loadComponent: () => import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent)

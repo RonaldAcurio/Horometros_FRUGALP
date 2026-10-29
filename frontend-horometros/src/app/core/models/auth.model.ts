@@ -23,6 +23,13 @@ export interface PerfilCuenta {
   // false = todavia no acepto la Politica de Privacidad/Terminos de Uso (gate de primer login, ver CLAUDE.md
   // y TerminosModal). El login SIEMPRE lo manda, para ambos tipos de cuenta.
   terminos_aceptados: boolean;
+  // "Mi Perfil" (pedido del usuario, 2026-10-28, ampliado 2026-10-29): solo vienen en cuentas
+  // MECANICO/OPERADOR - para mostrarlos/editarlos sin pedir un endpoint GET aparte. cedula nunca se edita
+  // desde Mi Perfil (de solo lectura).
+  usuario?: string | null;
+  telefono?: string | null;
+  direccion?: string | null;
+  cedula?: string | null;
 }
 
 export interface RespuestaLogin {

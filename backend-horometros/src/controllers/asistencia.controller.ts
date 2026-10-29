@@ -95,6 +95,46 @@ const verificarDuplicadosOperador = async(
 };
 
 /*
+Choque de 'usuario' contra CUALQUIER cuenta que pueda tener ese login (Usuario de oficina U Operador) - extraido
+aparte (pedido del usuario, 2026-10-28) porque esta misma validacion ya se repetia dentro de
+validarCredencialesOperador (abajo) y ahora tambien la necesita actualizarMiUsuario (autoservicio) - una sola
+fuente de verdad para no repetir una tercera vez el mismo chequeo. Devuelve null si 'usuario' esta libre, o la
+respuesta de error (status+body) ya lista para mandar tal cual con res.status(x).json(y).
+*/
+const verificarUsuarioDisponible = async (
+    usuario: string, idOperadorAExcluir?: number
+): Promise<{ status: number; body: Record<string, unknown> } | null> => {
+    // Comparacion sin distinguir mayusculas: evita crear dos cuentas que solo difieran en eso (ver login,
+    // auth.controller.ts, que ya busca asi) y quedarian indistinguibles para el trabajador.
+    const usuarioLike = { [Op.iLike]: usuario };
+    const usuarioExistente = await Usuario.findOne({ where: { usuario: usuarioLike }});
+    /*
+    paranoid:false (pedido del usuario, 2026-10-16, mismo motivo que verificarDuplicadosOperador): un
+    usuario que pertenecio a un Operador ELIMINADO tiene que detectarse aca para poder ofrecer "Activar
+    y editar" en vez de dejar que el INSERT/UPDATE choque crudo contra el UNIQUE de Postgres (que no
+    distingue eliminados). Usuario (cuentas de oficina) no es paranoid, no hace falta ahi.
+    */
+    const operadorConMismoUsuario = await Operador.findOne({
+        where: idOperadorAExcluir ? { usuario: usuarioLike, id: { [Op.ne]: idOperadorAExcluir } } : { usuario: usuarioLike },
+        paranoid: false,
+    });
+    if(usuarioExistente || operadorConMismoUsuario){
+        if(operadorConMismoUsuario?.deletedAt){
+            return {
+                status: 409,
+                body: {
+                    message: `El usuario "${usuario}" perteneció a ${operadorConMismoUsuario.nombre_completo}, que fue eliminado.`,
+                    operador_eliminado: { id: operadorConMismoUsuario.id, nombre_completo: operadorConMismoUsuario.nombre_completo },
+                },
+            };
+        }
+        const nombreExistente = usuarioExistente?.nombre_completo ?? operadorConMismoUsuario?.nombre_completo;
+        return { status: 409, body: { message: `El usuario "${usuario}" ya está en uso por ${nombreExistente}.`} };
+    }
+    return null;
+};
+
+/*
 Valida el trio opcional supervisor_id/usuario/clave que puede venir al crear o actualizar un Operador.
 Devuelve null (y ya respondio el error) si algo no es valido, o el objeto listo para mezclar en Operador.create/update.
 
@@ -137,30 +177,9 @@ const validarCredencialesOperador = async(
         }
 
         if(usuario){
-            // Comparacion sin distinguir mayusculas: evita crear dos cuentas que solo difieran en eso (ver login,
-            // auth.controller.ts, que ya busca asi) y quedarian indistinguibles para el trabajador.
-            const usuarioLike = { [Op.iLike]: usuario };
-            const usuarioExistente = await Usuario.findOne({ where: { usuario: usuarioLike }});
-            /*
-            paranoid:false (pedido del usuario, 2026-10-16, mismo motivo que verificarDuplicadosOperador): un
-            usuario que pertenecio a un Operador ELIMINADO tiene que detectarse aca para poder ofrecer "Activar
-            y editar" en vez de dejar que el INSERT/UPDATE choque crudo contra el UNIQUE de Postgres (que no
-            distingue eliminados). Usuario (cuentas de oficina) no es paranoid, no hace falta ahi.
-            */
-            const operadorConMismoUsuario = await Operador.findOne({
-                where: idAExcluir ? { usuario: usuarioLike, id: { [Op.ne]: idAExcluir } } : { usuario: usuarioLike },
-                paranoid: false,
-            });
-            if(usuarioExistente || operadorConMismoUsuario){
-                if(operadorConMismoUsuario?.deletedAt){
-                    res.status(409).json({
-                        message: `El usuario "${usuario}" perteneció a ${operadorConMismoUsuario.nombre_completo}, que fue eliminado.`,
-                        operador_eliminado: { id: operadorConMismoUsuario.id, nombre_completo: operadorConMismoUsuario.nombre_completo },
-                    });
-                    return null;
-                }
-                const nombreExistente = usuarioExistente?.nombre_completo ?? operadorConMismoUsuario?.nombre_completo;
-                res.status(409).json({ message: `El usuario "${usuario}" ya está en uso por ${nombreExistente}.`});
+            const colision = await verificarUsuarioDisponible(usuario, idAExcluir);
+            if(colision){
+                res.status(colision.status).json(colision.body);
                 return null;
             }
             usuarioFinal = usuario;
@@ -434,7 +453,24 @@ export const importarOperadores = async (req: Request, res: Response): Promise<v
 export const actualizarOperador = async (req:Request, res:Response):Promise<void> => {
     try{
         const { id } = req.params;
-        const { cedula, telefono, direccion, rol, seccion_id, nombre_completo } = req.body;
+
+        /*
+        "Mi Perfil" del trabajador (pedido del usuario, 2026-10-29): un MECANICO/OPERADOR puede llamar esta
+        MISMA ruta para editar su propio telefono/direccion, en vez de un endpoint aparte - mismo endpoint,
+        permiso condicionado. Dos reglas duras para esa rama: (1) nunca sobre OTRO id que no sea el propio,
+        (2) se IGNORA por completo cualquier otro campo del body (cedula/nombre_completo/rol/seccion_id/
+        usuario/clave/supervisor_id), sin importar que venga - no basta con confiar en que el frontend nunca
+        los mande, el propio controller los descarta antes de leerlos.
+        */
+        const esAutoservicioOperador = req.auth?.tipo === 'operador';
+        if(esAutoservicioOperador && req.auth!.id !== Number(id)){
+            res.status(403).json({ message: 'Solo puedes editar tu propio registro.' });
+            return;
+        }
+
+        const { cedula, telefono, direccion, rol, seccion_id, nombre_completo } = esAutoservicioOperador
+            ? { cedula: undefined, telefono: req.body.telefono, direccion: req.body.direccion, rol: undefined, seccion_id: undefined, nombre_completo: undefined }
+            : req.body;
 
         if(rol && !ROLES_OPERADOR_VALIDOS.includes(rol)){
             res.status(400).json({message: `rol debe ser uno de: ${ROLES_OPERADOR_VALIDOS.join(', ')}.`});
@@ -472,7 +508,15 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
             return;
         }
 
-        const credenciales = await validarCredencialesOperador(req, res, operador.id);
+        /*
+        validarCredencialesOperador lee 'usuario'/'clave'/'supervisor_id' directamente de req.body (no del
+        destructuring de arriba) - en la rama de autoservicio esto se SALTA por completo, nunca se llama, para
+        que un token de Operador no pueda colarse un cambio de usuario/clave/supervisor por esta misma ruta
+        (esos ya tienen sus propios endpoints dedicados: mi-usuario/mi-clave).
+        */
+        const credenciales = esAutoservicioOperador
+            ? { supervisor_id: null, usuario: null, clave_hash: null }
+            : await validarCredencialesOperador(req, res, operador.id);
         if(!credenciales) return;
 
         // Validar contra el Supervisor y el ROL FINALES (el nuevo si lo mandaron, si no el que ya tenia) - un
@@ -507,9 +551,17 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
 
         await operador.update({
             nombre_completo: nombreCompletoFinal ?? operador.nombre_completo,
-            cedula: cedula || null, // ver nota en crearOperador: '' choca contra otro '' en el UNIQUE, null no.
-            telefono,
-            direccion,
+            /*
+            !== undefined (antes era un || / asignacion directa, sin conservar lo que ya tenia si el campo no
+            venia - bug real descubierto al agregar el autoservicio de abajo, pedido del usuario, 2026-10-29):
+            el autoservicio del trabajador SOLO manda telefono/direccion, cedula nunca viaja en esa rama - sin
+            este chequeo, 'cedula: cedula || null' la hubiera borrado en cada edicion de telefono/direccion.
+            '' sigue limpiando el campo a proposito (ver nota en crearOperador: '' choca contra otro '' en el
+            UNIQUE de cedula, null no) - solo la AUSENCIA del campo en el body preserva el valor actual.
+            */
+            cedula: cedula !== undefined ? (cedula || null) : operador.cedula,
+            telefono: telefono !== undefined ? (telefono || null) : operador.telefono,
+            direccion: direccion !== undefined ? (direccion || null) : operador.direccion,
             // ?? en vez de || : si no mandan un dato nuevo, conservamos el que ya tenia (no lo borramos).
             rol: rol ?? operador.rol,
             supervisor_id: credenciales.supervisor_id ?? operador.supervisor_id,
@@ -540,6 +592,100 @@ export const actualizarOperador = async (req:Request, res:Response):Promise<void
         }
         console.error('Error al actualizar el operador:', err);
         res.status(500).json({message: 'Error al actualizar el operador. Intenta de nuevo.'});
+    }
+};
+
+/*
+"Mi Perfil" del trabajador (pedido del usuario, 2026-10-28): un MECANICO/OPERADOR cambia SOLO su propio
+'usuario' aqui - la 'clave' propia tiene su propio endpoint dedicado (actualizarMiClave, mas abajo; pedido
+del usuario, 2026-10-29 - al principio se dijo que la clave quedaba fuera, el usuario cambio de criterio en
+esa fecha). resetearClaveOperador (ADMIN/ASISTENTE sobre CUALQUIER operador) sigue existiendo aparte, sin
+cambios. Reusa el mismo chequeo de unicidad cruzado Usuario/Operador que ya usa validarCredencialesOperador
+(verificarUsuarioDisponible, arriba) y el mismo criterio de invalidar sesiones viejas al cambiar el login
+(sesion_valida_desde) - el frontend debe cerrar la sesion actual despues de esto, el propio token en uso queda
+invalidado para la proxima peticion. No se registra en RegistroAuditoria (su actor_usuario_id tiene FK a la
+tabla 'usuarios' de cuentas de oficina - un Operador autoservicio no es un actor valido ahi, y ese historial
+esta pensado para "alguien actuo sobre la cuenta de otro", no para esto).
+*/
+export const actualizarMiUsuario = async(req:Request, res:Response):Promise<void> => {
+    try{
+        if(!req.auth || req.auth.tipo !== 'operador'){
+            res.status(403).json({ message: 'Esta ruta es solo para trabajadores.' });
+            return;
+        }
+
+        const usuario = typeof req.body.usuario === 'string' ? req.body.usuario.trim() : '';
+        if(!usuario){
+            res.status(400).json({ message: 'El usuario no puede quedar vacío.' });
+            return;
+        }
+        if(usuario.length > 50){
+            res.status(400).json({ message: `El usuario no puede tener más de 50 caracteres (tiene ${usuario.length}).` });
+            return;
+        }
+
+        const operador = await Operador.findByPk(req.auth.id);
+        if(!operador){
+            res.status(404).json({ message: 'Operador no encontrado.' });
+            return;
+        }
+
+        if(usuario === operador.usuario){
+            res.json({ message: 'Ese ya es tu usuario actual.', usuario });
+            return;
+        }
+
+        const colision = await verificarUsuarioDisponible(usuario, operador.id);
+        if(colision){
+            res.status(colision.status).json(colision.body);
+            return;
+        }
+
+        await operador.update({ usuario, sesion_valida_desde: new Date() });
+        res.json({ message: 'Usuario actualizado. Vuelve a iniciar sesión con tu nuevo usuario.', usuario });
+    }catch(err){
+        const mensajeDuplicado = mensajeDuplicadoGenerico(err);
+        if(mensajeDuplicado){
+            res.status(409).json({ message: mensajeDuplicado });
+            return;
+        }
+        console.error('Error al cambiar el usuario propio:', err);
+        res.status(500).json({ message: 'Error al cambiar tu usuario. Intenta de nuevo.' });
+    }
+};
+
+/*
+"Mi Perfil" del trabajador (pedido del usuario, 2026-10-29): un MECANICO/OPERADOR pone su propia clave
+nueva, sin tener que escribir la actual - mismo criterio ya aceptado para el cambio de usuario (ver
+actualizarMiUsuario, arriba). Mismo patron de hash + invalidacion de sesion que resetearClaveOperador (mas
+abajo, exclusivo ADMIN/ASISTENTE sobre CUALQUIER operador) - esta version autoservicio solo puede tocar
+req.auth.id, nunca recibe un id del cliente. Sin registro de auditoria, mismo motivo que actualizarMiUsuario.
+*/
+export const actualizarMiClave = async(req:Request, res:Response):Promise<void> => {
+    try{
+        if(!req.auth || req.auth.tipo !== 'operador'){
+            res.status(403).json({ message: 'Esta ruta es solo para trabajadores.' });
+            return;
+        }
+
+        const clave = typeof req.body.clave === 'string' ? req.body.clave.trim() : '';
+        if(!clave || clave.length < 8){
+            res.status(400).json({ message: 'La clave debe tener al menos 8 caracteres.' });
+            return;
+        }
+
+        const operador = await Operador.findByPk(req.auth.id);
+        if(!operador){
+            res.status(404).json({ message: 'Operador no encontrado.' });
+            return;
+        }
+
+        const clave_hash = await bcrypt.hash(clave, 10);
+        await operador.update({ clave_hash, sesion_valida_desde: new Date() });
+        res.json({ message: 'Clave actualizada. Vuelve a iniciar sesión con tu nueva clave.' });
+    }catch(err){
+        console.error('Error al cambiar la clave propia:', err);
+        res.status(500).json({ message: 'Error al cambiar tu clave. Intenta de nuevo.' });
     }
 };
 
@@ -2036,155 +2182,203 @@ export const deshacerCierreJornada = async(req:Request, res:Response):Promise<vo
 };
 
 // Historial con filtros opcionales de fechas
+/*
+Logica real del Historial, extraida aparte de obtenerHistorial (pedido del usuario, 2026-10-28) para que
+obtenerMiHistorial (abajo) la reuse sin duplicarla y SIN mutar req.query - Express 5 expone 'query' como una
+propiedad de solo lectura (getter sobre la URL), reasignarla tira TypeError en vez de cambiar nada.
+*/
+const construirHistorial = async (filtros: {
+    fechaInicio?: string | undefined; fechaFin?: string | undefined; operadorId?: number | undefined;
+    haciendaId?: number | undefined; supervisorId?: number | undefined;
+    pagina: number; limite: number;
+}) => {
+    const { fechaInicio, fechaFin, operadorId, haciendaId, supervisorId, pagina, limite } = filtros;
+    const whereCondition:any = {};
+
+    // Filtro por rango de fecha
+    if(fechaInicio && fechaFin){
+        whereCondition.fecha = {
+            [Op.between]:[fechaInicio, fechaFin]
+        };
+    } else if(fechaInicio){
+        whereCondition.fecha = fechaInicio;
+    }
+
+    // Filtro opcional por operador
+    if(operadorId){
+        whereCondition.operador_id = operadorId;
+    }
+
+    /*
+    El Historial de Asistencia es la auditoria OFICIAL: solo debe mostrar jornadas que el supervisor ya
+    reviso y cerro (FINALIZADO/SALIDA_OLVIDADA/OBSERVANDO), nunca marcaciones todavia en curso (EN_JORNADA)
+    o pendiente de revision (PENDIENTE_REVISION).
+
+    OBSERVANDO agregado (bug real, 2026-09-28): es el estado que deja la X del Supervisor (confirmarAsistencia,
+    "no presente" - ver mas abajo) - o sea, exactamente "el Supervisor ya lo revisó y decidió algo", el mismo
+    criterio que ya justifica incluir FINALIZADO/SALIDA_OLVIDADA. Se había quedado afuera de este filtro por
+    descuido, así que un caso OBSERVANDO (el más importante de auditar, marca una posible marcación fraudulenta)
+    nunca llegaba al reporte del Panel de Asistente - el usuario lo encontró probando el flujo real completo.
+
+    confirmado_por_supervisor no nulo: un trabajador puede autocerrar su PROPIA jornada como SALIDA_OLVIDADA
+    sin que el Supervisor la haya revisado (autoservicio "no podre marcar salida", ver marcarSalidaOlvidada) -
+    eso deja estado en SALIDA_OLVIDADA de inmediato, sin pasar por finalizarDia, que es quien normalmente
+    exige el O/X del Supervisor antes de cerrar el dia. Sin este filtro, esa jornada aparecia en el Historial
+    apenas el trabajador se autocerraba, como si fuera "en tiempo real" - antes de que el Supervisor hiciera
+    su revision o cerrara el dia. Se exige la misma condicion que finalizarDia ya exige (confirmado_por_supervisor
+    !== null) para que el Historial nunca muestre nada que el Supervisor no haya revisado todavia.
+    */
+    whereCondition.estado = { [Op.in] : ['FINALIZADO','SALIDA_OLVIDADA','OBSERVANDO']};
+    whereCondition.confirmado_por_supervisor = { [Op.ne]: null };
+
+    // Paginacion: sin esto, un filtro de "todo el ano" intentaria devolver miles de registros (con sus fotos,
+    // si no los hubieramos excluido arriba) en una sola respuesta.
+    const paginaActual = Math.max(1, pagina || 1);
+    const limitePagina = Math.min(100, Math.max(1, limite || 30));
+    const offset = (paginaActual - 1) * limitePagina;
+
+    /*
+    Filtro opcional por hacienda o por supervisor: el Operador no tiene hacienda_id propio (vive del
+    Supervisor al que pertenece de forma permanente, ver CLAUDE.md), asi que "hacienda" se filtra via el
+    include anidado operador -> supervisor -> hacienda_id, y "supervisor" directo sobre
+    operador.supervisor_id (lo usa el panel de ADMIN para ver solo lo que hizo un Supervisor puntual, sin
+    tener que saber a que hacienda pertenece). `required: true` en 'operador' cuando hay CUALQUIERA de los
+    dos filtros convierte el include en INNER JOIN (si no, Sequelize lo deja LEFT JOIN y el where anidado no
+    filtra nada).
+    */
+    const filtrarPorHacienda = haciendaId !== undefined;
+    const filtrarPorSupervisor = supervisorId !== undefined;
+    const { rows:historial, count:total } = await Asistencia.findAndCountAll({
+        where: whereCondition,
+        attributes:ATRIBUTOS_SIN_FOTO,
+        /*
+        paranoid:false en Operador/Actividad: el Historial es la auditoria OFICIAL de jornadas ya cerradas -
+        si el Operador o alguna Actividad fue eliminado (soft-delete) DESPUES de esa jornada, el registro
+        historico tiene que seguir mostrando su nombre igual, no desaparecer del reporte.
+        */
+        include:[
+            {
+                model: Operador, as: 'operador',
+                required: filtrarPorHacienda || filtrarPorSupervisor,
+                paranoid: false,
+                ...(filtrarPorSupervisor ? { where: { supervisor_id: supervisorId } } : {}),
+                /*
+                attributes:['hacienda_id'] (antes []): la hoja imprimible (Ver/Imprimir, asistencia-panel.ts)
+                necesita mostrar en QUE hacienda se hizo la jornada en vez del codigo_megued (que ya se
+                repite en el carnet/QR) - hacienda_id es la hacienda PERMANENTE del trabajador via su
+                Supervisor. Se anida Hacienda para traer el nombre en la misma consulta.
+                */
+                include: [{
+                    model: Usuario, as: 'supervisor',
+                    attributes: ['hacienda_id'],
+                    ...(filtrarPorHacienda ? { where: { hacienda_id: haciendaId } } : {}),
+                    include: [{ model: Hacienda, as: 'hacienda', attributes: ['nombre'] }],
+                }],
+            },
+            { model: Actividad, as: 'actividad', paranoid: false },
+            { model: Actividad, as: 'actividades', paranoid: false },
+            /*
+            haciendaPrestamo: cuando la jornada fue de un trabajador PRESTADO (ver hacienda_prestamo_id),
+            la hoja imprimible debe mostrar la hacienda donde REALMENTE trabajó ese día, no su hacienda
+            permanente - el frontend prioriza esta sobre operador.supervisor.hacienda (ver asistencia-panel.ts).
+            */
+            { model: Hacienda, as: 'haciendaPrestamo', attributes: ['nombre'], paranoid: false },
+            /*
+            Labores del Panel de Actividades de ESTA jornada (pedido del usuario, 2026-10-15): "Horas
+            Trabajadas" pasa a ser la suma de hora_fin-hora_inicio de cada labor, no hora_salida-hora_ingreso
+            (ver mas abajo) - un trabajador puede marcar salida horas despues de haber dejado de trabajar de
+            verdad (ya en su casa), asi que el rango completo de la jornada mentia. Solo se piden
+            hora_inicio/hora_fin, nada mas - el resto (equipo/actividad) no hace falta para esta suma.
+            */
+            { model: RegistroActividad, as: 'registros', attributes: ['hora_inicio', 'hora_fin'] },
+        ],
+        order: [['fecha','DESC'],['hora_ingreso','DESC']],
+        limit: limitePagina,
+        offset,
+        //El include de 'actividades' es un JOIN muchos-a-muchos: sin 'distinct' el count quedaria inflado (cuenta una vez por cada actividad
+        //vinculada, no por registro).
+        distinct: true,
+    });
+
+    /*
+    Calculamos las horas trabajadas de cada registro (campo derivado, no vive en la BD). Suma de las labores
+    del Panel de Actividades con hora_fin (pedido del usuario, 2026-10-15), no hora_salida-hora_ingreso -
+    las labores sin hora_fin (dejadas sueltas por un cierre de dia en bloque, caso raro) se excluyen de la
+    suma en vez de inventarles una hora de cierre. Si NINGUNA labor de esta jornada tiene horas (caso del
+    kiosco fisico/carnet, que nunca pasa por el Panel de Actividades - ver registrarMacarcoQR/marcarConCodigo),
+    total_horas queda en null (el frontend ya lo pinta como "—", nunca como "0 h") en vez de mentir con cero.
+    */
+    const historialConHoras = historial.map((registro) => {
+        const datos = registro.toJSON() as any;
+        const registrosConHoras: { hora_inicio: string; hora_fin: string | null }[] = datos.registros || [];
+
+        let total_horas: number | null = null;
+        const sumaHoras = registrosConHoras.reduce((acumulado, reg) => {
+            if(!reg.hora_fin) return acumulado;
+            const milisegundos = new Date(reg.hora_fin).getTime() - new Date(reg.hora_inicio).getTime();
+            return acumulado + milisegundos;
+        }, 0);
+        const hayAlgunaLaborConHoras = registrosConHoras.some((reg) => reg.hora_fin);
+        if(hayAlgunaLaborConHoras){
+            total_horas = Math.round((sumaHoras / (1000 * 60 * 60)) * 100) / 100;
+        }
+
+        delete datos.registros; // Solo se usaba para este calculo - no hace falta mandarlo al frontend.
+        return {...datos, total_horas};
+    });
+
+    return {
+        data: historialConHoras,
+        total,
+        pagina: paginaActual,
+        totalPaginas: Math.ceil(total / limitePagina) || 1,
+    };
+};
+
 export const obtenerHistorial = async(req:Request, res:Response):Promise<void> => {
     try{
         const { fecha_inicio, fecha_fin, operador_id, hacienda_id, supervisor_id } = req.query;
-        const whereCondition:any = {};
-
-        // Filtro por rango de fecha
-        if(fecha_inicio && fecha_fin){
-            whereCondition.fecha = {
-                [Op.between]:[String(fecha_inicio), String(fecha_fin)]
-            };
-        } else if(fecha_inicio){
-            whereCondition.fecha = String(fecha_inicio);
-        }
-
-        // Filtro opcional por operador
-        if(operador_id){
-            whereCondition.operador_id = Number(operador_id);
-        }
-
-        /*
-        El Historial de Asistencia es la auditoria OFICIAL: solo debe mostrar jornadas que el supervisor ya
-        reviso y cerro (FINALIZADO/SALIDA_OLVIDADA/OBSERVANDO), nunca marcaciones todavia en curso (EN_JORNADA)
-        o pendiente de revision (PENDIENTE_REVISION).
-
-        OBSERVANDO agregado (bug real, 2026-09-28): es el estado que deja la X del Supervisor (confirmarAsistencia,
-        "no presente" - ver mas abajo) - o sea, exactamente "el Supervisor ya lo revisó y decidió algo", el mismo
-        criterio que ya justifica incluir FINALIZADO/SALIDA_OLVIDADA. Se había quedado afuera de este filtro por
-        descuido, así que un caso OBSERVANDO (el más importante de auditar, marca una posible marcación fraudulenta)
-        nunca llegaba al reporte del Panel de Asistente - el usuario lo encontró probando el flujo real completo.
-
-        confirmado_por_supervisor no nulo: un trabajador puede autocerrar su PROPIA jornada como SALIDA_OLVIDADA
-        sin que el Supervisor la haya revisado (autoservicio "no podre marcar salida", ver marcarSalidaOlvidada) -
-        eso deja estado en SALIDA_OLVIDADA de inmediato, sin pasar por finalizarDia, que es quien normalmente
-        exige el O/X del Supervisor antes de cerrar el dia. Sin este filtro, esa jornada aparecia en el Historial
-        apenas el trabajador se autocerraba, como si fuera "en tiempo real" - antes de que el Supervisor hiciera
-        su revision o cerrara el dia. Se exige la misma condicion que finalizarDia ya exige (confirmado_por_supervisor
-        !== null) para que el Historial nunca muestre nada que el Supervisor no haya revisado todavia.
-        */
-        whereCondition.estado = { [Op.in] : ['FINALIZADO','SALIDA_OLVIDADA','OBSERVANDO']};
-        whereCondition.confirmado_por_supervisor = { [Op.ne]: null };
-
-        /*
-        Paginacion: sin esto, un filtro de "todo el ano" intentaria devolver miles de registros (con sus fotos, si no los hubieramos excluido arriba)
-        en una sola respuesta.
-        */
-       const paginaActual = Math.max(1, Number(req.query['pagina']) || 1);
-       const limitePagina = Math.min(100, Math.max(1, Number(req.query['limite']) || 30));
-       const offset = (paginaActual -1) * limitePagina;
-
-        /*
-        Filtro opcional por hacienda o por supervisor: el Operador no tiene hacienda_id propio (vive del
-        Supervisor al que pertenece de forma permanente, ver CLAUDE.md), asi que "hacienda" se filtra via el
-        include anidado operador -> supervisor -> hacienda_id, y "supervisor" directo sobre
-        operador.supervisor_id (lo usa el panel de ADMIN para ver solo lo que hizo un Supervisor puntual, sin
-        tener que saber a que hacienda pertenece). `required: true` en 'operador' cuando hay CUALQUIERA de los
-        dos filtros convierte el include en INNER JOIN (si no, Sequelize lo deja LEFT JOIN y el where anidado no
-        filtra nada).
-        */
-        const filtrarPorHacienda = hacienda_id !== undefined && hacienda_id !== '';
-        const filtrarPorSupervisor = supervisor_id !== undefined && supervisor_id !== '';
-        const { rows:historial, count:total } = await Asistencia.findAndCountAll({
-            where: whereCondition,
-            attributes:ATRIBUTOS_SIN_FOTO,
-            /*
-            paranoid:false en Operador/Actividad: el Historial es la auditoria OFICIAL de jornadas ya cerradas -
-            si el Operador o alguna Actividad fue eliminado (soft-delete) DESPUES de esa jornada, el registro
-            historico tiene que seguir mostrando su nombre igual, no desaparecer del reporte.
-            */
-            include:[
-                {
-                    model: Operador, as: 'operador',
-                    required: filtrarPorHacienda || filtrarPorSupervisor,
-                    paranoid: false,
-                    ...(filtrarPorSupervisor ? { where: { supervisor_id: Number(supervisor_id) } } : {}),
-                    /*
-                    attributes:['hacienda_id'] (antes []): la hoja imprimible (Ver/Imprimir, asistencia-panel.ts)
-                    necesita mostrar en QUE hacienda se hizo la jornada en vez del codigo_megued (que ya se
-                    repite en el carnet/QR) - hacienda_id es la hacienda PERMANENTE del trabajador via su
-                    Supervisor. Se anida Hacienda para traer el nombre en la misma consulta.
-                    */
-                    include: [{
-                        model: Usuario, as: 'supervisor',
-                        attributes: ['hacienda_id'],
-                        ...(filtrarPorHacienda ? { where: { hacienda_id: Number(hacienda_id) } } : {}),
-                        include: [{ model: Hacienda, as: 'hacienda', attributes: ['nombre'] }],
-                    }],
-                },
-                { model: Actividad, as: 'actividad', paranoid: false },
-                { model: Actividad, as: 'actividades', paranoid: false },
-                /*
-                haciendaPrestamo: cuando la jornada fue de un trabajador PRESTADO (ver hacienda_prestamo_id),
-                la hoja imprimible debe mostrar la hacienda donde REALMENTE trabajó ese día, no su hacienda
-                permanente - el frontend prioriza esta sobre operador.supervisor.hacienda (ver asistencia-panel.ts).
-                */
-                { model: Hacienda, as: 'haciendaPrestamo', attributes: ['nombre'], paranoid: false },
-                /*
-                Labores del Panel de Actividades de ESTA jornada (pedido del usuario, 2026-10-15): "Horas
-                Trabajadas" pasa a ser la suma de hora_fin-hora_inicio de cada labor, no hora_salida-hora_ingreso
-                (ver mas abajo) - un trabajador puede marcar salida horas despues de haber dejado de trabajar de
-                verdad (ya en su casa), asi que el rango completo de la jornada mentia. Solo se piden
-                hora_inicio/hora_fin, nada mas - el resto (equipo/actividad) no hace falta para esta suma.
-                */
-                { model: RegistroActividad, as: 'registros', attributes: ['hora_inicio', 'hora_fin'] },
-            ],
-            order: [['fecha','DESC'],['hora_ingreso','DESC']],
-            limit: limitePagina,
-            offset,
-            //El include de 'actividades' es un JOIN muchos-a-muchos: sin 'distinct' el count quedaria inflado (cuenta una vez por cada actividad
-            //vinculada, no por registro).
-            distinct: true,
+        const resultado = await construirHistorial({
+            fechaInicio: fecha_inicio ? String(fecha_inicio) : undefined,
+            fechaFin: fecha_fin ? String(fecha_fin) : undefined,
+            operadorId: operador_id ? Number(operador_id) : undefined,
+            haciendaId: (hacienda_id !== undefined && hacienda_id !== '') ? Number(hacienda_id) : undefined,
+            supervisorId: (supervisor_id !== undefined && supervisor_id !== '') ? Number(supervisor_id) : undefined,
+            pagina: Number(req.query['pagina']) || 1,
+            limite: Number(req.query['limite']) || 30,
         });
-
-        /*
-        Calculamos las horas trabajadas de cada registro (campo derivado, no vive en la BD). Suma de las labores
-        del Panel de Actividades con hora_fin (pedido del usuario, 2026-10-15), no hora_salida-hora_ingreso -
-        las labores sin hora_fin (dejadas sueltas por un cierre de dia en bloque, caso raro) se excluyen de la
-        suma en vez de inventarles una hora de cierre. Si NINGUNA labor de esta jornada tiene horas (caso del
-        kiosco fisico/carnet, que nunca pasa por el Panel de Actividades - ver registrarMacarcoQR/marcarConCodigo),
-        total_horas queda en null (el frontend ya lo pinta como "—", nunca como "0 h") en vez de mentir con cero.
-        */
-        const historialConHoras = historial.map((registro) => {
-            const datos = registro.toJSON() as any;
-            const registrosConHoras: { hora_inicio: string; hora_fin: string | null }[] = datos.registros || [];
-
-            let total_horas: number | null = null;
-            const sumaHoras = registrosConHoras.reduce((acumulado, reg) => {
-                if(!reg.hora_fin) return acumulado;
-                const milisegundos = new Date(reg.hora_fin).getTime() - new Date(reg.hora_inicio).getTime();
-                return acumulado + milisegundos;
-            }, 0);
-            const hayAlgunaLaborConHoras = registrosConHoras.some((reg) => reg.hora_fin);
-            if(hayAlgunaLaborConHoras){
-                total_horas = Math.round((sumaHoras / (1000 * 60 * 60)) * 100) / 100;
-            }
-
-            delete datos.registros; // Solo se usaba para este calculo - no hace falta mandarlo al frontend.
-            return {...datos, total_horas};
-        });
-
-        res.json({
-            data: historialConHoras,
-            total,
-            pagina: paginaActual,
-            totalPaginas: Math.ceil(total / limitePagina) || 1,
-        });
-
+        res.json(resultado);
     } catch(err){
         console.error('Error al consultar el historial del asistencia', err);
         res.status(500).json({ message: 'Error al consultar el historial del asistencia' });
+    }
+};
+
+/*
+"Mi Perfil" del trabajador (pedido del usuario, 2026-10-28): un MECANICO/OPERADOR ve su propio historial,
+mismo criterio y formato que ya ve un ADMIN en obtenerHistorial (arriba, via construirHistorial) - se
+reutiliza esa misma logica en vez de duplicarla, forzando operadorId al dueño del token. hacienda_id/
+supervisor_id del cliente se ignoran por completo (ni siquiera se leen) - no tienen sentido para un
+trabajador viendo solo su propia asistencia.
+*/
+export const obtenerMiHistorial = async(req:Request, res:Response):Promise<void> => {
+    try{
+        if(!req.auth || req.auth.tipo !== 'operador'){
+            res.status(403).json({ message: 'Esta ruta es solo para trabajadores.' });
+            return;
+        }
+        const { fecha_inicio, fecha_fin } = req.query;
+        const resultado = await construirHistorial({
+            fechaInicio: fecha_inicio ? String(fecha_inicio) : undefined,
+            fechaFin: fecha_fin ? String(fecha_fin) : undefined,
+            operadorId: req.auth.id,
+            pagina: Number(req.query['pagina']) || 1,
+            limite: Number(req.query['limite']) || 30,
+        });
+        res.json(resultado);
+    } catch(err){
+        console.error('Error al consultar mi historial de asistencia', err);
+        res.status(500).json({ message: 'Error al consultar tu historial de asistencia' });
     }
 };
 

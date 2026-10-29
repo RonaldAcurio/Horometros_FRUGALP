@@ -23,6 +23,9 @@ import {
     activarOperador,
     importarOperadores,
     registrarAsistenciaManual,
+    obtenerMiHistorial,
+    actualizarMiUsuario,
+    actualizarMiClave,
 } from "../controllers/asistencia.controller";
 import { verificarAutenticacion, requireRol, verificarJornadaOperadorActiva } from "../middlewares/auth.middleware";
 import { limitadorLogin, limitadorMarcacion } from "../middlewares/rate-limit.middleware";
@@ -37,7 +40,10 @@ router.post('/operadores/importar', verificarAutenticacion, requireRol('ADMIN','
 // SUPERVISOR agregado (2026-10-20): lo necesita el buscador del modal "+ Agregar Usuario" del Panel de
 // Supervisor - obtenerOperadores lo auto-acota a sus propios trabajadores, mismo criterio que /hoy mas abajo.
 router.get('/operadores', verificarAutenticacion, requireRol('ADMIN','ASISTENTE','SUPERVISOR'), obtenerOperadores);
-router.put('/operadores/:id', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), actualizarOperador);
+// OPERADOR/MECANICO agregados (pedido del usuario, 2026-10-29): "Mi Perfil" reutiliza esta misma ruta para
+// que el trabajador edite su propio telefono/direccion - el controller (actualizarOperador) exige ademas que
+// sea su propio :id y descarta cualquier otro campo del body cuando quien llama es un Operador/Mecanico.
+router.put('/operadores/:id', verificarAutenticacion, requireRol('ADMIN','ASISTENTE','OPERADOR','MECANICO'), actualizarOperador);
 router.delete('/operadores/:id', verificarAutenticacion, requireRol('ADMIN','ASISTENTE'), eliminarOperador);
 // Deshace el soft-delete (ver "Ojo con paranoid + UNIQUE" en CLAUDE.md) - mismos roles que el resto de Gestion
 // de Personal.
@@ -82,6 +88,13 @@ router.get('/mi-qr', verificarAutenticacion, verificarJornadaOperadorActiva, gen
 // cuando lo escanearon y pasar al Panel de Actividades). Sin verificarJornadaOperadorActiva a proposito: este
 // endpoint reporta el estado tal cual esta, incluido "ya se cerro" - no tiene sentido que se corte a si mismo.
 router.get('/mi-estado', verificarAutenticacion, obtenerMiEstado);
+// "Mi Perfil" (pedido del usuario, 2026-10-28, ampliado 2026-10-29): el propio trabajador ve su historial y
+// cambia su usuario y su clave - mismo patron de autoservicio de arriba, sin :id en la URL, siempre sobre
+// req.auth.id. Van aca, junto al resto de endpoints /mi-*, NO dentro de /operadores (evita cualquier
+// conflicto de orden con /operadores/:id, que matchearia "mi-usuario"/"mi-clave" como si fueran un :id).
+router.get('/mi-historial', verificarAutenticacion, requireRol('OPERADOR','MECANICO'), obtenerMiHistorial);
+router.put('/mi-usuario', verificarAutenticacion, requireRol('OPERADOR','MECANICO'), actualizarMiUsuario);
+router.put('/mi-clave', verificarAutenticacion, requireRol('OPERADOR','MECANICO'), actualizarMiClave);
 // Camino B: Supervisor o Escaner (punto de control) escanean ese QR para marcar entrada/salida.
 router.post('/marcar-qr-sesion', verificarAutenticacion, requireRol('ADMIN','SUPERVISOR','ESCANER'), marcarConQrSesion);
 
