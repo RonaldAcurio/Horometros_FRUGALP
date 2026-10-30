@@ -1,7 +1,6 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { Preferences } from '@capacitor/preferences';
 import * as QRCode from 'qrcode';
@@ -27,7 +26,7 @@ recorre las fases de ESE camino, sin ofrecer nunca el otro:
 */
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule],
   selector: 'app-mi-jornada',
   styleUrl: './mi-jornada.css',
   templateUrl: './mi-jornada.html',
@@ -194,9 +193,7 @@ export class MiJornada implements OnInit, OnDestroy {
   constructor(
     private asistenciaService: AsistenciaService,
     private registroActividadService: RegistroActividadService,
-    // protected (no private): el template usa authService.perfil() para la barra superior ("Mi Perfil",
-    // pedido del usuario, 2026-10-28).
-    protected authService: AuthService,
+    private authService: AuthService,
     private notificacionService: NotificacionService,
     private confirmacionService: ConfirmacionService,
     protected offlineSyncService: OfflineSyncService,

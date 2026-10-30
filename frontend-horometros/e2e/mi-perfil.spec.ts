@@ -16,6 +16,13 @@ const aceptarTerminosSiAparece = async (page: Page): Promise<void> => {
   }
 };
 
+// "Mi Perfil" (pedido del usuario, 2026-10-30) vive dentro del dropdown de cuenta del header global
+// (app.html), junto a Política de Privacidad y Cerrar sesión - no como un link aparte en la página.
+const irAMiPerfilDesdeElMenu = async (page: Page): Promise<void> => {
+  await page.click('.cuenta-trigger');
+  await page.click('.cuenta-dropdown a:has-text("👤 Mi Perfil")');
+};
+
 /*
 "Mi Perfil" del trabajador (pedido del usuario, 2026-10-28, rediseñado 2026-10-29 como tarjeta mobile-first):
 QR del carnet, teléfono/dirección editables (cédula de solo lectura), usuario editable, clave propia
@@ -71,9 +78,8 @@ test.describe('Mi Perfil del trabajador', () => {
     // --- UI real: login de HOY (el dia de ayer ya cerrado no bloquea esto) ---
     await loginComo(page, esc.operadorUsuario, esc.operadorClave);
     await aceptarTerminosSiAparece(page);
-    await expect(page.locator('.jornada-barra-nombre')).toContainText(`E2E Trabajador ${sufijo}`);
-
-    await page.click('text=👤 Mi Perfil');
+    await expect(page.locator('.cuenta-nombre')).toContainText(`E2E Trabajador ${sufijo}`);
+    await irAMiPerfilDesdeElMenu(page);
     await expect(page).toHaveURL(/\/mi-perfil/);
 
     // QR del carnet visible (100% cliente, ver mi-perfil.ts).
@@ -124,7 +130,7 @@ test.describe('Mi Perfil del trabajador', () => {
     // Vuelve a entrar con el usuario nuevo para cambiar la clave (autoservicio, pedido del usuario, 2026-10-29).
     await loginComo(page, usuarioNuevo, esc.operadorClave);
     await aceptarTerminosSiAparece(page); // ya se habían aceptado - no debería volver a aparecer.
-    await page.click('text=👤 Mi Perfil');
+    await irAMiPerfilDesdeElMenu(page);
     await expect(page).toHaveURL(/\/mi-perfil/);
 
     const claveNueva = 'ClaveNuevaE2E123';
@@ -139,7 +145,7 @@ test.describe('Mi Perfil del trabajador', () => {
     // La clave nueva funciona, la vieja ya no.
     await loginComo(page, usuarioNuevo, claveNueva);
     await aceptarTerminosSiAparece(page);
-    await expect(page.locator('.jornada-barra-nombre')).toContainText(`E2E Trabajador ${sufijo}`);
+    await expect(page.locator('.cuenta-nombre')).toContainText(`E2E Trabajador ${sufijo}`);
 
     const loginConClaveVieja = await request.post(`${API}/auth/login`, {
       data: { usuario: usuarioNuevo, clave: esc.operadorClave },

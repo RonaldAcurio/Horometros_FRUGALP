@@ -21,41 +21,6 @@ propósito, para que el total sea lo primero y más legible que vea el trabajado
   padding-top: 2rem;
 }
 
-/* Barra superior fija (pedido del usuario, 2026-10-28, "Mi Perfil") - visible en cualquier fase. */
-.jornada-barra-superior {
-  width: 100%;
-  max-width: 26rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.6rem 1rem;
-  margin-bottom: 1rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border-card);
-  border-radius: 0.75rem;
-}
-
-.jornada-barra-nombre {
-  font-weight: 600;
-  color: var(--text-main);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.jornada-barra-link {
-  color: var(--verde);
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.jornada-barra-link:hover {
-  color: var(--verde-hover);
-  text-decoration: underline;
-}
-
 .jornada-card {
   max-width: 26rem;
   width: 100%;
