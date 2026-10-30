@@ -426,6 +426,17 @@ export class SupervisorPanel implements OnInit {
   O (presente) es reversible y de bajo riesgo, se aplica directo. X (ausente) mueve el registro a OBSERVANDO y
   deja una nota automática (ver backend) - por eso pide confirmación antes.
   */
+  /*
+  IDs con una petición de confirmarPresencia todavía en vuelo (pedido del usuario, 2026-10-30): sin esto, un
+  clic rápido en X y luego en O de la MISMA fila antes de que la primera petición termine podía disparar dos
+  peticiones casi simultáneas al backend - la ventana que producía el bug real reportado (confirmado_por_supervisor
+  quedaba en true pero el estado se quedaba pegado en OBSERVANDO, ver el comentario largo en
+  confirmarAsistencia del backend, que ya lo cierra del lado del servidor con un UPDATE atómico). Esto es
+  defensa en profundidad del lado del cliente: evita que la UI deje disparar la segunda petición mientras la
+  primera de ESA fila sigue en curso, en vez de depender solo del arreglo del backend.
+  */
+  confirmandoPresenciaIds = new Set<number>();
+
   async confirmarPresencia(asis: Asistencia, presente: boolean): Promise<void> {
     // Guarda defensiva: el botón ya se deshabilita en el HTML cuando el día está cerrado, pero validamos acá
     // también por si se llega a disparar el click de otra forma (mismo patrón que ejecutarCierreDiario).
@@ -433,6 +444,8 @@ export class SupervisorPanel implements OnInit {
       this.notificacionService.advertencia('Esta jornada ya fue cerrada y no se puede modificar.');
       return;
     }
+
+    if (this.confirmandoPresenciaIds.has(asis.id)) return;
 
     if (!presente) {
       const confirmado = await this.confirmacionService.preguntar(
@@ -442,12 +455,23 @@ export class SupervisorPanel implements OnInit {
       if (!confirmado) return;
     }
 
+    // Mismo chequeo de arriba, repetido después del diálogo de confirmación: mientras el supervisor
+    // respondía "¿Confirmas...?" de la X, pudo haber alcanzado a tocar la O de la misma fila.
+    if (this.confirmandoPresenciaIds.has(asis.id)) return;
+    this.confirmandoPresenciaIds.add(asis.id);
+    this.cdr.detectChanges();
+
     this.asistenciaService.confirmarAsistencia(asis.id, presente).subscribe({
       next: () => {
+        this.confirmandoPresenciaIds.delete(asis.id);
         this.notificacionService.exito('Confirmación registrada.');
         this.cargarAsistencias();
       },
-      error: (err) => this.notificacionService.error(err.error?.message || 'Error al confirmar la asistencia.'),
+      error: (err) => {
+        this.confirmandoPresenciaIds.delete(asis.id);
+        this.notificacionService.error(err.error?.message || 'Error al confirmar la asistencia.');
+        this.cdr.detectChanges();
+      },
     });
   }
 

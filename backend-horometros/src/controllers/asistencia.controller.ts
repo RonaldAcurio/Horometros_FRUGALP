@@ -2648,14 +2648,35 @@ export const confirmarAsistencia = async(req:Request, res:Response):Promise<void
             ya estaba en OBSERVANDO, "O" lo regresa al estado que le toca segun si ya marco su propia salida
             o no - PENDIENTE_REVISION espera igual que cualquier otro trabajador a que "Cerrar Jornada" lo
             pase a FINALIZADO, EN_JORNADA sigue abierto para seguir agregandole actividades.
+
+            Bug real (reportado por el usuario, 2026-10-30, confirmado con capturas de produccion: el boton
+            "O" quedaba resaltado/verde - confirmado_por_supervisor:true - pero el badge seguia diciendo
+            OBSERVANDO): decidir con `asistencia.estado` (el valor leido arriba, al PRINCIPIO de esta
+            peticion) es una condicion de carrera. Si una X casi simultanea (doble clic, red lenta, el
+            supervisor tocando X y O muy seguido) escribe estado:'OBSERVANDO' DESPUES de que esta peticion ya
+            leyo el registro pero ANTES de que esta peticion escriba, el `if` de abajo ve el estado VIEJO (no
+            OBSERVANDO), no lo limpia, y el UPDATE de esta peticion (que solo toca confirmado_por_supervisor)
+            deja el estado en OBSERVANDO que la X acaba de poner - exactamente la inconsistencia reportada.
+            Por eso la decision de limpiar OBSERVANDO ya NO se toma en JS con una lectura que puede estar
+            desactualizada: se hace con un UPDATE atomico condicionado (`WHERE estado = 'OBSERVANDO'`), que
+            Postgres evalua contra el valor ACTUAL de la fila en el momento de escribir, no contra lo que
+            leimos antes - cierra la ventana de carrera sin necesitar una transaccion ni un lock explicito.
             */
-            const actualizacion: { confirmado_por_supervisor: boolean; estado?: 'EN_JORNADA' | 'PENDIENTE_REVISION' } = {
-                confirmado_por_supervisor: true,
-            };
-            if(asistencia.estado === 'OBSERVANDO'){
-                actualizacion.estado = asistencia.hora_salida ? 'PENDIENTE_REVISION' : 'EN_JORNADA';
+            const nuevoEstadoSiLimpia = asistencia.hora_salida ? 'PENDIENTE_REVISION' : 'EN_JORNADA';
+            const [filasLimpiadas] = await Asistencia.update(
+                { confirmado_por_supervisor: true, estado: nuevoEstadoSiLimpia },
+                { where: { id: asistencia.id, estado: 'OBSERVANDO' } },
+            );
+            if(filasLimpiadas === 0){
+                // No estaba en OBSERVANDO al momento de escribir (nunca lo estuvo, o siguio sin estarlo) -
+                // solo queda confirmar, sin tocar el estado (mismo caso que antes: "O" normal sin pasar por X).
+                await asistencia.update({ confirmado_por_supervisor: true });
+            }else{
+                // El UPDATE atomico de arriba no refresca la instancia en memoria - se refleja a mano para
+                // que la respuesta (res.json de abajo) no responda con datos viejos.
+                asistencia.confirmado_por_supervisor = true;
+                asistencia.estado = nuevoEstadoSiLimpia;
             }
-            await asistencia.update(actualizacion);
         }else{
             const nota = `[${new Date().toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })}] Marcado como NO presente por el supervisor.`;
             await asistencia.update({

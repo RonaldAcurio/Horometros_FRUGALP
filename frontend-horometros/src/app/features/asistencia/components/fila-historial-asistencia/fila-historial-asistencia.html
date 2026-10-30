@@ -16,10 +16,13 @@
 </td>
 <td>{{ formatearHorasTrabajadas(reg.total_horas) }}</td>
 <td>
-  <!-- OBSERVANDO = el Supervisor marco la X ("no vino") - unico estado que vale la pena resaltar aca,
-  el resto (FINALIZADO/SALIDA_OLVIDADA) son dias normales trabajados. -->
+  <!-- OBSERVANDO = el Supervisor marco la X - unico estado que vale la pena resaltar aca, el resto
+  (FINALIZADO/SALIDA_OLVIDADA) son dias normales trabajados. Texto corregido (pedido del usuario,
+  2026-10-30): "No presente" confundia porque el trabajador SI tiene hora de ingreso (si se presento) - la X
+  del Supervisor es una disputa sobre si esa marcacion es legitima (posible fraude/prestamo de QR), no una
+  afirmacion de que nunca vino. -->
   @if (reg.estado === 'OBSERVANDO') {
-    <span class="badge-status status-observando">❌ No presente</span>
+    <span class="badge-status status-observando">⚠️ No confirmada por el supervisor</span>
   } @else {
     <span class="text-muted-sm">—</span>
   }
