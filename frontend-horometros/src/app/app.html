@@ -45,6 +45,16 @@
                     {{ menuButtonText }}
                   </a>
                 }
+                <!-- "Mi Perfil": unico punto de navegacion propio de MECANICO/OPERADOR (ver mostrarBotonMiPerfil) -->
+                @if (mostrarBotonMiPerfil) {
+                  <a
+                    routerLink="/mi-perfil"
+                    class="cuenta-opcion"
+                    (click)="menuCuentaAbierto.set(false)"
+                  >
+                    👤 Mi Perfil
+                  </a>
+                }
                 <button
                   type="button"
                   class="cuenta-opcion"

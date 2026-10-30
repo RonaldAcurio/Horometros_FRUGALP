@@ -37,6 +37,15 @@ export class App {
   */
   mostrarBotonMenu = true;
 
+  /*
+  "Mi Perfil" (pedido del usuario, 2026-10-28, reubicado al dropdown de cuenta 2026-10-30): único punto de
+  navegación propio que tiene hoy MECANICO/OPERADOR, junto a Política de Privacidad y Cerrar sesión - antes
+  vivía en una barra aparte dentro de mi-jornada.html, el usuario pidió moverlo acá adentro, junto con el
+  resto de opciones de cuenta. Oculto si ya está en /mi-perfil (mismo criterio que mostrarBotonMenu con su
+  propio "home").
+  */
+  mostrarBotonMiPerfil = false;
+
   // Dropdown compacto de cuenta en el header (nombre/rol, Política, Menú, Cerrar sesión) - ver app.html.
   // No es un modal centrado: se cierra solo al tocar afuera (cuenta-overlay) o al navegar.
   menuCuentaAbierto = signal(false);
@@ -51,6 +60,7 @@ export class App {
 
         this.mostrarHeader = url !== '/login';
         this.mostrarBotonMenu = perfil?.rol !== 'MECANICO' && perfil?.rol !== 'OPERADOR';
+        this.mostrarBotonMiPerfil = (perfil?.rol === 'MECANICO' || perfil?.rol === 'OPERADOR') && url !== '/mi-perfil';
         this.menuCuentaAbierto.set(false);
 
         if (perfil?.rol === 'ESCANER') {

@@ -1,7 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { provideRouter } from '@angular/router';
 import { MiJornada } from './mi-jornada';
 import { RegistroActividad } from '../../../../core/models/asistencia.model';
 import { NotificacionService } from '../../../../core/services/notificacion.service';
@@ -27,9 +26,7 @@ describe('MiJornada', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [MiJornada],
-      // provideRouter: la barra superior nueva ("Mi Perfil", pedido del usuario, 2026-10-28) agrega un
-      // routerLink al template - sin esto, RouterLink no encuentra ActivatedRoute para inyectar.
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+      providers: [provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
 
     fixture = TestBed.createComponent(MiJornada);

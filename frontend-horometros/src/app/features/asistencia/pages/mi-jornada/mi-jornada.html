@@ -1,10 +1,4 @@
 <div class="jornada-container">
-  <!-- Barra superior fija (pedido del usuario, 2026-10-28, "Mi Perfil"): visible en CUALQUIER fase, no solo
-  en Panel de Actividades - es el unico punto de navegacion que tiene hoy esta pantalla cautiva. -->
-  <div class="jornada-barra-superior">
-    <span class="jornada-barra-nombre">{{ authService.perfil()?.nombre_completo }}</span>
-    <a routerLink="/mi-perfil" class="jornada-barra-link">👤 Mi Perfil</a>
-  </div>
   <!-- FASE: CODIGO (hacienda con Token de Hacienda activo) - misma pantalla para ENTRADA y SALIDA, el backend
   decide cuál es según si el trabajador ya tenía una jornada abierta (ver confirmarCodigo). -->
   @if (fase === 'codigo') {
