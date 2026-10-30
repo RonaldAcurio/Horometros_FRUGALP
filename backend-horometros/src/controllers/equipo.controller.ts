@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { Op } from 'sequelize';
+import { Op, where, fn, col } from 'sequelize';
 import { Equipo } from '../models';
 
 /*
@@ -65,7 +65,9 @@ export const crearEquipo = async (req: Request, res: Response): Promise<void> =>
         res.status(201).json(nuevoEquipo);
     } catch (err: any) {
         if (err.name === 'SequelizeUniqueConstraintError') {
-            res.status(400).json({ message: 'Ya existe un equipo con ese código o nombre.' });
+            // Pedido del usuario, 2026-10-30: solo el código tiene que ser único (el nombre ya no), y esa
+            // unicidad ignora mayúsculas/minúsculas (ver equipo.ts y la migración que agrega el índice).
+            res.status(400).json({ message: 'Ya existe un equipo con ese código.' });
             return;
         }
         console.error('Error al crear el equipo.', err);
@@ -82,34 +84,29 @@ filas pegadas/copiadas a mano, algún dato sucio (código repetido, celda vacía
 seguro, y el usuario necesita saber EXACTAMENTE cuáles para poder corregirlas en el Excel y reintentar solo esas.
 */
 /*
-Investiga, RECIEN cuando el INSERT de una fila ya chocó de verdad contra el UNIQUE de Postgres, cuál campo fue
-(código, nombre, o ambos) y si el dueño actual de ese valor está soft-deleted (eliminado antes) o activo -
-consulta directa a la BD en vez de comparar contra un mapa pre-armado. Reemplaza el enfoque anterior (chequear
-'existe?' ANTES del insert con un findAll(paranoid:false) y confiar en que ese chequeo detectó todo) porque un
-caso real (2026-09-30) demostró que esa comparación previa puede fallar a detectar un choque real y caer en un
-mensaje genérico que no dice nada útil - preguntándole a la BD DESPUÉS del error real, la respuesta siempre es
+Investiga, RECIEN cuando el INSERT de una fila ya chocó de verdad contra el UNIQUE de Postgres, si el código
+ya está en uso y si el dueño actual es un equipo soft-deleted (eliminado antes) o activo - consulta directa a
+la BD en vez de comparar contra un mapa pre-armado. Reemplaza el enfoque anterior (chequear 'existe?' ANTES
+del insert con un findAll(paranoid:false) y confiar en que ese chequeo detectó todo) porque un caso real
+(2026-09-30) demostró que esa comparación previa puede fallar a detectar un choque real y caer en un mensaje
+genérico que no dice nada útil - preguntándole a la BD DESPUÉS del error real, la respuesta siempre es
 correcta sin importar por qué el chequeo previo se lo perdió.
+
+Comparación SIN importar mayúsculas/minúsculas (pedido del usuario, 2026-10-30, ver equipo.ts y la migración
+'20261030180000...'): "EQ-001" y "eq-001" son el mismo código para esta regla - usa fn('lower', ...) en vez de
+Op.iLike para evitar que un código con '%'/'_' (caracteres especiales de LIKE) dé un falso negativo/positivo.
 */
-const describirColisionEquipo = async (codigo: string, nombre: string): Promise<string> => {
-    const [porCodigo, porNombre] = await Promise.all([
-        Equipo.findOne({ where: { codigo_megued: codigo }, paranoid: false }),
-        Equipo.findOne({ where: { nombre_equipo: nombre }, paranoid: false }),
-    ]);
-    const piezas: string[] = [];
+const describirColisionEquipo = async (codigo: string): Promise<string> => {
+    const porCodigo = await Equipo.findOne({
+        where: where(fn('lower', col('codigo_megued')), codigo.toLowerCase()),
+        paranoid: false,
+    });
     if (porCodigo) {
-        piezas.push(porCodigo.deletedAt
-            ? `el código "${codigo}" perteneció a un equipo eliminado antes - pide a un Admin que lo recupere si hace falta`
-            : `ya existe un equipo con el código "${codigo}"`);
+        return porCodigo.deletedAt
+            ? `el código "${codigo}" perteneció a un equipo eliminado antes - pide a un Admin que lo recupere si hace falta.`
+            : `ya existe un equipo con el código "${codigo}".`;
     }
-    if (porNombre) {
-        piezas.push(porNombre.deletedAt
-            ? `el nombre "${nombre}" perteneció a un equipo eliminado antes - pide a un Admin que lo recupere si hace falta`
-            : `ya existe un equipo con el nombre "${nombre}"`);
-    }
-    if (piezas.length === 0) {
-        return `El código "${codigo}" o el nombre "${nombre}" ya están en uso.`;
-    }
-    return piezas.join(' y ') + '.';
+    return `El código "${codigo}" ya está en uso.`;
 };
 
 export const importarEquipos = async (req: Request, res: Response): Promise<void> => {
@@ -125,10 +122,13 @@ export const importarEquipos = async (req: Request, res: Response): Promise<void
         }
 
         const rechazados: { fila: number; motivo: string }[] = [];
-        // Duplicados DENTRO del mismo archivo (ademas de contra lo que ya existe en la BD) - chequeo en memoria,
-        // sin ir a la BD, antes de intentar el insert de cada fila.
+        /*
+        Duplicados DENTRO del mismo archivo (ademas de contra lo que ya existe en la BD) - chequeo en memoria,
+        sin ir a la BD, antes de intentar el insert de cada fila. Solo por código (pedido del usuario,
+        2026-10-30: el nombre ya no es único) y sin importar mayúsculas/minúsculas (mismo bug real que motivó
+        este cambio: "EQ-001" y "eq-001" en el mismo archivo deben chocar entre sí igual que contra la BD).
+        */
         const codigosEnArchivo = new Set<string>();
-        const nombresEnArchivo = new Set<string>();
         let creados = 0;
 
         // Insercion fila por fila (no bulkCreate): asi una fila que choca no tumba las demas, y el catch de
@@ -153,24 +153,18 @@ export const importarEquipos = async (req: Request, res: Response): Promise<void
                 continue;
             }
             const codigoLower = codigo.toLowerCase();
-            const nombreLower = nombre.toLowerCase();
             if (codigosEnArchivo.has(codigoLower)) {
                 rechazados.push({ fila, motivo: `El código "${codigo}" está repetido dentro del archivo.` });
-                continue;
-            }
-            if (nombresEnArchivo.has(nombreLower)) {
-                rechazados.push({ fila, motivo: `El nombre "${nombre}" está repetido dentro del archivo.` });
                 continue;
             }
 
             try {
                 await Equipo.create({ codigo_megued: codigo, nombre_equipo: nombre });
                 codigosEnArchivo.add(codigoLower);
-                nombresEnArchivo.add(nombreLower);
                 creados++;
             } catch (err: any) {
                 if (err.name === 'SequelizeUniqueConstraintError') {
-                    rechazados.push({ fila, motivo: await describirColisionEquipo(codigo, nombre) });
+                    rechazados.push({ fila, motivo: await describirColisionEquipo(codigo) });
                     continue;
                 }
                 throw err;
@@ -185,30 +179,24 @@ export const importarEquipos = async (req: Request, res: Response): Promise<void
 };
 
 /*
-Endpoint temporal de SOLO LECTURA (2026-09-30): investigar, con datos reales y sin adivinar, por qué la
-migracion que repara el UNIQUE de codigo_megued/nombre_equipo no logra aplicarse en produccion. Un UNIQUE
-CONSTRAINT normal de Postgres se aplica sobre TODAS las filas de la tabla, incluidas las soft-deleted
-(paranoid) - si ya existen varias filas (activas o eliminadas) con el mismo valor, Postgres rechaza crear el
-constraint. Esto solo lista los grupos duplicados (incluye eliminados, via paranoid:false) para decidir la
-correccion exacta antes de borrar nada. Se elimina despues de resolver el incidente.
+Endpoint temporal de SOLO LECTURA (originalmente 2026-09-30, actualizado 2026-10-30): investigar, con datos
+reales y sin adivinar, duplicados de código (incluidos los que solo difieren en mayúsculas/minúsculas - ver
+la migración '20261030180000-equipos-unico-solo-por-codigo-sin-mayus.js', que ya deduplica esto una sola vez,
+pero este endpoint sigue sirviendo para auditar si algo se coló de nuevo). El nombre ya no es único (pedido
+del usuario, 2026-10-30), así que ya no tiene sentido agruparlo aquí. Se elimina cuando deje de hacer falta.
 */
 export const diagnosticoDuplicadosEquipos = async (_req: Request, res: Response): Promise<void> => {
     try {
         const todos = await Equipo.findAll({ paranoid: false, order: [['id', 'ASC']] });
         const porCodigo = new Map<string, typeof todos>();
-        const porNombre = new Map<string, typeof todos>();
         for (const e of todos) {
-            const c = e.codigo_megued;
-            const n = e.nombre_equipo;
+            const c = e.codigo_megued.toLowerCase();
             if (!porCodigo.has(c)) porCodigo.set(c, [] as any);
             (porCodigo.get(c) as any).push(e);
-            if (!porNombre.has(n)) porNombre.set(n, [] as any);
-            (porNombre.get(n) as any).push(e);
         }
         const resumir = (e: any) => ({ id: e.id, codigo_megued: e.codigo_megued, nombre_equipo: e.nombre_equipo, deletedAt: e.deletedAt, createdAt: e.createdAt });
         const gruposCodigo = [...porCodigo.entries()].filter(([, v]) => (v as any).length > 1).map(([k, v]) => ({ valor: k, filas: (v as any).map(resumir) }));
-        const gruposNombre = [...porNombre.entries()].filter(([, v]) => (v as any).length > 1).map(([k, v]) => ({ valor: k, filas: (v as any).map(resumir) }));
-        res.json({ total_filas: todos.length, duplicados_codigo: gruposCodigo, duplicados_nombre: gruposNombre });
+        res.json({ total_filas: todos.length, duplicados_codigo: gruposCodigo });
     } catch (err) {
         console.error('Error en diagnostico de duplicados.', err);
         res.status(500).json({ message: 'Error en diagnostico de duplicados.' });
@@ -235,7 +223,7 @@ export const actualizarEquipo = async (req: Request, res: Response): Promise<voi
         res.status(200).json({ message: 'Equipo actualizado con éxito.', equipo });
     } catch (err: any) {
         if (err.name === 'SequelizeUniqueConstraintError') {
-            res.status(400).json({ message: 'Ya existe un equipo con ese código o nombre.' });
+            res.status(400).json({ message: 'Ya existe un equipo con ese código.' });
             return;
         }
         console.error('Error al actualizar el equipo.', err);

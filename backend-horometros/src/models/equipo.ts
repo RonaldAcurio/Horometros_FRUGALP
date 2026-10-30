@@ -27,15 +27,21 @@ Equipo.init(
             autoIncrement: true,
             primaryKey: true,
         },
+        /*
+        codigo_megued: el UNICO campo que identifica a un Equipo (pedido del usuario, 2026-10-30 - antes
+        nombre_equipo tambien era unico, ya no). Sin 'unique: true' aca a proposito: la unicidad real vive en
+        un indice UNIQUE sobre LOWER(codigo_megued) (migracion '20261030180000-equipos-unico-solo-por-codigo-
+        sin-mayus.js'), insensible a mayusculas/minusculas - un 'unique:true' en Sequelize generaria un UNIQUE
+        exacto (case-sensitive) que no refleja la regla real. SequelizeUniqueConstraintError se sigue
+        disparando igual (Postgres avisa el choque 23505 sin importar si vino de un UNIQUE o de un indice).
+        */
         codigo_megued:{
             type: DataTypes.STRING(20),
             allowNull: false,
-            unique: true,
         },
         nombre_equipo:{
             type: DataTypes.STRING(150),
             allowNull: false,
-            unique: true,
         },
         // Exclusivo del modulo Horometros ("numero de hoja fisica" de la libreta de lecturas) - admite NULL
         // porque el Panel de Asistente tambien crea Equipos ahora (ver migracion 20260924010000) y ahi ese
