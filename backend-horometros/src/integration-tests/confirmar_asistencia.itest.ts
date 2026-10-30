@@ -113,6 +113,52 @@ describe('PUT /api/asistencia/:id/confirmar (O/X del Supervisor)', () => {
         expect(actualizada?.confirmado_por_supervisor).toBe(true);
     });
 
+    /*
+    Bug real (reportado por el usuario, 2026-10-30, con capturas de produccion): "O" quedaba resaltado/verde
+    (confirmado_por_supervisor:true) pero el badge seguia diciendo OBSERVANDO - una condicion de carrera
+    entre una X y una O casi simultaneas (doble clic, red lenta - ver el comentario largo en
+    confirmarAsistencia). Con el codigo viejo, si la peticion "O" leia el registro ANTES de que una X casi
+    simultanea alcanzara a escribir OBSERVANDO, su decision de limpiar o no (`if(asistencia.estado ===
+    'OBSERVANDO')`) quedaba basada en esa lectura vieja - nunca limpiaba nada, y el UPDATE de la "O" (que
+    solo tocaba confirmado_por_supervisor) dejaba pegado el OBSERVANDO que la X acababa de escribir despues.
+
+    Esta prueba reproduce exactamente esa secuencia sin depender del timing real de dos peticiones HTTP
+    concurrentes (eso seria no determinista/potencialmente inestable): lee el registro primero (como lo
+    haria la "O", en memoria todavia EN_JORNADA), DESPUES simula que una "X" casi simultanea escribe de
+    verdad OBSERVANDO, y recien ahi ejecuta el mismo UPDATE atomico condicionado que usa el controller -
+    confirmando que SI limpia el OBSERVANDO aunque la lectura previa no lo supiera, porque la condicion
+    `WHERE estado = 'OBSERVANDO'` la evalua Postgres contra el valor REAL de la fila al momento de escribir.
+    */
+    it('condicion de carrera X+O: el UPDATE atomico limpia OBSERVANDO aunque la decision no se base en una lectura vieja', async () => {
+        const asistencia = await crearAsistencia({ estado: 'EN_JORNADA', hora_salida: null });
+
+        // Lectura de la peticion "O", ANTES de que la "X" casi simultanea alcance a escribir (en memoria
+        // todavia ve EN_JORNADA, no OBSERVANDO).
+        const comoLoViaLaPeticionO = await Asistencia.findByPk(asistencia.id);
+
+        // La peticion "X" casi simultanea SI llega a escribir primero.
+        await asistencia.update({
+            confirmado_por_supervisor: false,
+            estado: 'OBSERVANDO',
+            observaciones: 'Marcado como NO presente por el supervisor.',
+        });
+
+        // La peticion "O" decide y escribe ahora - usando el MISMO patron que confirmarAsistencia: un UPDATE
+        // atomico condicionado, nunca `comoLoViaLaPeticionO.estado` (que seguiria diciendo EN_JORNADA).
+        const nuevoEstadoSiLimpia = comoLoViaLaPeticionO!.hora_salida ? 'PENDIENTE_REVISION' : 'EN_JORNADA';
+        const [filasLimpiadas] = await Asistencia.update(
+            { confirmado_por_supervisor: true, estado: nuevoEstadoSiLimpia },
+            { where: { id: asistencia.id, estado: 'OBSERVANDO' } },
+        );
+
+        // Encontro y limpio el OBSERVANDO que la "X" acababa de escribir, aunque la lectura previa no lo supiera.
+        expect(filasLimpiadas).toBe(1);
+        const final = await Asistencia.findByPk(asistencia.id);
+        // Nunca debe quedar la combinacion inconsistente reportada: "O" confirmado pero estado OBSERVANDO.
+        expect(final?.confirmado_por_supervisor).toBe(true);
+        expect(final?.estado).toBe('EN_JORNADA');
+    });
+
     it('dia cerrado sigue bloqueando tanto O como X, igual que antes', async () => {
         const asistencia = await crearAsistencia({ estado: 'OBSERVANDO', hora_salida: null });
         await CierreJornada.create({

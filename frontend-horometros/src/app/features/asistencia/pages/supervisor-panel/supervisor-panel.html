@@ -221,7 +221,7 @@
                       asis.confirmado_por_supervisor === true ? 'btn-primary' : 'btn-secondary'
                     "
                     (click)="confirmarPresencia(asis, true)"
-                    [disabled]="diaCerrado"
+                    [disabled]="diaCerrado || confirmandoPresenciaIds.has(asis.id)"
                     title="Confirmar que sí vino"
                   >
                     O
@@ -232,7 +232,7 @@
                       asis.confirmado_por_supervisor === false ? 'btn-warning' : 'btn-secondary'
                     "
                     (click)="confirmarPresencia(asis, false)"
-                    [disabled]="diaCerrado"
+                    [disabled]="diaCerrado || confirmandoPresenciaIds.has(asis.id)"
                     title="Marcar que NO vino"
                   >
                     X

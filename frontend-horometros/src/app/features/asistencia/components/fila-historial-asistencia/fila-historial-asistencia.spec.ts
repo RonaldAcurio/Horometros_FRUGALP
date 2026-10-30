@@ -55,7 +55,7 @@ describe('FilaHistorialAsistencia', () => {
     expect(texto).not.toContain('No aplica');
     expect(texto).toContain('👁️ Ver');
     expect(texto).toContain('🖨️ Imprimir');
-    expect(texto).toContain('❌ No presente');
+    expect(texto).toContain('⚠️ No confirmada por el supervisor');
   });
 
   it('"Ver"/"Imprimir" emiten el reg correspondiente al hacer clic', () => {

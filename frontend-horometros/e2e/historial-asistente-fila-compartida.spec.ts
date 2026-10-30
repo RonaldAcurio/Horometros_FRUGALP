@@ -54,7 +54,7 @@ test.describe('Panel de Asistente: Historial de Asistencia con un trabajador mar
 
     const filaGeneral = page.locator('tbody tr', { hasText: 'E2E Trabajador' });
     await expect(filaGeneral).toBeVisible();
-    await expect(filaGeneral).toContainText('❌ No presente');
+    await expect(filaGeneral).toContainText('⚠️ No confirmada por el supervisor');
     await expect(filaGeneral).not.toContainText('No aplica');
     await expect(filaGeneral.locator('button:has-text("👁️ Ver")')).toBeVisible();
     await expect(filaGeneral.locator('button:has-text("🖨️ Imprimir")')).toBeVisible();
@@ -77,7 +77,7 @@ test.describe('Panel de Asistente: Historial de Asistencia con un trabajador mar
     await expect(modalOperador).toBeVisible();
     const filaModal = modalOperador.locator('tbody tr', { hasText: hoyISO });
     await expect(filaModal).toBeVisible();
-    await expect(filaModal).toContainText('❌ No presente');
+    await expect(filaModal).toContainText('⚠️ No confirmada por el supervisor');
     await expect(filaModal).not.toContainText('No aplica');
     await expect(filaModal.locator('button:has-text("👁️ Ver")')).toBeVisible();
 
