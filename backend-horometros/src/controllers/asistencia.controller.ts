@@ -362,8 +362,8 @@ export const importarOperadores = async (req: Request, res: Response): Promise<v
             return;
         }
 
-        const supervisores = await Usuario.findAll({ where: { cargo: 'SUPERVISOR' }, attributes: ['id', 'nombre_completo'] });
-        const supervisorPorNombre = new Map(supervisores.map((s) => [s.nombre_completo.trim().toLowerCase(), s.id]));
+        const supervisores = await Usuario.findAll({ where: { cargo: 'SUPERVISOR' }, attributes: ['id', 'nombre_completo', 'hacienda_id'] });
+        const supervisorPorNombre = new Map(supervisores.map((s) => [s.nombre_completo.trim().toLowerCase(), s]));
 
         const rechazados: { fila: number; motivo: string }[] = [];
         const codigosEnArchivo = new Set<string>();
@@ -373,12 +373,13 @@ export const importarOperadores = async (req: Request, res: Response): Promise<v
         for (let index = 0; index < (items as unknown[]).length; index++) {
             // fila 2 en el Excel = primer registro (la fila 1 es el encabezado).
             const fila = index + 2;
-            const datos = (items as unknown[])[index] as { nombre_completo?: unknown; rol?: unknown; codigo_megued?: unknown; cedula?: unknown; supervisor?: unknown };
+            const datos = (items as unknown[])[index] as { nombre_completo?: unknown; rol?: unknown; codigo_megued?: unknown; cedula?: unknown; supervisor?: unknown; area?: unknown };
             const nombre = String(datos?.nombre_completo ?? '').trim();
             const codigo = String(datos?.codigo_megued ?? '').trim();
             const rolCrudo = String(datos?.rol ?? '').trim();
             const cedula = String(datos?.cedula ?? '').trim();
             const supervisorTexto = String(datos?.supervisor ?? '').trim();
+            const area = String(datos?.area ?? '').trim();
 
             if (!nombre || !codigo) {
                 rechazados.push({ fila, motivo: 'Falta el nombre o el código del trabajador.' });
@@ -403,6 +404,13 @@ export const importarOperadores = async (req: Request, res: Response): Promise<v
                 rol = rolMayus as 'MECANICO' | 'OPERADOR';
             }
 
+            // Área (pedido del usuario, 2026-11-02): columna exclusiva de la plantilla de Operadores - mismo
+            // criterio que validarSeccionDeOperador (Área/Sección es EXCLUSIVA de rol OPERADOR).
+            if (area && rol !== 'OPERADOR') {
+                rechazados.push({ fila, motivo: 'El área solo aplica a Operadores, pero esta fila tiene cargo Mecánico.' });
+                continue;
+            }
+
             const codigoLower = codigo.toLowerCase();
             if (codigosEnArchivo.has(codigoLower)) {
                 rechazados.push({ fila, motivo: `El código "${codigo}" está repetido dentro del archivo.` });
@@ -419,17 +427,33 @@ export const importarOperadores = async (req: Request, res: Response): Promise<v
             }
 
             let supervisor_id: number | null = null;
+            let haciendaDelSupervisor: number | null = null;
             if (supervisorTexto) {
-                const idEncontrado = supervisorPorNombre.get(supervisorTexto.toLowerCase());
-                if (!idEncontrado) {
+                const supervisorEncontrado = supervisorPorNombre.get(supervisorTexto.toLowerCase());
+                if (!supervisorEncontrado) {
                     rechazados.push({ fila, motivo: `No se encontró ningún Supervisor con el nombre "${supervisorTexto}" - revisa que coincida exacto con el nombre registrado en el sistema.` });
                     continue;
                 }
-                supervisor_id = idEncontrado;
+                supervisor_id = supervisorEncontrado.id;
+                haciendaDelSupervisor = supervisorEncontrado.hacienda_id;
+            }
+
+            // Área sin Supervisor resuelto: no hay hacienda a la cual anclar la Sección (ver findOrCreate abajo).
+            if (area && !haciendaDelSupervisor) {
+                rechazados.push({ fila, motivo: 'El área requiere un Jefe Inmediato (Supervisor) válido en esta misma fila, para saber a qué hacienda pertenece.' });
+                continue;
+            }
+
+            let seccion_id: number | null = null;
+            if (area && haciendaDelSupervisor) {
+                const [seccion] = await Seccion.findOrCreate({
+                    where: { hacienda_id: haciendaDelSupervisor, nombre: area },
+                });
+                seccion_id = seccion.id;
             }
 
             try {
-                await Operador.create({ nombre_completo: nombre, codigo_megued: codigo, rol, cedula: cedula || null, supervisor_id } as any);
+                await Operador.create({ nombre_completo: nombre, codigo_megued: codigo, rol, cedula: cedula || null, supervisor_id, seccion_id } as any);
                 codigosEnArchivo.add(codigoLower);
                 if (cedulaCifrada) cedulasEnArchivo.add(cedulaCifrada);
                 creados++;
@@ -766,7 +790,7 @@ escribirla completa.
 */
 export const obtenerOperadores = async(req: Request, res:Response):Promise<void> => {
     try{
-        const { pagina: paginaQuery, limite: limiteQuery, q: qQuery, supervisor_id: supervisorIdQuery } = req.query;
+        const { pagina: paginaQuery, limite: limiteQuery, q: qQuery, supervisor_id: supervisorIdQuery, rol: rolQuery } = req.query;
         const include = [{ model: Usuario, as: 'supervisor', attributes: { exclude: ['clave_hash'] } }];
         const attributes = { exclude: ['clave_hash'] };
 
@@ -778,16 +802,28 @@ export const obtenerOperadores = async(req: Request, res:Response):Promise<void>
         real, ADMIN/ASISTENTE puede mandar `supervisor_id` por query para acotar a un Supervisor puntual -
         mismo criterio opcional que ya usa obtenerAsistenciaHoy. Sin ese query, siguen viendo el directorio
         completo, sin restriccion (comportamiento de siempre).
+
+        rol=OPERADOR agregado (2026-11-02, pedido del usuario): los Operadores todavia no usan la app (no se
+        auto-registran), asi que cualquier Supervisor puede necesitar agregarle un dia de trabajo a un
+        Operador que NO es suyo (ej. llevo su tractor al taller a reparar). Cuando un SUPERVISOR real manda
+        `rol=OPERADOR`, se ignora por completo el acotamiento a su propio supervisor_id y en su lugar se
+        filtra solo por `rol:'OPERADOR'` (cualquier Operador del sistema) - el buscador de "+ Agregar
+        Usuario" nunca expone cuales trabajadores son de otro Supervisor, solo codigo/nombre, asi que no hay
+        fuga de informacion sensible (ver `obtenerOperadores`/`attributes` arriba, ya excluye clave_hash).
+        Sin ese query (o con rol=MECANICO), el comportamiento para un SUPERVISOR real sigue exactamente
+        igual que siempre: acotado a su propia gente.
         */
+        const esOperadorParaCualquierSupervisor = rolQuery === 'OPERADOR';
         const filtroSupervisor = req.auth?.tipo === 'usuario' && req.auth.rol === 'SUPERVISOR'
-            ? { supervisor_id: req.auth.id }
+            ? (esOperadorParaCualquierSupervisor ? {} : { supervisor_id: req.auth.id })
             : supervisorIdQuery
                 ? { supervisor_id: Number(supervisorIdQuery) }
                 : {};
+        const filtroRol = esOperadorParaCualquierSupervisor ? { rol: 'OPERADOR' } : {};
 
         if(paginaQuery === undefined && limiteQuery === undefined){
             const operadores = await Operador.findAll({
-                where: filtroSupervisor,
+                where: { ...filtroSupervisor, ...filtroRol },
                 attributes,
                 include,
                 order: [['nombre_completo','ASC']],
@@ -803,6 +839,7 @@ export const obtenerOperadores = async(req: Request, res:Response):Promise<void>
 
         const where = {
             ...filtroSupervisor,
+            ...filtroRol,
             ...(q ? {
                 [Op.or]: [
                     { nombre_completo: { [Op.iLike]: `%${q}%` } },
@@ -1639,9 +1676,20 @@ export const registrarAsistenciaManual = async(req:Request, res:Response):Promis
             return;
         }
 
-        // Alcance: un SUPERVISOR real solo puede agregar a SUS propios trabajadores - mismo criterio que
-        // puedeVerHistorialDeOperador (registro_actividad.controller.ts). ADMIN/ASISTENTE sin restriccion.
-        if(req.auth?.tipo === 'usuario' && req.auth.rol === 'SUPERVISOR' && operador.supervisor_id !== req.auth.id){
+        /*
+        Alcance: un SUPERVISOR real solo puede agregar a SUS propios trabajadores - mismo criterio que
+        puedeVerHistorialDeOperador (registro_actividad.controller.ts). ADMIN/ASISTENTE sin restriccion.
+
+        Excepcion para rol OPERADOR (2026-11-02, pedido del usuario, mismo criterio que obtenerOperadores con
+        rol=OPERADOR): los Operadores todavia no usan la app, asi que no generan su propia marcacion - un
+        Supervisor cualquiera (ej. TALLER) puede necesitar registrarle un dia de trabajo a un Operador que es
+        de OTRO Supervisor (ej. vino a reparar su tractor). Para MECANICO, sin cambios - sigue acotado a su
+        propio Supervisor.
+        */
+        if(
+            req.auth?.tipo === 'usuario' && req.auth.rol === 'SUPERVISOR' &&
+            operador.supervisor_id !== req.auth.id && operador.rol !== 'OPERADOR'
+        ){
             res.status(403).json({ message: 'Solo puedes agregar trabajadores de tu propia hacienda.' });
             return;
         }

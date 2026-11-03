@@ -18,7 +18,7 @@ describe('AgregarUsuarioModal', () => {
   // abrir() ahora dispara de una vez una búsqueda inicial (texto vacío, página 1) - cualquier prueba que
   // llame a abrir() tiene que responder esa petición antes de terminar, o httpMock.verify() (afterEach) falla
   // por una petición sin resolver. Salvo que se abra con operadorFijo, que no busca nada (ver test aparte).
-  const abrirYResponderInicial = (opciones?: { supervisorId?: number | null; fecha?: string }, respuesta = { data: [] as Operador[], total: 0, pagina: 1, totalPaginas: 1 }) => {
+  const abrirYResponderInicial = (opciones?: { supervisorId?: number | null; fecha?: string; rol?: string }, respuesta = { data: [] as Operador[], total: 0, pagina: 1, totalPaginas: 1 }) => {
     component.abrir(opciones);
     const peticion = httpMock.expectOne((r) => r.urlWithParams.includes('/operadores') && r.urlWithParams.includes('pagina=1') && r.urlWithParams.includes('limite=10'));
     peticion.flush(respuesta);
@@ -59,6 +59,21 @@ describe('AgregarUsuarioModal', () => {
   it('abrir({ supervisorId }) manda supervisor_id en la carga inicial (caso ADMIN con Supervisor elegido)', () => {
     const peticion = abrirYResponderInicial({ supervisorId: 42 });
     expect(peticion.request.urlWithParams).toContain('supervisor_id=42');
+  });
+
+  // Pedido del usuario, 2026-11-02: el botón "+ Agregar Usuario" de un SUPERVISOR real manda rol=OPERADOR de
+  // forma transparente (ver abrirAgregarUsuario en supervisor-panel.ts) - el backend deja de acotar por
+  // supervisor_id propio y en su lugar filtra solo por rol (ver obtenerOperadores).
+  it('abrir({ rol }) manda rol en la carga inicial y en cada búsqueda/página siguiente', async () => {
+    const peticion = abrirYResponderInicial({ rol: 'OPERADOR' });
+    expect(peticion.request.urlWithParams).toContain('rol=OPERADOR');
+
+    component.busqueda = 'Trab';
+    component.onBuscarChange();
+    await new Promise((resolve) => setTimeout(resolve, 320));
+    const peticionBusqueda = httpMock.expectOne((r) => r.urlWithParams.includes('/operadores') && r.urlWithParams.includes('q=Trab'));
+    expect(peticionBusqueda.request.urlWithParams).toContain('rol=OPERADOR');
+    peticionBusqueda.flush({ data: [], total: 0, pagina: 1, totalPaginas: 1 });
   });
 
   // "+ Agregar Usuario" en fechas pasadas (pedido del usuario, 2026-10-27).

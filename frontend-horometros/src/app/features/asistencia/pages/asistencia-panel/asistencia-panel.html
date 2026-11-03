@@ -60,7 +60,7 @@
             </button>
           </div>
         </div>
-        <div class="p-3">
+        <div class="p-3 flex flex-wrap gap-2">
           <input
             type="text"
             [(ngModel)]="terminoBusqueda"
@@ -68,6 +68,17 @@
             placeholder="🔍 Buscar por nombre, código o cédula..."
             class="input-control w-full"
           />
+          <select
+            name="filtro_supervisor_directorio"
+            [(ngModel)]="supervisorIdFiltroDirectorio"
+            (ngModelChange)="onCambioSupervisorDirectorio()"
+            class="input-control"
+          >
+            <option [ngValue]="null">Todos los Supervisores</option>
+            @for (sup of supervisores; track sup.id) {
+              <option [ngValue]="sup.id">{{ sup.nombre_completo }}</option>
+            }
+          </select>
         </div>
         <div class="table-responsive">
           <table class="data-table">
@@ -76,6 +87,7 @@
                 <th>Código</th>
                 <th>Operador</th>
                 <th>Rol</th>
+                <th>Supervisor</th>
                 <th>Acción</th>
               </tr>
             </thead>
@@ -89,6 +101,7 @@
                   <td class="text-muted-sm">
                     {{ op.rol === 'OPERADOR' ? 'Operador' : 'Mecánico' }}
                   </td>
+                  <td class="text-muted-sm">{{ op.supervisor?.nombre_completo || '—' }}</td>
                   <td>
                     <button class="btn btn-secondary btn-sm">Seleccionar</button>
                   </td>
@@ -96,11 +109,11 @@
               }
               @if (cargandoOperadores) {
                 <tr>
-                  <td colspan="4" class="table-empty">⏳ Cargando...</td>
+                  <td colspan="5" class="table-empty">⏳ Cargando...</td>
                 </tr>
               } @else if (operadores.length === 0) {
                 <tr>
-                  <td colspan="4" class="table-empty">No hay operadores registrados.</td>
+                  <td colspan="5" class="table-empty">No hay operadores registrados.</td>
                 </tr>
               }
             </tbody>
@@ -1050,15 +1063,26 @@
             Usa la plantilla para que las columnas coincidan exactamente: NOMBRE y CÓDIGO son
             obligatorios; CARGO (MECANICO u OPERADOR, por defecto MECANICO), CÉDULA y SUPERVISOR son
             opcionales. Si escribes el SUPERVISOR (su nombre completo, tal cual está registrado), el
-            trabajador queda vinculado a la hacienda de ese Supervisor automáticamente.
+            trabajador queda vinculado a la hacienda de ese Supervisor automáticamente. Para
+            Operadores con Área (ej. "EMPACADORA"), usa la plantilla de Operadores - esa columna solo
+            aplica a Cargo = OPERADOR y requiere un Jefe Inmediato (Supervisor) en la misma fila.
           </p>
-          <button
-            type="button"
-            class="btn btn-secondary btn-sm mb-3"
-            (click)="descargarPlantillaOperadores()"
-          >
-            ⬇️ Descargar plantilla
-          </button>
+          <div class="flex flex-wrap gap-2 mb-3">
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              (click)="descargarPlantillaOperadores()"
+            >
+              ⬇️ Descargar plantilla
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              (click)="descargarPlantillaOperadoresConArea()"
+            >
+              ⬇️ Descargar plantilla de Operadores (con Área)
+            </button>
+          </div>
           <div class="form-group">
             <label class="form-label">Archivo (.xlsx)</label>
             <input

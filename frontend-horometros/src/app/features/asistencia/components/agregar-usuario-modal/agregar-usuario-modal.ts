@@ -74,6 +74,13 @@ export class AgregarUsuarioModal {
   // solo a sus propios trabajadores (ver obtenerOperadores).
   private supervisorId: number | null = null;
 
+  // 'OPERADOR' cuando quien abre el buscador es un SUPERVISOR real (ver abrirAgregarUsuario en
+  // supervisor-panel.ts, pedido del usuario, 2026-11-02): los Operadores todavía no usan la app, así que
+  // cualquier Supervisor puede necesitar agregarle un día de trabajo a uno que no es suyo - el backend deja
+  // de acotar por supervisor_id propio y filtra solo por rol (ver obtenerOperadores). No se expone ningún
+  // selector/control nuevo al usuario, es transparente.
+  private rol: string | null = null;
+
   private debounceBusqueda?: ReturnType<typeof setTimeout>;
 
   constructor(
@@ -86,9 +93,10 @@ export class AgregarUsuarioModal {
     return new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Guayaquil' });
   }
 
-  abrir(opciones?: { supervisorId?: number | null; fecha?: string; operadorFijo?: Operador }): void {
+  abrir(opciones?: { supervisorId?: number | null; fecha?: string; operadorFijo?: Operador; rol?: string }): void {
     this.visible = true;
     this.supervisorId = opciones?.supervisorId ?? null;
+    this.rol = opciones?.rol ?? null;
     this.fecha = opciones?.fecha || this.hoyEcuador();
     this.esHoy = this.fecha === this.hoyEcuador();
     this.horaIngresoHH = null;
@@ -130,7 +138,7 @@ export class AgregarUsuarioModal {
 
   private buscar(texto: string, pagina: number): void {
     this.buscando = true;
-    this.asistenciaService.obtenerOperadoresPaginado(pagina, LIMITE_RESULTADOS, texto || undefined, this.supervisorId ?? undefined).subscribe({
+    this.asistenciaService.obtenerOperadoresPaginado(pagina, LIMITE_RESULTADOS, texto || undefined, this.supervisorId ?? undefined, this.rol ?? undefined).subscribe({
       next: (res) => {
         this.buscando = false;
         this.resultados = res.data || [];

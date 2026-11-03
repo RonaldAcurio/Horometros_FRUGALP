@@ -492,12 +492,19 @@ export class SupervisorPanel implements OnInit {
   // (ver abrirMarcarAusente más abajo) - decide qué hacer en onOperadorAgregado() cuando se confirma.
   private marcandoAusenteDesdeRoster = false;
 
+  /*
+  rol: 'OPERADOR' SOLO cuando quien abre el buscador es un SUPERVISOR real (pedido del usuario, 2026-11-02):
+  los Operadores todavía no usan la app, así que cualquier Supervisor puede necesitar agregarle un día de
+  trabajo a uno que no es suyo (ej. vino a reparar su tractor en el taller). Para ADMIN, sin cambios - sigue
+  viendo a quien sea del Supervisor puntual que ya eligió arriba (Mecánico u Operador, ambos).
+  */
   abrirAgregarUsuario(): void {
     if (!this.puedeAgregarUsuario) return;
     this.marcandoAusenteDesdeRoster = false;
     this.agregarUsuarioModal.abrir({
       supervisorId: this.esAdmin ? this.supervisorIdFiltro : undefined,
       fecha: this.fechaSeleccionada || undefined,
+      rol: this.esAdmin ? undefined : 'OPERADOR',
     });
   }
 
