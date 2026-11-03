@@ -16,6 +16,11 @@ verifica la creación de Hacienda/Operador en sí.
 export const crearEscenarioDeTrabajador = async (
   request: APIRequestContext,
   sufijo: string,
+  // rol OPERADOR (pedido del usuario, 2026-11-02): "+ Agregar Usuario" (búsqueda libre) del Panel de
+  // Supervisor ahora filtra siempre por rol OPERADOR para un SUPERVISOR real (ver supervisor-panel.ts,
+  // abrirAgregarUsuario) - un MECANICO ya no aparece ahí. Default MECANICO para no tocar al resto de specs
+  // que usan este helper y no pasan por ese buscador.
+  opciones?: { rol?: 'MECANICO' | 'OPERADOR' },
 ): Promise<{ hacienda: { id: number; nombre: string }; tokenHacienda: string; supervisorId: number; operadorUsuario: string; operadorClave: string }> => {
   const loginResp = await request.post(`${API}/auth/login`, { data: ADMIN_E2E });
   const { token } = await loginResp.json();
@@ -40,7 +45,7 @@ export const crearEscenarioDeTrabajador = async (
   const operadorResp = await request.post(`${API}/asistencia/operadores`, {
     headers,
     data: {
-      nombre_completo: `E2E Trabajador ${sufijo}`, codigo_megued: `OP${sufijo}`.slice(0, 20), rol: 'MECANICO',
+      nombre_completo: `E2E Trabajador ${sufijo}`, codigo_megued: `OP${sufijo}`.slice(0, 20), rol: opciones?.rol ?? 'MECANICO',
       supervisor_id: supervisor.id, usuario: operadorUsuario, clave: operadorClave,
     },
   });

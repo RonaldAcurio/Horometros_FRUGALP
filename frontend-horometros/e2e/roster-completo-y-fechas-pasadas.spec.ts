@@ -13,7 +13,9 @@ Verificación en vivo del pedido del usuario, 2026-10-27 (plan en /root/.claude/
 test.describe('Panel de Supervisor: fechas pasadas + roster completo + marcar ausente', () => {
   test('"+ Agregar Usuario" en un día anterior no cerrado pide hora manual y agrega al trabajador a ESE día', async ({ page, request }) => {
     const sufijo = `${Date.now()}A`;
-    const esc = await crearEscenarioDeTrabajador(request, sufijo);
+    // rol OPERADOR (pedido del usuario, 2026-11-02): este botón (búsqueda libre) ahora solo muestra
+    // Operadores para un SUPERVISOR real - un MECANICO ya no aparece ahí (ver helpers.ts).
+    const esc = await crearEscenarioDeTrabajador(request, sufijo, { rol: 'OPERADOR' });
 
     // "Ayer" calculado en hora de Ecuador, igual que hoyEcuador() del modal (America/Guayaquil, UTC-5) - no en
     // la hora local de donde corre el test, para no caer en el límite de medianoche UTC (ahí "ayer" en UTC
