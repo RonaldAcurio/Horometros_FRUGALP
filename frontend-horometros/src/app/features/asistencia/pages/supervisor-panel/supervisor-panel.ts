@@ -478,11 +478,11 @@ export class SupervisorPanel implements OnInit {
   // ==================== "+ Agregar Usuario" / Panel de labores por fila ====================
 
   /*
-  ADMIN necesita un Supervisor puntual elegido arriba para que el buscador tenga sentido (si no, el
-  directorio completo trae ~950 trabajadores de TODAS las haciendas mezclados) - mismo criterio que
-  puedeExportarGeneral, pero SIN su chequeo de "ya hay asistencias hoy": acá es al revés, el caso mas tipico
-  es justo agregar al primer trabajador de un dia que todavia esta vacio. Un SUPERVISOR real no necesita
-  elegir nada: el backend ya lo acota solo a sus propios trabajadores (ver obtenerOperadores).
+  ADMIN necesita un Supervisor puntual elegido arriba para ACTIVAR el botón (pedido del usuario, 2026-11-03):
+  el Panel de Supervisor le mezcla de entrada los ingresos de TODOS los Supervisores, así que elegir uno es
+  la confirmación explícita antes de agregar - no filtra la búsqueda en sí (ver abrirAgregarUsuario: sigue
+  buscando Operadores de CUALQUIER Supervisor, nunca solo del elegido). Un SUPERVISOR real no necesita elegir
+  nada: su propia cuenta ya lo identifica.
   */
   get puedeAgregarUsuario(): boolean {
     return this.esAdmin ? this.supervisorIdFiltro !== null : true;
@@ -493,18 +493,19 @@ export class SupervisorPanel implements OnInit {
   private marcandoAusenteDesdeRoster = false;
 
   /*
-  rol: 'OPERADOR' SOLO cuando quien abre el buscador es un SUPERVISOR real (pedido del usuario, 2026-11-02):
-  los Operadores todavía no usan la app, así que cualquier Supervisor puede necesitar agregarle un día de
-  trabajo a uno que no es suyo (ej. vino a reparar su tractor en el taller). Para ADMIN, sin cambios - sigue
-  viendo a quien sea del Supervisor puntual que ya eligió arriba (Mecánico u Operador, ambos).
+  rol: 'OPERADOR' siempre, para ADMIN y SUPERVISOR por igual (pedido del usuario, 2026-11-03: este es el
+  Panel de SUPERVISOR, ADMIN tiene que ver exactamente lo mismo acá para poder reproducir cualquier bug con
+  cualquiera de las dos cuentas) - los Operadores todavía no usan la app, así que cualquier Supervisor puede
+  necesitar agregarle un día de trabajo a uno que no es suyo (ej. vino a reparar su tractor en el taller). Ya
+  no manda supervisorId: el Operador buscado es siempre del sistema completo, sin acotar al Supervisor
+  puntual que ADMIN haya elegido arriba (ese solo sirve para activar el botón, ver puedeAgregarUsuario).
   */
   abrirAgregarUsuario(): void {
     if (!this.puedeAgregarUsuario) return;
     this.marcandoAusenteDesdeRoster = false;
     this.agregarUsuarioModal.abrir({
-      supervisorId: this.esAdmin ? this.supervisorIdFiltro : undefined,
       fecha: this.fechaSeleccionada || undefined,
-      rol: this.esAdmin ? undefined : 'OPERADOR',
+      rol: 'OPERADOR',
     });
   }
 
