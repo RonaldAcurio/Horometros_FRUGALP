@@ -336,6 +336,143 @@ describe('GET /api/asistencia/operadores (acotado para SUPERVISOR, opcional para
     });
 });
 
+/*
+Trabajador "prestado" via "+ Agregar Usuario" (pedido del usuario, 2026-11-03, con capturas de produccion):
+un Operador agregado desde el Panel de OTRO Supervisor pertenece POR COMPLETO, ese dia, a quien lo agrego -
+no a su Supervisor "de casa". Mismo concepto ya usado por procesarMarcacion/admitirTrabajadorExterno
+(hacienda_prestamo_id), ahora conectado tambien a este endpoint.
+*/
+describe('Trabajador "prestado" via "+ Agregar Usuario" (hacienda_prestamo_id)', () => {
+    let tokenRaquel: string;
+    let tokenCastulo: string;
+    let tokenAdmin: string;
+    let raquelId: number;
+    let castuloId: number;
+    let haciendaRaquelId: number;
+    let haciendaCastuloId: number;
+    let kevinId: number;
+    let mecanicoDeCastuloId: number;
+
+    beforeEach(async () => {
+        await limpiarBaseDeDatosTest();
+
+        const haciendaRaquel = await Hacienda.create({ nombre: 'Hacienda Raquel' });
+        haciendaRaquelId = haciendaRaquel.id;
+        const haciendaCastulo = await Hacienda.create({ nombre: 'Hacienda Castulo' });
+        haciendaCastuloId = haciendaCastulo.id;
+
+        const raquel = await crearUsuarioDePrueba({
+            usuario: 'raquel', clave: 'claveprueba123', cargo: 'SUPERVISOR', hacienda_id: haciendaRaquelId,
+        });
+        raquelId = raquel.id;
+        const castulo = await crearUsuarioDePrueba({
+            usuario: 'castulo', clave: 'claveprueba123', cargo: 'SUPERVISOR', hacienda_id: haciendaCastuloId,
+        });
+        castuloId = castulo.id;
+        await crearUsuarioDePrueba({ usuario: 'admin1', clave: 'claveprueba123', cargo: 'ADMIN' });
+
+        // rol OPERADOR, "de casa" de Castulo - Raquel lo va a agregar desde SU propio Panel.
+        const kevin = await Operador.create({
+            nombre_completo: 'Kevin Josue Aguavil', codigo_megued: 'OP-KEVIN', rol: 'OPERADOR', supervisor_id: castuloId,
+        });
+        kevinId = kevin.id;
+
+        const mecanicoDeCastulo = await Operador.create({
+            nombre_completo: 'Mecanico De Castulo', codigo_megued: 'MEC-CASTULO', supervisor_id: castuloId,
+        });
+        mecanicoDeCastuloId = mecanicoDeCastulo.id;
+
+        tokenRaquel = (await request(app).post('/api/auth/login').send({ usuario: 'raquel', clave: 'claveprueba123' })).body.token;
+        tokenCastulo = (await request(app).post('/api/auth/login').send({ usuario: 'castulo', clave: 'claveprueba123' })).body.token;
+        tokenAdmin = (await request(app).post('/api/auth/login').send({ usuario: 'admin1', clave: 'claveprueba123' })).body.token;
+    });
+
+    it('SUPERVISOR (Raquel) agrega a un Operador de OTRO Supervisor - la Asistencia queda con hacienda_prestamo_id = la de Raquel', async () => {
+        const res = await request(app)
+            .post('/api/asistencia/agregar-manual')
+            .set('Authorization', `Bearer ${tokenRaquel}`)
+            .send({ operador_id: kevinId });
+
+        expect(res.status).toBe(201);
+        expect(res.body.asistencia.hacienda_prestamo_id).toBe(haciendaRaquelId);
+    });
+
+    it('ADMIN con supervisor_id=Raquel agrega al mismo Operador - mismo hacienda_prestamo_id', async () => {
+        const res = await request(app)
+            .post('/api/asistencia/agregar-manual')
+            .set('Authorization', `Bearer ${tokenAdmin}`)
+            .send({ operador_id: kevinId, supervisor_id: raquelId });
+
+        expect(res.status).toBe(201);
+        expect(res.body.asistencia.hacienda_prestamo_id).toBe(haciendaRaquelId);
+    });
+
+    it('un SUPERVISOR que agrega a SU PROPIO trabajador no genera prestamo - hacienda_prestamo_id queda null', async () => {
+        const res = await request(app)
+            .post('/api/asistencia/agregar-manual')
+            .set('Authorization', `Bearer ${tokenCastulo}`)
+            .send({ operador_id: mecanicoDeCastuloId });
+
+        expect(res.status).toBe(201);
+        expect(res.body.asistencia.hacienda_prestamo_id).toBeNull();
+    });
+
+    it('obtenerAsistenciaHoy: Raquel (quien lo agrego) SI lo ve; Castulo (su Supervisor de casa) NO lo ve ese dia', async () => {
+        await request(app).post('/api/asistencia/agregar-manual').set('Authorization', `Bearer ${tokenRaquel}`).send({ operador_id: kevinId });
+
+        const comoRaquel = await request(app).get('/api/asistencia/hoy').set('Authorization', `Bearer ${tokenRaquel}`);
+        expect(comoRaquel.status).toBe(200);
+        expect(comoRaquel.body.data.some((a: { operador_id: number }) => a.operador_id === kevinId)).toBe(true);
+
+        const comoCastulo = await request(app).get('/api/asistencia/hoy').set('Authorization', `Bearer ${tokenCastulo}`);
+        expect(comoCastulo.status).toBe(200);
+        expect(comoCastulo.body.data.some((a: { operador_id: number }) => a.operador_id === kevinId)).toBe(false);
+    });
+
+    it('finalizarDia: Castulo cierra su jornada SIN que el prestamo de Kevin lo bloquee (ya no es suyo ese dia)', async () => {
+        await request(app).post('/api/asistencia/agregar-manual').set('Authorization', `Bearer ${tokenRaquel}`).send({ operador_id: kevinId });
+        const altaCastulo = await request(app).post('/api/asistencia/agregar-manual').set('Authorization', `Bearer ${tokenCastulo}`).send({ operador_id: mecanicoDeCastuloId });
+        await request(app).put(`/api/asistencia/${altaCastulo.body.asistencia.id}/confirmar`).set('Authorization', `Bearer ${tokenCastulo}`).send({ presente: true });
+
+        const res = await request(app).post('/api/asistencia/finalizar-dia').set('Authorization', `Bearer ${tokenCastulo}`).send({});
+
+        expect(res.status).toBe(200);
+        const kevinFinal = await Asistencia.findOne({ where: { operador_id: kevinId } });
+        // Sigue EN_JORNADA: el cierre de Castulo no lo toco - ya no esta en su alcance.
+        expect(kevinFinal?.estado).toBe('EN_JORNADA');
+    });
+
+    it('finalizarDia: Raquel queda bloqueada por "Falta confirmar" de Kevin hasta confirmarlo, y su cierre SI lo transiciona', async () => {
+        const alta = await request(app).post('/api/asistencia/agregar-manual').set('Authorization', `Bearer ${tokenRaquel}`).send({ operador_id: kevinId });
+
+        const bloqueado = await request(app).post('/api/asistencia/finalizar-dia').set('Authorization', `Bearer ${tokenRaquel}`).send({});
+        expect(bloqueado.status).toBe(400);
+        expect(bloqueado.body.message).toContain('Kevin Josue Aguavil');
+
+        await request(app).put(`/api/asistencia/${alta.body.asistencia.id}/confirmar`).set('Authorization', `Bearer ${tokenRaquel}`).send({ presente: true });
+
+        const res = await request(app).post('/api/asistencia/finalizar-dia').set('Authorization', `Bearer ${tokenRaquel}`).send({});
+        expect(res.status).toBe(200);
+        const kevinFinal = await Asistencia.findByPk(alta.body.asistencia.id);
+        expect(kevinFinal?.estado).toBe('SALIDA_OLVIDADA');
+    });
+
+    /*
+    incluir_propios_prestados (pedido del usuario, 2026-11-03): el roster "Trabajadores que aun no marcan"
+    (cargarTrabajadoresSinMarcar en el frontend) necesita lo CONTRARIO del alcance exclusivo de arriba - Kevin
+    ya tiene Asistencia (prestado a Raquel), asi que NO debe seguir contando como "pendiente" para Castulo.
+    */
+    it('incluir_propios_prestados=true SI cuenta a Kevin para Castulo, aunque este prestado a Raquel', async () => {
+        await request(app).post('/api/asistencia/agregar-manual').set('Authorization', `Bearer ${tokenRaquel}`).send({ operador_id: kevinId });
+
+        const sinBandera = await request(app).get('/api/asistencia/hoy').set('Authorization', `Bearer ${tokenCastulo}`);
+        expect(sinBandera.body.data.some((a: { operador_id: number }) => a.operador_id === kevinId)).toBe(false);
+
+        const conBandera = await request(app).get('/api/asistencia/hoy?incluir_propios_prestados=true').set('Authorization', `Bearer ${tokenCastulo}`);
+        expect(conBandera.body.data.some((a: { operador_id: number }) => a.operador_id === kevinId)).toBe(true);
+    });
+});
+
 afterAll(async () => {
     await sequelize.close();
 });
