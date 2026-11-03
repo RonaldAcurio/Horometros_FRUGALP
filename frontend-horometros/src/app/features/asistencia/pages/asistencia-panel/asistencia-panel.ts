@@ -123,6 +123,10 @@ export class AsistenciaPanel implements OnInit{
   // Filtro por Supervisor (para que ADMIN vea solo lo que hizo un Supervisor puntual) - reusa 'supervisores',
   // ya cargado para el selector de "a que hacienda pertenece" al crear/editar un Operador.
   supervisorIdFiltro: number | null = null;
+  // Filtro por Supervisor del Directorio de Operadores (pedido del usuario, 2026-11-02): separado de
+  // supervisorIdFiltro de arriba (ese es del Historial) para no mezclar ambas pestañas - reusa la misma
+  // lista 'supervisores', ya cargada.
+  supervisorIdFiltroDirectorio: number | null = null;
   //Paginacion del historial: el backend nunca manda todo el rando de fechas de una sola vez
   paginaHistorial: number = 1;
   totalPaginasHistorial: number = 1;
@@ -220,7 +224,7 @@ export class AsistenciaPanel implements OnInit{
   mostrarModalImportarOperador = false;
   importandoOperadores = false;
   errorImportarOperador = '';
-  filasParaImportarOperador: { nombre_completo: string; rol: string; codigo_megued: string; cedula: string; supervisor: string }[] = [];
+  filasParaImportarOperador: { nombre_completo: string; rol: string; codigo_megued: string; cedula: string; supervisor: string; area: string }[] = [];
   resultadoImportarOperador: ResultadoImportacion | null = null;
 
   constructor(
@@ -268,7 +272,7 @@ export class AsistenciaPanel implements OnInit{
 
   cargarOperadores(): void {
     this.cargandoOperadores = true;
-    this.asistenciaService.obtenerOperadoresPaginado(this.paginaActual, 20, this.terminoBusqueda || undefined).pipe(timeoutDeLista()).subscribe({
+    this.asistenciaService.obtenerOperadoresPaginado(this.paginaActual, 20, this.terminoBusqueda || undefined, this.supervisorIdFiltroDirectorio || undefined).pipe(timeoutDeLista()).subscribe({
       next: (res) => {
         this.cargandoOperadores = false;
         this.operadores = res.data || [];
@@ -299,6 +303,12 @@ export class AsistenciaPanel implements OnInit{
       this.paginaActual = nuevaPagina;
       this.cargarOperadores();
     }
+  }
+
+  // Filtro por Supervisor del Directorio ("Todos" o uno puntual, pedido del usuario, 2026-11-02).
+  onCambioSupervisorDirectorio(): void {
+    this.paginaActual = 1;
+    this.cargarOperadores();
   }
 
   // Resuelve la hacienda de un Supervisor a partir de la lista ya cargada (ver cargarSupervisores) - Usuario.hacienda
@@ -1385,6 +1395,15 @@ export class AsistenciaPanel implements OnInit{
     descargarPlantillaExcel('plantilla-trabajadores.xlsx', 'Trabajadores', ['NOMBRE', 'CARGO', 'CODIGO', 'CEDULA', 'SUPERVISOR']);
   }
 
+  // Plantilla separada para OPERADORES (pedido del usuario, 2026-11-02): mismo endpoint/import que la de
+  // Mecánicos, pero con la columna "Area Que Pertenece" (exclusiva de rol OPERADOR, ver importarOperadores
+  // en el backend) y "Cargo"/"Jefe Inmediato" nombrados tal cual los trae la ficha real del usuario.
+  descargarPlantillaOperadoresConArea(): void {
+    descargarPlantillaExcel('plantilla-operadores.xlsx', 'Operadores', [
+      'Codigo', 'Cedula', 'Nombre Empleado', 'Cargo', 'Jefe Inmediato', 'Area Que Pertenece',
+    ]);
+  }
+
   async onArchivoOperadoresSeleccionado(event: Event): Promise<void> {
     const input = event.target as HTMLInputElement;
     const archivo = input.files?.[0];
@@ -1393,12 +1412,13 @@ export class AsistenciaPanel implements OnInit{
     this.errorImportarOperador = '';
     this.resultadoImportarOperador = null;
     try {
-      const filas = await leerFilasExcel<{ nombre_completo: string; rol: string; codigo_megued: string; cedula: string; supervisor: string }>(archivo, [
-        { clave: 'nombre_completo', encabezados: ['nombre', 'nombre completo', 'nombre_completo'] },
+      const filas = await leerFilasExcel<{ nombre_completo: string; rol: string; codigo_megued: string; cedula: string; supervisor: string; area: string }>(archivo, [
+        { clave: 'nombre_completo', encabezados: ['nombre', 'nombre completo', 'nombre_completo', 'nombre empleado'] },
         { clave: 'rol', encabezados: ['cargo', 'rol'] },
         { clave: 'codigo_megued', encabezados: ['codigo', 'codigo megued', 'codigo_megued'] },
         { clave: 'cedula', encabezados: ['cedula'] },
-        { clave: 'supervisor', encabezados: ['supervisor'] },
+        { clave: 'supervisor', encabezados: ['supervisor', 'jefe inmediato'] },
+        { clave: 'area', encabezados: ['area', 'area que pertenece'] },
       ]);
       this.filasParaImportarOperador = filas;
       if (filas.length === 0) {

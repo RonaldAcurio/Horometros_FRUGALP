@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
+import * as XLSX from '@e965/xlsx';
 import { AsistenciaPanel } from './asistencia-panel';
 import { Asistencia, Operador } from '../../../../core/models/asistencia.model';
 import { ExportarExcelService } from '../../../../core/services/exportar-excel.service';
@@ -56,6 +57,78 @@ describe('AsistenciaPanel', () => {
       component.fechaFinFiltro = '2026-10-23';
 
       expect(component.puedeExportarExcel).toBe(false);
+    });
+  });
+
+  // Filtro por Supervisor del Directorio de Operadores (pedido del usuario, 2026-11-02): separado del
+  // supervisorIdFiltro del Historial (ver describe de arriba) - no debe interferir entre pestañas.
+  describe('Directorio: filtro por Supervisor', () => {
+    it('onCambioSupervisorDirectorio() vuelve a la página 1 y manda supervisor_id al backend', () => {
+      component.supervisorIdFiltroDirectorio = 42;
+      component.paginaActual = 3;
+
+      component.onCambioSupervisorDirectorio();
+
+      expect(component.paginaActual).toBe(1);
+      const peticion = httpMock.expectOne((r) => r.urlWithParams.includes('/operadores') && r.urlWithParams.includes('pagina=1'));
+      expect(peticion.request.urlWithParams).toContain('supervisor_id=42');
+      peticion.flush({ data: [], total: 0, pagina: 1, totalPaginas: 1 });
+    });
+
+    it('en "Todos" (null) no manda supervisor_id', () => {
+      component.supervisorIdFiltroDirectorio = null;
+
+      component.cargarOperadores();
+
+      const peticion = httpMock.expectOne((r) => r.urlWithParams.includes('/operadores'));
+      expect(peticion.request.urlWithParams).not.toContain('supervisor_id');
+      peticion.flush({ data: [], total: 0, pagina: 1, totalPaginas: 1 });
+    });
+  });
+
+  // Plantilla de Operadores con columna Área (pedido del usuario, 2026-11-02): mismo endpoint que la
+  // plantilla general, pero con encabezados distintos ("Nombre Empleado", "Jefe Inmediato", "Area Que
+  // Pertenece") - onArchivoOperadoresSeleccionado tiene que reconocerlos igual que a los de siempre.
+  describe('Importar Operadores: plantilla con columna Área', () => {
+    const archivoDesdeFilas = (encabezados: string[], fila: string[]): File => {
+      const hoja = XLSX.utils.aoa_to_sheet([encabezados, fila]);
+      const libro = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(libro, hoja, 'Operadores');
+      const buffer = XLSX.write(libro, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
+      return new File([buffer], 'plantilla-operadores.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    };
+
+    const dispararSeleccion = async (archivo: File): Promise<void> => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      Object.defineProperty(input, 'files', { value: [archivo] });
+      await component.onArchivoOperadoresSeleccionado({ target: input } as unknown as Event);
+    };
+
+    it('reconoce Nombre Empleado/Jefe Inmediato/Area Que Pertenece y los manda ya mapeados', async () => {
+      const archivo = archivoDesdeFilas(
+        ['Codigo', 'Cedula', 'Nombre Empleado', 'Cargo', 'Jefe Inmediato', 'Area Que Pertenece'],
+        ['OP-001', '0102030405', 'Carlos Ruiz', 'OPERADOR', 'Sup Andes', 'EMPACADORA'],
+      );
+
+      await dispararSeleccion(archivo);
+
+      expect(component.filasParaImportarOperador).toEqual([
+        { codigo_megued: 'OP-001', cedula: '0102030405', nombre_completo: 'Carlos Ruiz', rol: 'OPERADOR', supervisor: 'Sup Andes', area: 'EMPACADORA' },
+      ]);
+    });
+
+    it('la plantilla general (sin columna Área) sigue funcionando - area queda vacía', async () => {
+      const archivo = archivoDesdeFilas(
+        ['NOMBRE', 'CARGO', 'CODIGO', 'CEDULA', 'SUPERVISOR'],
+        ['Juan Perez', 'MECANICO', 'MEC-001', '0102030405', 'Sup Andes'],
+      );
+
+      await dispararSeleccion(archivo);
+
+      expect(component.filasParaImportarOperador).toEqual([
+        { nombre_completo: 'Juan Perez', rol: 'MECANICO', codigo_megued: 'MEC-001', cedula: '0102030405', supervisor: 'Sup Andes', area: '' },
+      ]);
     });
   });
 

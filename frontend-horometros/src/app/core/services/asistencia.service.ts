@@ -22,19 +22,27 @@ export class AsistenciaService {
     // POST -> /api/asistencia/operadores/importar - importación masiva desde Excel (botón "Importar", Directorio
     // de Operadores). 'supervisor' es el NOMBRE del Supervisor (texto libre, resuelto por el backend) - así el
     // trabajador queda vinculado a la hacienda correspondiente sin que el archivo conozca IDs internos.
-    importarOperadores(items: { nombre_completo: string; codigo_megued: string; rol?: string; cedula?: string; supervisor?: string }[]): Observable<{ creados: number; rechazados: { fila: number; motivo: string }[] }> {
+    // 'area' opcional (pedido del usuario, 2026-11-02): solo la trae la plantilla de Operadores - el backend
+    // resuelve/crea la Sección dentro de la hacienda del supervisor de esa misma fila (ver importarOperadores).
+    importarOperadores(items: { nombre_completo: string; codigo_megued: string; rol?: string; cedula?: string; supervisor?: string; area?: string }[]): Observable<{ creados: number; rechazados: { fila: number; motivo: string }[] }> {
         return this.http.post<{ creados: number; rechazados: { fila: number; motivo: string }[] }>(`${this.baseUrl}/operadores/importar`, { items });
     }
 
-    // GET -> https://.../api/asistencia/operadores?pagina=1&limite=20&q=...&supervisor_id=... - paginado y
-    // filtrable por texto (mandar pagina/limite activa esa respuesta en el backend, ver asistencia.controller.ts),
-    // lo consume el Directorio de Operadores del Panel de Asistente. supervisorId opcional: lo usa el buscador
-    // de "+ Agregar Usuario" cuando quien llama es ADMIN y ya eligió un Supervisor puntual arriba - un
-    // SUPERVISOR real lo ignora (el backend ya lo acota solo, ver obtenerOperadores).
-    obtenerOperadoresPaginado(pagina: number, limite: number, q?: string, supervisorId?: number): Observable<RespuestaPaginada<Operador>> {
+    /*
+    GET -> https://.../api/asistencia/operadores?pagina=1&limite=20&q=...&supervisor_id=...&rol=... - paginado y
+    filtrable por texto (mandar pagina/limite activa esa respuesta en el backend, ver asistencia.controller.ts),
+    lo consume el Directorio de Operadores del Panel de Asistente. supervisorId opcional: lo usa el buscador
+    de "+ Agregar Usuario" cuando quien llama es ADMIN y ya eligió un Supervisor puntual arriba - un
+    SUPERVISOR real lo ignora (el backend ya lo acota solo, ver obtenerOperadores).
+    rol opcional (pedido del usuario, 2026-11-02): el botón "+ Agregar Usuario" del Panel de Supervisor lo
+    manda siempre en 'OPERADOR' - un SUPERVISOR real deja de verse acotado a su propia gente y en su lugar ve
+    a CUALQUIER Operador del sistema (ver obtenerOperadores backend). Sin este parámetro, todo sigue igual.
+    */
+    obtenerOperadoresPaginado(pagina: number, limite: number, q?: string, supervisorId?: number, rol?: string): Observable<RespuestaPaginada<Operador>> {
         let params = new HttpParams().set('pagina', pagina).set('limite', limite);
         if (q) params = params.set('q', q);
         if (supervisorId) params = params.set('supervisor_id', supervisorId);
+        if (rol) params = params.set('rol', rol);
         return this.http.get<RespuestaPaginada<Operador>>(`${this.baseUrl}/operadores`, { params }).pipe(
             catchError(err => {
                 console.warn('Error al obtener operadores paginados:', err);

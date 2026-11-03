@@ -23,6 +23,7 @@ describe('POST /api/asistencia/agregar-manual', () => {
     let haciendaId: number;
     let operadorPropioId: number;
     let operadorAjenoId: number;
+    let operadorAjenoRolOperadorId: number;
 
     beforeEach(async () => {
         await limpiarBaseDeDatosTest();
@@ -45,10 +46,19 @@ describe('POST /api/asistencia/agregar-manual', () => {
         });
         operadorPropioId = operadorPropio.id;
 
+        // rol MECANICO (default) - sigue sin poder ser agregado por un Supervisor ajeno.
         const operadorAjeno = await Operador.create({
             nombre_completo: 'Operador Ajeno', codigo_megued: 'OP-AJENO', supervisor_id: supervisorAjeno.id,
         });
         operadorAjenoId = operadorAjeno.id;
+
+        // rol OPERADOR (pedido del usuario, 2026-11-02: no usan la app todavia) - CUALQUIER Supervisor puede
+        // agregarlo, sin importar de que Supervisor sea.
+        const operadorAjenoRolOperador = await Operador.create({
+            nombre_completo: 'Operador de Campo Ajeno', codigo_megued: 'OP-CAMPO-AJENO', rol: 'OPERADOR',
+            supervisor_id: supervisorAjeno.id,
+        });
+        operadorAjenoRolOperadorId = operadorAjenoRolOperador.id;
 
         const login = await request(app).post('/api/auth/login').send({ usuario: 'supervisor1', clave: 'claveprueba123' });
         tokenSupervisor = login.body.token;
@@ -72,13 +82,29 @@ describe('POST /api/asistencia/agregar-manual', () => {
         expect(auditoria?.actor_usuario_id).toBe(supervisorId);
     });
 
-    it('SUPERVISOR no puede agregar a un trabajador que no es suyo', async () => {
+    it('SUPERVISOR no puede agregar a un trabajador MECANICO que no es suyo', async () => {
         const res = await request(app)
             .post('/api/asistencia/agregar-manual')
             .set('Authorization', `Bearer ${tokenSupervisor}`)
             .send({ operador_id: operadorAjenoId });
 
         expect(res.status).toBe(403);
+    });
+
+    /*
+    Excepcion para rol OPERADOR (pedido del usuario, 2026-11-02): no usan la app todavia, asi que no generan
+    su propia marcacion - cualquier Supervisor puede necesitar registrarle un dia de trabajo (ej. vino a
+    reparar su tractor en el taller de OTRO Supervisor).
+    */
+    it('SUPERVISOR SI puede agregar a un Operador (rol OPERADOR) aunque sea de OTRO Supervisor', async () => {
+        const res = await request(app)
+            .post('/api/asistencia/agregar-manual')
+            .set('Authorization', `Bearer ${tokenSupervisor}`)
+            .send({ operador_id: operadorAjenoRolOperadorId });
+
+        expect(res.status).toBe(201);
+        expect(res.body.asistencia.operador_id).toBe(operadorAjenoRolOperadorId);
+        expect(res.body.asistencia.estado).toBe('EN_JORNADA');
     });
 
     it('rechaza si el operador ya tiene una asistencia registrada hoy', async () => {
@@ -223,6 +249,11 @@ describe('GET /api/asistencia/operadores (acotado para SUPERVISOR, opcional para
 
         await Operador.create({ nombre_completo: 'Operador Propio', codigo_megued: 'OP-PROPIO', supervisor_id: supervisor.id });
         await Operador.create({ nombre_completo: 'Operador Ajeno', codigo_megued: 'OP-AJENO', supervisor_id: supervisorAjeno.id });
+        // rol OPERADOR, de OTRO supervisor - solo para los tests nuevos de rol=OPERADOR mas abajo.
+        await Operador.create({
+            nombre_completo: 'Campo Ajeno Operador', codigo_megued: 'OP-CAMPO-AJENO', rol: 'OPERADOR',
+            supervisor_id: supervisorAjeno.id,
+        });
 
         const login = await request(app).post('/api/auth/login').send({ usuario: 'supervisor1', clave: 'claveprueba123' });
         tokenSupervisor = login.body.token;
@@ -250,19 +281,54 @@ describe('GET /api/asistencia/operadores (acotado para SUPERVISOR, opcional para
         expect(res.body.data[0].nombre_completo).toBe('Operador Propio');
     });
 
-    it('ADMIN sin supervisor_id ve el directorio completo (ambos trabajadores)', async () => {
+    it('ADMIN sin supervisor_id ve el directorio completo (los 3 trabajadores)', async () => {
         const res = await request(app)
             .get('/api/asistencia/operadores?pagina=1&limite=20')
             .set('Authorization', `Bearer ${tokenAdmin}`);
 
         expect(res.status).toBe(200);
-        expect(res.body.data).toHaveLength(2);
+        expect(res.body.data).toHaveLength(3);
     });
 
     it('ADMIN con supervisor_id solo ve a los trabajadores de ESE supervisor', async () => {
         const res = await request(app)
             .get(`/api/asistencia/operadores?pagina=1&limite=20&supervisor_id=${supervisorId}`)
             .set('Authorization', `Bearer ${tokenAdmin}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.data).toHaveLength(1);
+        expect(res.body.data[0].nombre_completo).toBe('Operador Propio');
+    });
+
+    /*
+    rol=OPERADOR (pedido del usuario, 2026-11-02): el buscador de "+ Agregar Usuario" deja de acotar por
+    supervisor_id propio y en su lugar solo filtra por rol - para que cualquier Supervisor pueda agregarle un
+    dia de trabajo a un Operador de OTRO Supervisor (no usan la app, no generan su propia marcacion).
+    */
+    it('SUPERVISOR con rol=OPERADOR ve Operadores de CUALQUIER Supervisor, ignorando su propio alcance', async () => {
+        const res = await request(app)
+            .get('/api/asistencia/operadores?pagina=1&limite=20&rol=OPERADOR')
+            .set('Authorization', `Bearer ${tokenSupervisor}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.data).toHaveLength(1);
+        expect(res.body.data[0].nombre_completo).toBe('Campo Ajeno Operador');
+    });
+
+    it('SUPERVISOR sin rol=OPERADOR sigue acotado a su propia gente, como siempre', async () => {
+        const res = await request(app)
+            .get('/api/asistencia/operadores?pagina=1&limite=20')
+            .set('Authorization', `Bearer ${tokenSupervisor}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.data).toHaveLength(1);
+        expect(res.body.data[0].nombre_completo).toBe('Operador Propio');
+    });
+
+    it('SUPERVISOR con rol=MECANICO sigue acotado a su propia gente (el parametro solo relaja para OPERADOR)', async () => {
+        const res = await request(app)
+            .get('/api/asistencia/operadores?pagina=1&limite=20&rol=MECANICO')
+            .set('Authorization', `Bearer ${tokenSupervisor}`);
 
         expect(res.status).toBe(200);
         expect(res.body.data).toHaveLength(1);

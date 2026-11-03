@@ -14,8 +14,9 @@ export interface Operador {
     seccion_id?: number | null;
     usuario?: string | null;
     // Solo viene en obtenerHistorial (hoja imprimible, asistencia-panel.ts) - la hacienda PERMANENTE del
-    // trabajador, via su Supervisor.
-    supervisor?: { hacienda_id?: number | null; hacienda?: { nombre: string } | null } | null;
+    // trabajador, via su Supervisor. 'id'/'nombre_completo' también vienen en obtenerOperadores (Directorio,
+    // pedido del usuario 2026-11-02: columna y filtro por Supervisor).
+    supervisor?: { id?: number; nombre_completo?: string; hacienda_id?: number | null; hacienda?: { nombre: string } | null } | null;
     // Fecha en que aceptó la Política de Privacidad/Términos de Uso (gate del primer login) - null/undefined =
     // todavía no aceptó. Ya venía en la respuesta del backend (solo excluye clave_hash), faltaba tipar/mostrar.
     terminos_aceptados_en?: string | null;
