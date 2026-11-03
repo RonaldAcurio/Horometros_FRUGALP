@@ -76,6 +76,25 @@ describe('AgregarUsuarioModal', () => {
     peticionBusqueda.flush({ data: [], total: 0, pagina: 1, totalPaginas: 1 });
   });
 
+  /*
+  Trabajador "prestado" (pedido del usuario, 2026-11-03): cuando ADMIN tiene un Supervisor elegido Y el modal
+  está en modo rol=OPERADOR (botón "+ Agregar Usuario"), supervisorId NO acota la búsqueda (sigue viendo
+  Operadores de cualquier Supervisor) pero SÍ se manda al confirmar el alta, para que el backend sepa a qué
+  hacienda se está "prestando" el Operador.
+  */
+  it('abrir({ supervisorId, rol }) NO acota la búsqueda por supervisorId, pero SÍ lo manda al confirmar', () => {
+    const peticionInicial = abrirYResponderInicial({ supervisorId: 42, rol: 'OPERADOR' });
+    expect(peticionInicial.request.urlWithParams).not.toContain('supervisor_id');
+    expect(peticionInicial.request.urlWithParams).toContain('rol=OPERADOR');
+
+    component.operadorSeleccionado = operadorDePrueba;
+    component.confirmarAgregar();
+
+    const peticionConfirmar = httpMock.expectOne((r) => r.urlWithParams.includes('/agregar-manual'));
+    expect(peticionConfirmar.request.body).toEqual({ operador_id: 7, supervisor_id: 42 });
+    peticionConfirmar.flush({ message: 'ok', asistencia: {} });
+  });
+
   // "+ Agregar Usuario" en fechas pasadas (pedido del usuario, 2026-10-27).
   describe('abrir({ fecha }) con un día anterior', () => {
     it('esHoy queda en false y pide hora de ingreso manual', () => {

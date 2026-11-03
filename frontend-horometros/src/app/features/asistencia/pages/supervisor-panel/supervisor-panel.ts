@@ -251,9 +251,12 @@ export class SupervisorPanel implements OnInit {
   private cargarTrabajadoresSinMarcar(): void {
     this.cargandoRoster = true;
     const supervisorId = this.supervisorIdFiltro || undefined;
+    // incluirPropiosPrestados=true (pedido del usuario, 2026-11-03): un trabajador de esta hacienda que YA
+    // tiene Asistencia hoy (aunque "prestado" y gestionado por OTRO Supervisor) no debe aparecer aquí como
+    // pendiente - la tabla principal de arriba es exclusiva a propósito, pero el roster necesita lo contrario.
     forkJoin({
       roster: this.asistenciaService.obtenerOperadoresCompleto(supervisorId),
-      asistenciasDelDia: this.asistenciaService.obtenerAsistenciasHoy(this.fechaSeleccionada || undefined, 1, 100, supervisorId),
+      asistenciasDelDia: this.asistenciaService.obtenerAsistenciasHoy(this.fechaSeleccionada || undefined, 1, 100, supervisorId, true),
     }).subscribe({
       next: ({ roster, asistenciasDelDia }) => {
         const idsConAsistencia = new Set(asistenciasDelDia.data.map((a) => a.operador_id));
@@ -496,14 +499,18 @@ export class SupervisorPanel implements OnInit {
   rol: 'OPERADOR' siempre, para ADMIN y SUPERVISOR por igual (pedido del usuario, 2026-11-03: este es el
   Panel de SUPERVISOR, ADMIN tiene que ver exactamente lo mismo acá para poder reproducir cualquier bug con
   cualquiera de las dos cuentas) - los Operadores todavía no usan la app, así que cualquier Supervisor puede
-  necesitar agregarle un día de trabajo a uno que no es suyo (ej. vino a reparar su tractor en el taller). Ya
-  no manda supervisorId: el Operador buscado es siempre del sistema completo, sin acotar al Supervisor
-  puntual que ADMIN haya elegido arriba (ese solo sirve para activar el botón, ver puedeAgregarUsuario).
+  necesitar agregarle un día de trabajo a uno que no es suyo (ej. vino a reparar su tractor en el taller).
+  supervisorId (solo para ADMIN) vuelve a mandarse, pero con un uso distinto al de antes (pedido del usuario,
+  2026-11-03): el modal ya NO lo usa para acotar la búsqueda (sigue siendo de cualquier Supervisor, ver
+  agregar-usuario-modal.ts) - lo manda solo al CONFIRMAR el alta, para que el backend sepa a qué hacienda se
+  está "prestando" el Operador si es de otro Supervisor (trabajador prestado: ese día pasa a pertenecer POR
+  COMPLETO a quien lo agregó, no a su Supervisor de casa - ver registrarAsistenciaManual/obtenerAsistenciaHoy).
   */
   abrirAgregarUsuario(): void {
     if (!this.puedeAgregarUsuario) return;
     this.marcandoAusenteDesdeRoster = false;
     this.agregarUsuarioModal.abrir({
+      supervisorId: this.esAdmin ? this.supervisorIdFiltro : undefined,
       fecha: this.fechaSeleccionada || undefined,
       rol: 'OPERADOR',
     });

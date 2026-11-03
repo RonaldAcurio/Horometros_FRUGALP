@@ -90,10 +90,15 @@ export class AsistenciaService {
     // fecha/horaIngreso opcionales (pedido del usuario, 2026-10-27): sin ellos agrega a HOY con la hora del
     // clic, igual que antes - con fecha pasada, horaIngreso es obligatoria en los hechos (el Supervisor la
     // escribe a mano, el backend no la inventa).
-    agregarAsistenciaManual(operadorId: number, fecha?: string, horaIngreso?: string): Observable<{ message: string; asistencia: Asistencia }> {
-        const body: { operador_id: number; fecha?: string; hora_ingreso?: string } = { operador_id: operadorId };
+    // supervisorId opcional (pedido del usuario, 2026-11-03): SOLO lo manda ADMIN, con el Supervisor que
+    // tiene elegido arriba - le dice al backend a que hacienda se esta "prestando" el Operador (trabajador
+    // prestado, ver registrarAsistenciaManual) cuando es de OTRO Supervisor. Un SUPERVISOR real no lo manda:
+    // el backend ya resuelve su propia hacienda del JWT.
+    agregarAsistenciaManual(operadorId: number, fecha?: string, horaIngreso?: string, supervisorId?: number): Observable<{ message: string; asistencia: Asistencia }> {
+        const body: { operador_id: number; fecha?: string; hora_ingreso?: string; supervisor_id?: number } = { operador_id: operadorId };
         if (fecha) body.fecha = fecha;
         if (horaIngreso) body.hora_ingreso = horaIngreso;
+        if (supervisorId) body.supervisor_id = supervisorId;
         return this.http.post<{ message: string; asistencia: Asistencia }>(`${this.baseUrl}/agregar-manual`, body);
     }
 
@@ -212,15 +217,21 @@ export class AsistenciaService {
     // Paginado: al Supervisor tampoco le llega de golpe todo el dia de una sola vez.
     // supervisorId opcional: lo usa el panel de ADMIN (ve TODAS las haciendas mezcladas aqui) para acotar a lo
     // que hizo un Supervisor puntual.
+    // incluirPropiosPrestados opcional (pedido del usuario, 2026-11-03): por defecto esta tabla es EXCLUSIVA
+    // (un trabajador "prestado" a otro Supervisor ya no aparece aqui, ver asistencia.controller.ts) - el
+    // roster "Trabajadores que aun no marcan" (cargarTrabajadoresSinMarcar) necesita lo contrario: saber que
+    // YA tiene Asistencia aunque la gestione otro Supervisor, para no mostrarlo como pendiente.
     obtenerAsistenciasHoy(
         fecha?: string,
         pagina: number = 1,
         limite: number = 30,
-        supervisorId?: number
+        supervisorId?: number,
+        incluirPropiosPrestados?: boolean
     ): Observable<{ data: Asistencia[]; total: number; pagina: number; totalPaginas: number; diaCerrado: boolean }> {
         let params = `?pagina=${pagina}&limite=${limite}`;
         if(fecha) params += `&fecha=${fecha}`;
         if(supervisorId) params += `&supervisor_id=${supervisorId}`;
+        if(incluirPropiosPrestados) params += `&incluir_propios_prestados=true`;
         return this.http.get<{ data: Asistencia[]; total: number; pagina: number; totalPaginas: number; diaCerrado: boolean }>(
             `${this.baseUrl}/hoy${params}`
         );

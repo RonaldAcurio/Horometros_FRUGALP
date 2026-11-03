@@ -1570,11 +1570,13 @@ export const marcarConQrSesion = async(req:Request, res:Response):Promise<void> 
 
 /*
 Resuelve, para una fecha puntual, el id (o los ids) de Hacienda que estan "en juego" ese dia - mismo criterio
-que finalizarDia ya usa para `haciendaIdsAInvalidar` (ver ahi): la hacienda de CASA del Supervisor de cada
-operador (operador.supervisor_id -> Usuario.hacienda_id), nunca hacienda_prestamo_id. Si viene supervisorId, es
-solo la hacienda de ese Supervisor puntual (sin mirar si hubo marcaciones o no - "cerrado" tiene que poder
-calcularse incluso antes de que exista una sola Asistencia hoy). Si no, son TODAS las haciendas con al menos un
-registro hoy (acotado a quienes de verdad marcaron, igual que finalizarDia sin 'supervisor_id').
+EXCLUSIVO que finalizarDia ya usa para `haciendaIdsAInvalidar` (ver ahi, pedido del usuario 2026-11-03):
+hacienda_prestamo_id de cada Asistencia si existe (el trabajador "prestado" pertenece POR COMPLETO, ese dia,
+a quien lo agrego), si no la hacienda de CASA de su Supervisor (operador.supervisor_id -> Usuario.hacienda_id).
+Si viene supervisorId, es solo la hacienda de ese Supervisor puntual (sin mirar si hubo marcaciones o no -
+"cerrado" tiene que poder calcularse incluso antes de que exista una sola Asistencia hoy). Si no, son TODAS
+las haciendas con al menos un registro hoy (acotado a quienes de verdad marcaron, igual que finalizarDia sin
+'supervisor_id').
 */
 const resolverHaciendasDelDia = async (fecha: string, supervisorId: number | null): Promise<number[]> => {
     if(supervisorId !== null){
@@ -1583,17 +1585,24 @@ const resolverHaciendasDelDia = async (fecha: string, supervisorId: number | nul
     }
     const registros = await Asistencia.findAll({
         where: { fecha },
+        attributes: ['hacienda_prestamo_id'],
         include: [{ model: Operador, as: 'operador', attributes: ['supervisor_id'], required: true, paranoid: false }],
     });
     const supervisorIds = [...new Set(
-        registros.map((r) => r.operador?.supervisor_id).filter((id): id is number => id != null)
+        registros.filter((r) => r.hacienda_prestamo_id === null)
+            .map((r) => r.operador?.supervisor_id).filter((id): id is number => id != null)
     )];
-    if(supervisorIds.length === 0) return [];
-    const supervisores = await Usuario.findAll({
+    const haciendasDePrestamo = registros
+        .map((r) => r.hacienda_prestamo_id)
+        .filter((id): id is number => id != null);
+    const supervisores = supervisorIds.length > 0 ? await Usuario.findAll({
         where: { id: { [Op.in]: supervisorIds } },
         attributes: ['hacienda_id'],
-    });
-    return [...new Set(supervisores.map((s) => s.hacienda_id).filter((id): id is number => id != null))];
+    }) : [];
+    return [...new Set([
+        ...supervisores.map((s) => s.hacienda_id).filter((id): id is number => id != null),
+        ...haciendasDePrestamo,
+    ])];
 };
 
 /*
@@ -1664,7 +1673,7 @@ este endpoint solo mete al trabajador en la lista de hoy.
 */
 export const registrarAsistenciaManual = async(req:Request, res:Response):Promise<void> => {
     try{
-        const { operador_id, fecha, hora_ingreso } = req.body;
+        const { operador_id, fecha, hora_ingreso, supervisor_id } = req.body;
         if(!operador_id){
             res.status(400).json({ message: 'operador_id es obligatorio.' });
             return;
@@ -1727,7 +1736,27 @@ export const registrarAsistenciaManual = async(req:Request, res:Response):Promis
             return;
         }
 
-        const haciendaIdDestino = await resolverHaciendaPropia(operador);
+        /*
+        Trabajador "prestado" (pedido del usuario, 2026-11-03, mismo concepto ya usado por procesarMarcacion/
+        admitirTrabajadorExterno): un Operador agregado por "+ Agregar Usuario" pertenece POR COMPLETO, ESE
+        DIA, a quien lo agrega - no a su Supervisor "de casa" (operador.supervisor_id). 'haciendaReceptora' es
+        la hacienda de quien esta agregando: para un SUPERVISOR real, la suya propia (del JWT, nunca del
+        cliente); para ADMIN/ASISTENTE, la del 'supervisor_id' que mande en el body (el que tenga elegido en
+        el Panel de Supervisor). Si existe y es DISTINTA de la hacienda de casa del Operador, se guarda como
+        hacienda_prestamo_id - mismo patron que procesarMarcacion (contexto.hacienda_prestamo_id ??
+        resolverHaciendaPropia) para decidir incluso que "dia cerrado" aplica.
+        */
+        let haciendaReceptora: number | null = null;
+        if(req.auth?.tipo === 'usuario' && req.auth.rol === 'SUPERVISOR'){
+            haciendaReceptora = req.auth.hacienda_id ?? null;
+        }else if(supervisor_id){
+            const supervisorReceptor = await Usuario.findByPk(Number(supervisor_id));
+            haciendaReceptora = supervisorReceptor?.hacienda_id ?? null;
+        }
+
+        const haciendaPropia = await resolverHaciendaPropia(operador);
+        const esPrestamo = haciendaReceptora !== null && haciendaPropia !== null && haciendaReceptora !== haciendaPropia;
+        const haciendaIdDestino = esPrestamo ? haciendaReceptora : haciendaPropia;
         if(haciendaIdDestino !== null && await calcularDiaCerradoHacienda(fechaFinal, haciendaIdDestino)){
             res.status(403).json({ message: 'El Supervisor ya finalizo esa jornada en esta hacienda.' });
             return;
@@ -1754,6 +1783,7 @@ export const registrarAsistenciaManual = async(req:Request, res:Response):Promis
             fecha: fechaFinal,
             hora_ingreso: horaIngresoFinal,
             estado: 'EN_JORNADA',
+            hacienda_prestamo_id: esPrestamo ? haciendaReceptora : null,
             admitido_por_usuario_id: req.auth?.id ?? null,
         });
 
@@ -1803,6 +1833,13 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
         completo (todas las haciendas), independiente de este alcance. El propio cierre (finalizarDia,
         mas abajo) SI queda acotado a la hacienda del Supervisor que ejecuta el cierre (o a la que mande ADMIN
         via este mismo supervisor_id) - ver ese endpoint para el detalle.
+
+        Trabajador "prestado" EXCLUSIVO (pedido del usuario, 2026-11-03): un Operador agregado por
+        "+ Agregar Usuario" cross-Supervisor (hacienda_prestamo_id, ver registrarAsistenciaManual) pertenece
+        POR COMPLETO, ese dia, a quien lo agrego - deja de verse en la tabla de su Supervisor "de casa". El
+        criterio pasa de "operador.supervisor_id = X" a "hacienda_prestamo_id = (hacienda de X) O
+        (hacienda_prestamo_id es null Y operador.supervisor_id = X)" - mismo criterio exclusivo que ya usa
+        calcularDiaCerradoDeAsistencia por registro puntual.
         */
         const supervisorIdQuery = req.query['supervisor_id'];
         const supervisorIdAlcance: number | null =
@@ -1811,8 +1848,48 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
                 : (supervisorIdQuery ? Number(supervisorIdQuery) : null);
         const filtrarPorSupervisor = supervisorIdAlcance !== null;
 
+        /*
+        Resuelve el alcance en 2 pasos (en vez de un Op.or cruzando Asistencia+Operador en la consulta
+        principal, que con 'limit' + el include muchos-a-muchos de 'actividades' obliga a Sequelize a armar
+        una subquery - mezclar ahi un Op.or sobre una columna del include es fragil): primero junta los ids
+        de HOY que caen en el alcance (prestamo si existe, si no operador.supervisor_id - mismo criterio
+        exclusivo que calcularDiaCerradoDeAsistencia), despues la consulta principal (con todos sus includes
+        de siempre) solo filtra por esos ids. Mismo patron que ya usa finalizarDia (idsDelAlcance) para lo
+        mismo.
+        */
+        /*
+        incluir_propios_prestados (pedido del usuario, 2026-11-03): el roster "Trabajadores que aun no
+        marcan" (supervisor-panel.ts, cargarTrabajadoresSinMarcar) necesita lo CONTRARIO del alcance
+        exclusivo de arriba - Kevin (de casa de Castulo, prestado hoy a Raquel) YA tiene Asistencia, asi que
+        NO debe aparecer en el roster de Castulo como "pendiente", aunque su Asistencia ya no se vea en SU
+        tabla principal. Con esta bandera, un registro de casa (operador.supervisor_id = X) SIEMPRE cuenta
+        para el alcance, este o no prestado a otro lado - solo agrega, nunca quita nada del alcance exclusivo.
+        */
+        const incluirPropiosPrestados = req.query['incluir_propios_prestados'] === 'true';
+        let idsDelAlcance: number[] | null = null;
+        if(filtrarPorSupervisor){
+            const haciendaDelAlcance = (await Usuario.findByPk(supervisorIdAlcance, { attributes: ['hacienda_id'] }))?.hacienda_id ?? null;
+            const candidatos = await Asistencia.findAll({
+                where: { fecha: hoy },
+                attributes: ['id', 'hacienda_prestamo_id'],
+                include: [{ model: Operador, as: 'operador', attributes: ['supervisor_id'], required: true, paranoid: false }],
+            });
+            idsDelAlcance = candidatos
+                .filter((a) => {
+                    const esDeCasa = a.operador?.supervisor_id === supervisorIdAlcance;
+                    if(incluirPropiosPrestados && esDeCasa) return true;
+                    return a.hacienda_prestamo_id !== null
+                        ? a.hacienda_prestamo_id === haciendaDelAlcance
+                        : esDeCasa;
+                })
+                .map((a) => a.id);
+        }
+
         const { rows:asistencias, count:total } = await Asistencia.findAndCountAll({
-            where: { fecha:hoy },
+            where: {
+                fecha: hoy,
+                ...(idsDelAlcance !== null ? { id: { [Op.in]: idsDelAlcance } } : {}),
+            },
             attributes: ATRIBUTOS_SIN_FOTO,
             /*
             paranoid:false en los includes: si el Operador/Actividad de una marcacion de HOY fue eliminado
@@ -1823,13 +1900,14 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
             detalle) - el Panel de Supervisor ahora tambien tiene su propio "Ver/Imprimir" por fila e "Imprimir
             General" (hoja-actividades-modal.ts, pedido del usuario 2026-10-02), que necesitan la hacienda de
             la jornada para el mismo encabezado que ya arma la hoja imprimible del Historial.
+
+            required:false siempre (el filtro de alcance ya se resolvio arriba, via idsDelAlcance).
             */
             include: [
                 {
                     model: Operador, as:'operador',
-                    required: filtrarPorSupervisor,
+                    required: false,
                     paranoid: false,
-                    ...(filtrarPorSupervisor ? { where: { supervisor_id: supervisorIdAlcance } } : {}),
                     include: [{
                         model: Usuario, as: 'supervisor',
                         attributes: ['hacienda_id'],
@@ -1901,12 +1979,12 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
         le diera a "Cerrar Jornada" cerraba el dia de TODAS las haciendas del sistema de un solo boton, aunque
         los demas supervisores no hubieran terminado de confirmar O/X a su propia gente (bug real, ver
         CLAUDE.md "Reglas de negocio confirmadas"). Un SUPERVISOR ahora SIEMPRE queda acotado a su propia
-        hacienda (via operador.supervisor_id = su propio id, el mismo campo/criterio que ya usa el filtro "por
-        Supervisor" del panel de ADMIN en obtenerAsistenciaHoy - no considera hacienda_prestamo_id, trabajador
-        prestado, mismo criterio ya establecido ahi). ADMIN puede mandar opcionalmente `supervisor_id` para
-        cerrar solo esa hacienda puntual (coincide con lo que tenga filtrado en el panel); sin ese parametro,
-        ADMIN sigue cerrando todas las haciendas de una vez, a proposito - es el unico rol que de verdad
-        supervisa el sistema completo.
+        hacienda, mismo criterio EXCLUSIVO ya usado en obtenerAsistenciaHoy (pedido del usuario, 2026-11-03):
+        hacienda_prestamo_id si existe (el trabajador "prestado" pertenece POR COMPLETO, ese dia, a quien lo
+        agrego), si no operador.supervisor_id (su Supervisor "de casa"). ADMIN puede mandar opcionalmente
+        `supervisor_id` para cerrar solo esa hacienda puntual (coincide con lo que tenga filtrado en el
+        panel); sin ese parametro, ADMIN sigue cerrando todas las haciendas de una vez, a proposito - es el
+        unico rol que de verdad supervisa el sistema completo.
         */
         const supervisorIdAlcance: number | null =
             req.auth?.tipo === 'usuario' && req.auth.rol === 'SUPERVISOR'
@@ -1914,21 +1992,34 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
                 : (supervisor_id ? Number(supervisor_id) : null);
 
         /*
+        Hacienda de quien cierra (cuando hay un Supervisor puntual) - se resuelve ACA porque la necesitan 3
+        cosas: filtrar registroDelDia abajo (criterio exclusivo, prestamo si existe), el chequeo de "ya
+        cerrada" mas abajo, y la invalidacion de Token al cerrar (haciendaIdsAInvalidar).
+        */
+        const haciendaDelCierre = supervisorIdAlcance !== null
+            ? (await Usuario.findByPk(supervisorIdAlcance, { attributes: ['hacienda_id'] }))?.hacienda_id ?? null
+            : null;
+
+        /*
         Verificamos el estado actual de la jornada antes de tocar nada: si ya queda ningun registro pendiente
         de revision, es por que el dia ya fue cerrado antes.
+
+        paranoid:false: el operador pudo haber sido eliminado (soft-delete) despues de marcar hoy - su nombre
+        igual tiene que poder aparecer en "Falta confirmar la asistencia de: ..." mas abajo. 'required:true'
+        siempre: toda Asistencia tiene un operador valido, no hace falta LEFT JOIN.
         */
-       const registroDelDia = await Asistencia.findAll({
+        const candidatosDelDia = await Asistencia.findAll({
             where: {fecha: fechaProcesar},
-            // paranoid:false: el operador pudo haber sido eliminado (soft-delete) despues de marcar hoy - su
-            // nombre igual tiene que poder aparecer en "Falta confirmar la asistencia de: ..." mas abajo.
-            // 'supervisor_id' agregado para poder resolver que hacienda(s) se estan cerrando mas abajo (ver
-            // invalidacion del Token al cerrar).
             include: [{
                 model: Operador, as: 'operador', attributes: ['nombre_completo', 'supervisor_id'], paranoid: false,
-                required: supervisorIdAlcance !== null,
-                ...(supervisorIdAlcance !== null ? { where: { supervisor_id: supervisorIdAlcance } } : {}),
+                required: true,
             }],
-       });
+        });
+        const registroDelDia = supervisorIdAlcance !== null
+            ? candidatosDelDia.filter((r) => r.hacienda_prestamo_id !== null
+                ? r.hacienda_prestamo_id === haciendaDelCierre
+                : r.operador?.supervisor_id === supervisorIdAlcance)
+            : candidatosDelDia;
         if(registroDelDia.length === 0 ){
             res.status(404).json({
                 message:`No hay marcaciones registradas para el ${fechaProcesar}.`
@@ -1937,26 +2028,33 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
         }
 
         /*
-        Que hacienda(s) se estan cerrando con esta llamada - se resuelve ACA (antes de cualquier chequeo) porque
-        ahora tambien lo usa el chequeo de "ya cerrada" de abajo, ademas de la invalidacion de Token que ya lo
-        necesitaba (ver ese comentario mas abajo para el detalle del criterio: hacienda de CASA del Supervisor,
-        via operador.supervisor_id, nunca hacienda_prestamo_id).
+        Que hacienda(s) se estan cerrando con esta llamada - tambien la usa la invalidacion de Token mas
+        abajo. Con un Supervisor puntual (haciendaDelCierre ya resuelto arriba) es solo la suya. Sin eso
+        (ADMIN cierra TODAS las haciendas de una vez), se arma a partir de registroDelDia: por cada
+        Asistencia, su hacienda_prestamo_id si existe (mismo criterio exclusivo de arriba), si no la hacienda
+        del Supervisor "de casa" del Operador.
         */
         let haciendaIdsAInvalidar: number[];
         if (supervisorIdAlcance !== null) {
-            const supervisorDelCierre = await Usuario.findByPk(supervisorIdAlcance, { attributes: ['hacienda_id'] });
-            haciendaIdsAInvalidar = supervisorDelCierre?.hacienda_id ? [supervisorDelCierre.hacienda_id] : [];
+            haciendaIdsAInvalidar = haciendaDelCierre !== null ? [haciendaDelCierre] : [];
         } else {
             const supervisorIdsInvolucrados = [...new Set(
-                registroDelDia.map((r) => r.operador?.supervisor_id).filter((id): id is number => id != null)
+                registroDelDia
+                    .filter((r) => r.hacienda_prestamo_id === null)
+                    .map((r) => r.operador?.supervisor_id)
+                    .filter((id): id is number => id != null)
             )];
-            const supervisoresInvolucrados = await Usuario.findAll({
+            const supervisoresInvolucrados = supervisorIdsInvolucrados.length > 0 ? await Usuario.findAll({
                 where: { id: { [Op.in]: supervisorIdsInvolucrados } },
                 attributes: ['hacienda_id'],
-            });
-            haciendaIdsAInvalidar = [...new Set(
-                supervisoresInvolucrados.map((s) => s.hacienda_id).filter((id): id is number => id != null)
-            )];
+            }) : [];
+            const haciendasDePrestamo = registroDelDia
+                .map((r) => r.hacienda_prestamo_id)
+                .filter((id): id is number => id != null);
+            haciendaIdsAInvalidar = [...new Set([
+                ...supervisoresInvolucrados.map((s) => s.hacienda_id).filter((id): id is number => id != null),
+                ...haciendasDePrestamo,
+            ])];
         }
 
         /*

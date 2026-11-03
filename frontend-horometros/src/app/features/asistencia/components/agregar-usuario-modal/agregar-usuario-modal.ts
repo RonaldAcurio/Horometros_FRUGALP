@@ -69,9 +69,17 @@ export class AgregarUsuarioModal {
     return `${dia}/${mes}/${anio}`;
   }
 
-  // Solo tiene valor cuando quien abre el modal es ADMIN y ya eligió un Supervisor puntual arriba (ver
-  // supervisor-panel.ts, abrirAgregarUsuario) - un SUPERVISOR real no lo necesita, el backend ya lo acota
-  // solo a sus propios trabajadores (ver obtenerOperadores).
+  /*
+  Solo tiene valor cuando quien abre el modal es ADMIN y ya eligió un Supervisor puntual arriba (ver
+  supervisor-panel.ts, abrirAgregarUsuario) - un SUPERVISOR real no lo necesita.
+  Dos usos distintos segun el modo (pedido del usuario, 2026-11-03):
+  - Sin 'rol' seteado (modo viejo, ADMIN busca Mecánico+Operador mezclados de una sola hacienda): SÍ acota la
+    búsqueda (ver buscar()), igual que siempre.
+  - Con 'rol' seteado (botón "+ Agregar Usuario", ver abrirAgregarUsuario en supervisor-panel.ts): la
+    búsqueda NO se acota por esto (sigue siendo de cualquier Supervisor, ver PR anterior) - se usa solo al
+    CONFIRMAR el alta (ver confirmarAgregar), para decirle al backend a que hacienda se esta "prestando" el
+    Operador si es de otro Supervisor (trabajador prestado, ver registrarAsistenciaManual).
+  */
   private supervisorId: number | null = null;
 
   // 'OPERADOR' cuando quien abre el buscador es un SUPERVISOR real (ver abrirAgregarUsuario en
@@ -138,7 +146,10 @@ export class AgregarUsuarioModal {
 
   private buscar(texto: string, pagina: number): void {
     this.buscando = true;
-    this.asistenciaService.obtenerOperadoresPaginado(pagina, LIMITE_RESULTADOS, texto || undefined, this.supervisorId ?? undefined, this.rol ?? undefined).subscribe({
+    // 'rol' seteado -> la búsqueda es siempre de cualquier Supervisor, ignora supervisorId (ver el doc del
+    // campo arriba) - sin 'rol' (modo viejo), sigue acotando por supervisorId como siempre.
+    const supervisorIdParaBuscar = this.rol ? undefined : (this.supervisorId ?? undefined);
+    this.asistenciaService.obtenerOperadoresPaginado(pagina, LIMITE_RESULTADOS, texto || undefined, supervisorIdParaBuscar, this.rol ?? undefined).subscribe({
       next: (res) => {
         this.buscando = false;
         this.resultados = res.data || [];
@@ -178,7 +189,7 @@ export class AgregarUsuarioModal {
     if (this.requiereHoraManual && (this.horaIngresoHH === null || this.horaIngresoMM === null)) return;
     this.guardando = true;
     const fechaParaEnviar = this.esHoy ? undefined : this.fecha;
-    this.asistenciaService.agregarAsistenciaManual(this.operadorSeleccionado.id, fechaParaEnviar, this.horaIngresoAIso()).subscribe({
+    this.asistenciaService.agregarAsistenciaManual(this.operadorSeleccionado.id, fechaParaEnviar, this.horaIngresoAIso(), this.supervisorId ?? undefined).subscribe({
       next: (res) => {
         const destino = this.esHoy ? 'la lista de hoy' : `la lista del ${this.fechaFormateada}`;
         this.notificacionService.exito(`${this.operadorSeleccionado?.nombre_completo} agregado a ${destino}.`);
