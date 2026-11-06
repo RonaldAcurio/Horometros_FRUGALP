@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { Workbook } from 'exceljs';
 import { ExportarExcelService } from './exportar-excel.service';
 import { Operador } from '../models/asistencia.model';
 
@@ -100,6 +101,43 @@ describe('ExportarExcelService', () => {
       );
 
       expect(descargarArchivoSpy).toHaveBeenCalledWith(expect.anything(), 'TALLER TODOS 23102026.xlsx');
+    });
+  });
+
+  // pageSetup (pedido del usuario, 2026-11-06, con foto de referencia): antes se imprimia en vertical sin
+  // ajustar, dejando la tabla apretada en una franja angosta con margenes enormes sin usar. Horizontal +
+  // "ajustar a 1 pagina" (ancho y alto) es lo que hace que Excel/LibreOffice calculen la escala necesaria
+  // para que las 15 columnas y todas las filas entren en una sola hoja impresa.
+  describe('pageSetup de impresión (construirHojaHacienda)', () => {
+    const construir = (bloques: { operador: Operador; registros: never[] }[]) => {
+      const wb = new Workbook();
+      (service as unknown as {
+        construirHojaHacienda(
+          wb: Workbook, nombreHoja: string, idImagen: number | undefined,
+          bloques: { operador: Operador; registros: never[] }[], fecha: string, nombreSupervisor: string,
+        ): void;
+      }).construirHojaHacienda(wb, 'Hoja1', undefined, bloques, '2026-10-23', 'Sup A');
+      return wb.getWorksheet('Hoja1')!;
+    };
+
+    it('queda horizontal y ajustada a una sola hoja (ancho y alto)', () => {
+      const ws = construir([{ operador: operador(1, 'A'), registros: [] }]);
+      expect(ws.pageSetup.orientation).toBe('landscape');
+      expect(ws.pageSetup.fitToPage).toBe(true);
+      expect(ws.pageSetup.fitToWidth).toBe(1);
+      expect(ws.pageSetup.fitToHeight).toBe(1);
+      expect(ws.pageSetup.horizontalCentered).toBe(true);
+    });
+
+    it('usa márgenes mínimos para aprovechar toda la página', () => {
+      const ws = construir([{ operador: operador(1, 'A'), registros: [] }]);
+      expect(ws.pageSetup.margins).toEqual({ left: 0.2, right: 0.2, top: 0.2, bottom: 0.2, header: 0, footer: 0 });
+    });
+
+    it('el área de impresión cubre A1 hasta la última fila usada (pie de firmas), sin filas vacías de más', () => {
+      // Un solo bloque (1 trabajador, sin registros) -> fila 8 de datos, firmas en 10/11.
+      const ws = construir([{ operador: operador(1, 'A'), registros: [] }]);
+      expect(ws.pageSetup.printArea).toBe('A1:O11');
     });
   });
 });

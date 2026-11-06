@@ -111,6 +111,18 @@ export class ExportarExcelService {
 
     const ws = wb.addWorksheet(nombreHoja, { views: [{ showGridLines: false }] });
 
+    // Impresion: horizontal, ajustado a UNA sola hoja (ancho y alto) y margenes minimos para aprovechar
+    // toda la pagina (pedido del usuario, 2026-11-06 - antes se imprimia en vertical sin ajustar, dejando
+    // la tabla apretada en una franja angosta con margenes enormes sin usar, ver foto adjunta). 'fitToWidth'/
+    // 'fitToHeight' en 1 es lo que le dice a Excel/LibreOffice que reduzca la escala lo necesario para que
+    // TODO (las 15 columnas, A-O, y todas las filas) entre en una sola pagina impresa horizontal.
+    ws.pageSetup.orientation = 'landscape';
+    ws.pageSetup.fitToPage = true;
+    ws.pageSetup.fitToWidth = 1;
+    ws.pageSetup.fitToHeight = 1;
+    ws.pageSetup.horizontalCentered = true;
+    ws.pageSetup.margins = { left: 0.2, right: 0.2, top: 0.2, bottom: 0.2, header: 0, footer: 0 };
+
     // Anchos de columna (los que trae medidos la plantilla real; el resto se deja en un ancho razonable).
     const anchos = [6, 12, 8, 27.66, 10, 11.5, 9, 12.33, 12, 23.83, 16.33, 14.33, 12, 10, 32];
     anchos.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
@@ -249,6 +261,10 @@ export class ExportarExcelService {
     ws.mergeCells(`M${filaFirma1}:O${filaFirma1}`); celda(`M${filaFirma1}`, 'FIRMA DE TTHH', { bold: true });
     ws.mergeCells(`A${filaFirma2}:D${filaFirma2}`); celda(`A${filaFirma2}`, 'NOMBRE:');
     ws.mergeCells(`M${filaFirma2}:O${filaFirma2}`); celda(`M${filaFirma2}`, 'DIGITADO POR:');
+
+    // Area de impresion explicita (hasta la ultima fila realmente usada, el pie de firmas) para que el
+    // ajuste a una pagina de arriba no deje de contar columnas/filas vacias de mas.
+    ws.pageSetup.printArea = `A1:O${filaFirma2}`;
   }
 
   /*
