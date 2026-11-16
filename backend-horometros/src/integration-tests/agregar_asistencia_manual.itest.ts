@@ -138,6 +138,31 @@ describe('POST /api/asistencia/agregar-manual', () => {
         expect(res.body.message).toContain('2026-10-01');
     });
 
+    /*
+    Bug real reportado por el usuario (2026-11-16): Supervisores/ADMIN arreglan los dias atrasados y los
+    fines de semana recien el lunes, pero el trabajador ya marco su entrada REAL de hoy (lunes) por su
+    cuenta antes de que llegaran a hacerlo - esa jornada de HOY (en curso, no "olvidada") no debe contar como
+    excusa para bloquear el intento de agregar el viernes atrasado. Mismo escenario que el test de arriba,
+    pero en la direccion contraria (la jornada abierta es POSTERIOR a la que se esta agregando, no anterior).
+    */
+    it('permite agregar un dia pasado aunque el trabajador ya tenga abierta la jornada REAL de hoy', async () => {
+        const hoy = obtenerFechaLocalEcuador();
+        await Asistencia.create({
+            operador_id: operadorPropioId,
+            fecha: hoy,
+            hora_ingreso: new Date(),
+            estado: 'EN_JORNADA',
+        });
+
+        const res = await request(app)
+            .post('/api/asistencia/agregar-manual')
+            .set('Authorization', `Bearer ${tokenSupervisor}`)
+            .send({ operador_id: operadorPropioId, fecha: '2026-10-20', hora_ingreso: '2026-10-20T13:00:00.000Z' });
+
+        expect(res.status).toBe(201);
+        expect(res.body.asistencia.fecha).toBe('2026-10-20');
+    });
+
     it('rechaza si el Supervisor ya cerro la jornada de hoy para su hacienda', async () => {
         await CierreJornada.create({
             hacienda_id: haciendaId,

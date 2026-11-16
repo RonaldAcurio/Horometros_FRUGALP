@@ -1725,12 +1725,24 @@ export const registrarAsistenciaManual = async(req:Request, res:Response):Promis
         }
 
         /*
-        Evita dejarlo con 2 jornadas EN_JORNADA abiertas a la vez (una vieja sin cerrar, de otro dia, + esta
-        nueva) - mismo riesgo que procesarMarcacion resuelve en su Paso 1, pero aca no hay forma de preguntarle
-        al trabajador que hacer con la vieja (el Supervisor la esta agregando por el), asi que se bloquea y se
-        le pide resolverla primero (ej. "Cerrar Jornada" de ese dia atrasado).
+        Evita dejarlo con 2 jornadas EN_JORNADA abiertas a la vez, pero SOLO en la direccion que de verdad
+        importa: que no se cree una entrada nueva (de HOY o de un dia futuro-dentro-de-lo-permitido) mientras
+        una mas VIEJA sigue sin cerrar - mismo riesgo que procesarMarcacion resuelve en su Paso 1, pero aca no
+        hay forma de preguntarle al trabajador que hacer con la vieja (el Supervisor la esta agregando por
+        el), asi que se bloquea y se le pide resolverla primero (ej. "Cerrar Jornada" de ese dia atrasado).
+
+        Bug real reportado por el usuario (2026-11-16): este chequeo bloqueaba tambien en la direccion
+        CONTRARIA - Supervisores/ADMIN arreglan dias atrasados y fines de semana recien el lunes, pero el
+        trabajador YA marco su entrada real de hoy (lunes) a las 7am por su cuenta antes de que llegaran a
+        hacerlo. Sin el filtro por fecha de abajo, esa jornada de HOY (real, en curso, no "olvidada") contaba
+        como excusa para bloquear el intento de agregar el VIERNES atrasado - exactamente al reves de lo que
+        esta regla queria evitar. Ahora solo bloquea si existe una jornada abierta ANTERIOR a la que se esta
+        agregando (la que de verdad quedo "olvidada" atras) - agregar un dia pasado mientras hoy sigue en
+        curso ya no choca con esto, porque esa de hoy es POSTERIOR, no anterior.
         */
-        const jornadaAbiertaVieja = await Asistencia.findOne({ where: { operador_id: operador.id, estado: 'EN_JORNADA' } });
+        const jornadaAbiertaVieja = await Asistencia.findOne({
+            where: { operador_id: operador.id, estado: 'EN_JORNADA', fecha: { [Op.lt]: fechaFinal } },
+        });
         if(jornadaAbiertaVieja){
             res.status(400).json({ message: `Este trabajador ya tiene una jornada sin cerrar del ${jornadaAbiertaVieja.fecha}. Ciérrala antes de agregarlo de nuevo.` });
             return;

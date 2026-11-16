@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { Workbook } from 'exceljs';
 import { ExportarExcelService } from './exportar-excel.service';
-import { Operador } from '../models/asistencia.model';
+import { Operador, RegistroActividad } from '../models/asistencia.model';
 
 // Helper mínimo - a estos tests no les importa el nombre_completo real, solo que exista.
 const operador = (id: number, nombreCompleto: string): Operador =>
@@ -138,6 +138,62 @@ describe('ExportarExcelService', () => {
       // Un solo bloque (1 trabajador, sin registros) -> fila 8 de datos, firmas en 10/11.
       const ws = construir([{ operador: operador(1, 'A'), registros: [] }]);
       expect(ws.pageSetup.printArea).toBe('A1:O11');
+    });
+  });
+
+  /*
+  Todo el reporte como texto (pedido del usuario, 2026-11-16): antes el Nª (A), la Fecha (B) y las horas (N)
+  quedaban con tipos mezclados - numero/fecha real de Excel/texto segun la fila - complicando comparar o
+  pegar estos datos contra otra planilla. Cada celda ahora es un string con formato '@' (texto), sin importar
+  si el valor "se ve" como numero o fecha.
+  */
+  describe('formato de celdas (construirHojaHacienda): todo como texto', () => {
+    const construir = (bloques: { operador: Operador; registros: RegistroActividad[] }[]) => {
+      const wb = new Workbook();
+      (service as unknown as {
+        construirHojaHacienda(
+          wb: Workbook, nombreHoja: string, idImagen: number | undefined,
+          bloques: { operador: Operador; registros: RegistroActividad[] }[], fecha: string, nombreSupervisor: string,
+        ): void;
+      }).construirHojaHacienda(wb, 'Hoja1', undefined, bloques, '2026-10-23', 'Sup A');
+      return wb.getWorksheet('Hoja1')!;
+    };
+
+    const registro = (horaInicio: string, horaFin: string | null): RegistroActividad => ({
+      id: 1, asistencia_id: 1, equipo_id: 1, actividad_id: 1, hora_inicio: horaInicio, hora_fin: horaFin,
+    });
+
+    it('Nª (A) y Fecha (B) son texto plano, no numero/fecha real de Excel', () => {
+      const ws = construir([{ operador: operador(1, 'A'), registros: [] }]);
+
+      expect(ws.getCell('A8').numFmt).toBe('@');
+      expect(typeof ws.getCell('A8').value).toBe('string');
+      expect(ws.getCell('A8').value).toBe('1');
+
+      expect(ws.getCell('B8').numFmt).toBe('@');
+      expect(typeof ws.getCell('B8').value).toBe('string');
+      expect(ws.getCell('B8').value).toBe('23/10/2026');
+    });
+
+    it('Tarea/Hrs (N) es texto incluso cuando SI hay horas calculadas (antes quedaba como number)', () => {
+      const ws = construir([{
+        operador: operador(1, 'A'),
+        registros: [registro('2026-10-23T08:00:00.000Z', '2026-10-23T09:30:00.000Z')],
+      }]);
+
+      expect(ws.getCell('N8').numFmt).toBe('@');
+      expect(typeof ws.getCell('N8').value).toBe('string');
+      expect(ws.getCell('N8').value).toBe('1.5'); // 1h30min redondeado a la media hora mas cercana.
+    });
+
+    it('Tarea/Hrs (N) sigue siendo texto (vacio) cuando NO hay horas - mismo tipo en ambos casos', () => {
+      const ws = construir([{
+        operador: operador(1, 'A'),
+        registros: [registro('2026-10-23T08:00:00.000Z', null)],
+      }]);
+
+      expect(ws.getCell('N8').numFmt).toBe('@');
+      expect(ws.getCell('N8').value).toBe('');
     });
   });
 });
