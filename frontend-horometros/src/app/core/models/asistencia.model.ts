@@ -95,3 +95,17 @@ export interface Asistencia {
     hacienda_prestamo_id?: number | null;
     haciendaPrestamo?: { nombre: string } | null;
 }
+
+/*
+Fila "pendiente" del roster fusionado (pedido del usuario, 2026-11-16, ver GET /asistencia/hoy?incluir_pendientes=true):
+un Operador del Supervisor que TODAVÍA no tiene ninguna Asistencia hoy - antes vivía en la tabla aparte
+"Trabajadores que aún no marcan" (supervisor-panel.ts). Union discriminada con Asistencia por 'pendiente'
+(true/false, nunca boolean genérico) para que el template pueda angostar el tipo con @if (fila.pendiente).
+*/
+export interface FilaPendiente {
+    pendiente: true;
+    operador_id: number;
+    operador: Operador;
+}
+
+export type FilaAsistenciaOPendiente = (Asistencia & { pendiente: false }) | FilaPendiente;

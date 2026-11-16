@@ -120,9 +120,17 @@ export class AsistenciaPanel implements OnInit{
   // Filtro por hacienda: el Operador no tiene hacienda propia, se filtra via su Supervisor (ver backend).
   haciendas: Hacienda[] = [];
   haciendaIdFiltro: number | null = null;
-  // Filtro por Supervisor (para que ADMIN vea solo lo que hizo un Supervisor puntual) - reusa 'supervisores',
-  // ya cargado para el selector de "a que hacienda pertenece" al crear/editar un Operador.
-  supervisorIdFiltro: number | null = null;
+  /*
+  Filtro por Supervisor (para que ADMIN/ASISTENTE vean solo lo que hicieron uno o varios Supervisores
+  puntuales) - reusa 'supervisores', ya cargado para el selector de "a que hacienda pertenece" al
+  crear/editar un Operador. Checklist en vez de un <select> de uno solo (pedido del usuario, 2026-11-16:
+  antes solo se podia elegir UN Supervisor o "Todos", y para imprimir/exportar el rango de dos Supervisores
+  puntuales había que traer TODAS las haciendas y descartar el resto a mano) - vacio sigue significando
+  "Todos" (mismo comportamiento de antes, cero regresión).
+  */
+  supervisoresIdsFiltro: number[] = [];
+  mostrarChecklistSupervisores = false;
+  supervisorBusquedaFiltro = '';
   // Filtro por Supervisor del Directorio de Operadores (pedido del usuario, 2026-11-02): separado de
   // supervisorIdFiltro de arriba (ese es del Historial) para no mezclar ambas pestañas - reusa la misma
   // lista 'supervisores', ya cargada.
@@ -784,10 +792,15 @@ export class AsistenciaPanel implements OnInit{
   ==================== "Exportar a Excel" (Historial) ====================
   Reporte SIEMPRE de un solo dia (asi lo manejan en papel) calcando el diseno real "REGISTRO DE LABORES
   DIARIAS" que ya usan - plantilla provista por el usuario, 2026-10-01. Requiere Fecha puntual (ver
-  puedeExportarExcel). Hacienda/Supervisor son opcionales (pedido del usuario, 2026-10-23): si se dejan en
-  "Todos"/"Todas", se exporta un solo archivo con una hoja por cada hacienda que tenga datos ese dia (ver
-  exportarExcelTodasLasHaciendas) - el backend (obtenerHistorial) ya devuelve datos de TODAS las haciendas sin
-  filtro, asi que esto no abre ningun acceso nuevo, solo deja de forzar pedirlo de a una.
+  puedeExportarExcel). El filtro de Supervisor es un checklist (pedido del usuario, 2026-11-16: antes solo
+  dejaba elegir UNO o "Todos", y antes de eso ni Hacienda ni Supervisor eran obligatorios, ver 2026-10-23):
+  - Ninguno elegido ("Todos") -> una hoja por cada hacienda que tenga datos ese dia (exportarExcelTodasLasHaciendas,
+    sin filtro - el backend ya devuelve TODAS las haciendas sin filtro, asi que esto no abre ningun acceso nuevo).
+  - Exactamente uno -> una sola hoja, de ESE Supervisor (exportarExcelUnSupervisor) - ya no hace falta elegir
+    tambien la Hacienda a mano para acotarlo, se deriva directo del propio Supervisor (supervisor.hacienda_id).
+  - Dos o mas -> una hoja por cada uno de los elegidos (reusa exportarExcelTodasLasHaciendas, pero acotado a
+    esos ids) - cada Supervisor ACTIVO es dueño de una sola hacienda (UNIQUE en la BD, ver usuario.ts), asi
+    que "una hoja por Supervisor elegido" y "una hoja por su hacienda" son lo mismo.
   */
   get puedeExportarExcel(): boolean {
     return !!this.fechaInicioFiltro && this.fechaInicioFiltro === this.fechaFinFiltro;
@@ -795,13 +808,19 @@ export class AsistenciaPanel implements OnInit{
 
   exportarExcelDiario(): void {
     if (!this.puedeExportarExcel || this.exportandoExcel) return;
-    if (this.haciendaIdFiltro === null || this.supervisorIdFiltro === null) {
+    if (this.supervisoresIdsFiltro.length === 0) {
       this.exportarExcelTodasLasHaciendas();
-      return;
+    } else if (this.supervisoresIdsFiltro.length === 1) {
+      this.exportarExcelUnSupervisor(this.supervisoresIdsFiltro[0]);
+    } else {
+      this.exportarExcelTodasLasHaciendas(this.supervisoresIdsFiltro);
     }
+  }
+
+  private exportarExcelUnSupervisor(supervisorId: number): void {
     const fecha = this.fechaInicioFiltro;
-    const hacienda = this.haciendas.find((h) => h.id === this.haciendaIdFiltro);
-    const supervisor = this.supervisores.find((s) => s.id === this.supervisorIdFiltro);
+    const supervisor = this.supervisores.find((s) => s.id === supervisorId);
+    const hacienda = supervisor ? this.haciendas.find((h) => h.id === supervisor.hacienda_id) : undefined;
     if (!hacienda || !supervisor) return;
 
     this.exportandoExcel = true;
@@ -810,7 +829,7 @@ export class AsistenciaPanel implements OnInit{
     // Pedido aparte del Historial ya cargado en pantalla (y no this.historial): ese viene paginado de a 30, y
     // el reporte necesita a TODOS los trabajadores del dia completo, no solo la pagina actual (limite 100,
     // tope real del backend - ver obtenerHistorial - de sobra para la cuadrilla de un solo Supervisor en un dia).
-    this.asistenciaService.obtenerHistorial(fecha, fecha, 1, 100, hacienda.id, undefined, supervisor.id).subscribe({
+    this.asistenciaService.obtenerHistorial(fecha, fecha, 1, 100, undefined, undefined, [supervisorId]).subscribe({
       next: (res) => {
         // obtenerHistorial (backend) incluye a proposito los registros OBSERVANDO (la X del Supervisor, "no
         // vino") junto a los que si trabajaron - YA se incluyen tal cual en el Excel, marcados como ausentes
@@ -860,14 +879,16 @@ export class AsistenciaPanel implements OnInit{
     });
   }
 
-  // Pide TODAS las paginas del Historial de ese dia (sin filtrar hacienda/supervisor) - obtenerHistorial pagina
-  // de a 100, y con todas las haciendas juntas facilmente se pasa de esa primera pagina.
-  private obtenerHistorialDelDiaCompleto(fecha: string): Observable<Asistencia[]> {
-    return this.asistenciaService.obtenerHistorial(fecha, fecha, 1, 100).pipe(
+  // Pide TODAS las paginas del Historial de ese dia - obtenerHistorial pagina de a 100, y con todas las
+  // haciendas juntas (o varios Supervisores a la vez) facilmente se pasa de esa primera pagina.
+  // supervisorIds opcional: sin el trae TODAS las haciendas; con el, solo lo que hicieron esos Supervisores
+  // (checklist de 2+, ver exportarExcelTodasLasHaciendas).
+  private obtenerHistorialDelDiaCompleto(fecha: string, supervisorIds?: number[]): Observable<Asistencia[]> {
+    return this.asistenciaService.obtenerHistorial(fecha, fecha, 1, 100, undefined, undefined, supervisorIds).pipe(
       switchMap((primera) => {
         if (primera.totalPaginas <= 1) return of(primera.data);
         const restantes = Array.from({ length: primera.totalPaginas - 1 }, (_, i) =>
-          this.asistenciaService.obtenerHistorial(fecha, fecha, i + 2, 100)
+          this.asistenciaService.obtenerHistorial(fecha, fecha, i + 2, 100, undefined, undefined, supervisorIds)
         );
         return forkJoin(restantes).pipe(
           map((paginas) => paginas.reduce((acc, p) => acc.concat(p.data), primera.data))
@@ -876,12 +897,15 @@ export class AsistenciaPanel implements OnInit{
     );
   }
 
-  private exportarExcelTodasLasHaciendas(): void {
+  // Una hoja por hacienda (pedido original, 2026-10-23: "Todos") - reusado para el checklist de 2+
+  // Supervisores (pedido del usuario, 2026-11-16): con supervisorIds, el Historial ya viene acotado a esos
+  // Supervisores, asi que las haciendas que salen agrupadas abajo ya son solo las de ellos.
+  private exportarExcelTodasLasHaciendas(supervisorIds?: number[]): void {
     const fecha = this.fechaInicioFiltro;
     this.exportandoExcel = true;
     this.cdr.detectChanges();
 
-    this.obtenerHistorialDelDiaCompleto(fecha).subscribe({
+    this.obtenerHistorialDelDiaCompleto(fecha, supervisorIds).subscribe({
       next: (data) => {
         // Mismo criterio de operadoresUnicos() de arriba (los OBSERVANDO YA se incluyen), pero agrupando por
         // hacienda (operador.supervisor.hacienda_id - ver "Solo viene en obtenerHistorial" en asistencia.model.ts).
@@ -1018,6 +1042,7 @@ export class AsistenciaPanel implements OnInit{
 
   //Al cambiar el filtro de fechas siempre volvemos a la pagina 1 (una busqueda nueva)
   buscarHistorial():void{
+    this.mostrarChecklistSupervisores = false;
     this.paginaHistorial = 1;
     this.cargarPaginaHistorial();
   }
@@ -1029,6 +1054,46 @@ export class AsistenciaPanel implements OnInit{
     }
   }
 
+  /*
+  Checklist de Supervisor del Historial (pedido del usuario, 2026-11-16): acotado a los Supervisores de la
+  Hacienda elegida arriba (si hay una) para no dejar marcar una combinacion que nunca va a traer nada -
+  "Sup Andes" no tiene sentido si ya se eligio la hacienda "Zapote". Vacio en el buscador muestra a todos
+  los que entren en ese alcance.
+  */
+  get supervisoresParaChecklist(): Usuario[] {
+    const texto = this.supervisorBusquedaFiltro.trim().toLowerCase();
+    return this.supervisores
+      .filter((s) => this.haciendaIdFiltro === null || s.hacienda_id === this.haciendaIdFiltro)
+      .filter((s) => !texto || s.nombre_completo.toLowerCase().includes(texto));
+  }
+
+  get textoFiltroSupervisores(): string {
+    if (this.supervisoresIdsFiltro.length === 0) return 'Todos';
+    if (this.supervisoresIdsFiltro.length === 1) {
+      return this.supervisores.find((s) => s.id === this.supervisoresIdsFiltro[0])?.nombre_completo ?? 'Todos';
+    }
+    return `${this.supervisoresIdsFiltro.length} supervisores`;
+  }
+
+  toggleSupervisorFiltro(id: number): void {
+    this.supervisoresIdsFiltro = this.supervisoresIdsFiltro.includes(id)
+      ? this.supervisoresIdsFiltro.filter((x) => x !== id)
+      : [...this.supervisoresIdsFiltro, id];
+  }
+
+  limpiarFiltroSupervisores(): void {
+    this.supervisoresIdsFiltro = [];
+  }
+
+  // Si cambia la Hacienda, cualquier Supervisor ya marcado que ya no pertenezca a ella se destilda solo -
+  // evita quedar con una seleccion "fantasma" que nunca aparece en el checklist visible.
+  onCambioHaciendaFiltroHistorial(): void {
+    if (this.haciendaIdFiltro === null) return;
+    this.supervisoresIdsFiltro = this.supervisoresIdsFiltro.filter((id) =>
+      this.supervisores.some((s) => s.id === id && s.hacienda_id === this.haciendaIdFiltro)
+    );
+  }
+
   private cargarPaginaHistorial():void{
     this.cargandoHistorial = true;
     this.asistenciaService.obtenerHistorial(
@@ -1038,7 +1103,7 @@ export class AsistenciaPanel implements OnInit{
       30,
       this.haciendaIdFiltro || undefined,
       undefined,
-      this.supervisorIdFiltro || undefined
+      this.supervisoresIdsFiltro.length > 0 ? this.supervisoresIdsFiltro : undefined
     ).pipe(timeoutDeLista()).subscribe({
       next:(res) => {
         this.cargandoHistorial = false;

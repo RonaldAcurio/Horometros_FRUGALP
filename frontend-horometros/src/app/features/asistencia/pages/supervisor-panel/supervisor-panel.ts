@@ -10,7 +10,7 @@ import { UsuarioService } from '../../../../core/services/usuario.service';
 import { RegistroActividadService } from '../../../../core/services/registro-actividad.service';
 import { ExportarExcelService } from '../../../../core/services/exportar-excel.service';
 import { AuthService } from '../../../../core/services/auth.service';
-import { Asistencia, Operador } from '../../../../core/models/asistencia.model';
+import { Asistencia, FilaAsistenciaOPendiente, Operador } from '../../../../core/models/asistencia.model';
 import { Hacienda } from '../../../../core/models/hacienda.model';
 import { Usuario } from '../../../../core/models/usuario.model';
 import { VisorFoto } from '../../components/visor-foto/visor-foto';
@@ -34,8 +34,39 @@ export class SupervisorPanel implements OnInit {
   @ViewChild('panelLaboresModal') panelLaboresModal!: PanelLaboresModal;
   @ViewChild('agregarUsuarioModal') agregarUsuarioModal!: AgregarUsuarioModal;
 
-  asistenciasHoy: Asistencia[] = [];
+  /*
+  Tabla unica fusionada (pedido del usuario, 2026-11-16): antes "Registro de Asistencia de Hoy" (solo
+  Asistencias reales) y "Trabajadores que aun no marcan" (roster aparte, sin paginar) vivian separadas - un
+  Supervisor podia "Cerrar Jornada" sin pasar nunca por la segunda, dejando huecos que el ASISTENTE tenia que
+  arreglar a mano despues. Ahora TODOS los Operadores del alcance aparecen siempre en UNA sola lista paginada
+  (ver obtenerAsistenciasHoy con incluirPendientes=true) - una fila "pendiente" (sin Asistencia todavia) solo
+  habilita "Marcar ausente"; en cuanto se marca, pasa a comportarse como cualquier fila real (O/X habilitados).
+  */
+  filasHoy: FilaAsistenciaOPendiente[] = [];
   fechaSeleccionada: string = '';
+
+  // Solo las filas reales de la pagina actual (pendiente:false) - las usan imprimirGeneral/exportarExcel, que
+  // necesitan Actividades/Equipo reales, nunca una fila "pendiente" sin Asistencia todavia.
+  get filasRealesHoy(): Asistencia[] {
+    return this.filasHoy.filter((f): f is Asistencia & { pendiente: false } => !f.pendiente);
+  }
+
+  // track del @for de la tabla fusionada - una fila real y una pendiente nunca comparten id (una usa 'id'
+  // de la Asistencia, la otra 'operador_id'), hace falta distinguirlas con un prefijo.
+  trackFila(fila: FilaAsistenciaOPendiente): string {
+    return fila.pendiente ? `p${fila.operador_id}` : `r${fila.id}`;
+  }
+
+  /*
+  Cuantos Operadores del alcance TODAVIA no tienen ninguna Asistencia hoy, en TODO el dia (no solo la pagina
+  visible) - lo manda el backend junto a la respuesta paginada (ver obtenerAsistenciasHoy). Controla si se
+  puede "Cerrar Jornada" sin round-trip al backend (pedido del usuario, 2026-11-16: ni Supervisor ni ADMIN
+  pueden cerrar mientras falte alguien por marcar, sin excepcion).
+  */
+  totalPendientes = 0;
+  get hayPendientes(): boolean {
+    return this.totalPendientes > 0;
+  }
 
   //Paginacion del dia: el backend nunca manda de golpe todos los registros del dia
   paginaHoy:number = 1;
@@ -48,7 +79,7 @@ export class SupervisorPanel implements OnInit {
   autocerrarse solo, pero eso NO cuenta como "dia cerrado" sin la confirmacion). Tambien controla si se puede
   editar la Observación de cada fila (`abrirObservacion`) - a nivel de DIA completo, no del estado de cada
   registro puntual. Lo calcula el backend sobre el dia completo, por eso ya NO es un getter derivado de
-  "asistenciasHoy" -- si lo fuera, el boton "Cerrar Jornada" pondria mal segun que pagina se este mirando.
+  "filasHoy" -- si lo fuera, el boton "Cerrar Jornada" pondria mal segun que pagina se este mirando.
   */
   diaCerrado:boolean = false;
   cargandoAsistencias: boolean = false;
@@ -210,62 +241,38 @@ export class SupervisorPanel implements OnInit {
     });
   }
 
+  /*
+  Contador de "peticion mas reciente" (pedido del usuario, 2026-11-16, bug real encontrado en vivo): esta
+  pantalla dispara cargarAsistencias() varias veces seguidas en rafagas cortas (cambio de fecha, y enseguida
+  onOperadorAgregado() al terminar "+ Agregar Usuario"/"Marcar ausente") - sin esto, si la petición VIEJA
+  (de antes del alta) tarda más en responder que la NUEVA (de después), su respuesta llega última y pisa el
+  estado ya correcto con datos desactualizados (ej. volvía a mostrar como "pendiente" a alguien que ya se
+  acababa de marcar). Cada llamada se queda con su propio número - solo la respuesta de la ÚLTIMA llamada
+  hecha hasta ese momento puede actualizar el componente.
+  */
+  private peticionAsistenciasId = 0;
+
   cargarAsistencias(): void {
     this.cargandoAsistencias = true;
-    this.asistenciaService.obtenerAsistenciasHoy(this.fechaSeleccionada || undefined, this.paginaHoy, 30, this.supervisorIdFiltro || undefined).pipe(timeoutDeLista()).subscribe({
+    const idPeticion = ++this.peticionAsistenciasId;
+    // incluirPendientes=true SIEMPRE (pedido del usuario, 2026-11-16): esta pantalla ahora necesita la tabla
+    // fusionada completa (reales + pendientes) para poder exigir que todos queden resueltos antes de cerrar.
+    this.asistenciaService.obtenerAsistenciasHoy(this.fechaSeleccionada || undefined, this.paginaHoy, 30, this.supervisorIdFiltro || undefined, true).pipe(timeoutDeLista()).subscribe({
       next: (res) => {
+        if (idPeticion !== this.peticionAsistenciasId) return; // Respuesta obsoleta - ya hay una llamada más nueva en curso.
         this.cargandoAsistencias = false;
-        this.asistenciasHoy = res.data || [];
+        this.filasHoy = res.data || [];
         this.totalPaginasHoy = res.totalPaginas || 1;
         this.totalHoy = res.total || 0;
+        this.totalPendientes = res.totalPendientes || 0;
         this.diaCerrado = res.diaCerrado;
         this.cdr.detectChanges();
       },
       error: (err) => {
+        if (idPeticion !== this.peticionAsistenciasId) return;
         this.cargandoAsistencias = false;
         console.error('Error cargando asistencias:', err);
         this.notificacionService.error(mensajeErrorCarga(err, 'Error al cargar la asistencia del día.'));
-        this.cdr.detectChanges();
-      },
-    });
-    // Roster completo (pedido del usuario, 2026-10-27): aparte, siempre que se refresca la asistencia del
-    // día, se refresca también la lista de quién de la hacienda TODAVÍA no tiene ninguna asistencia ese día -
-    // ver cargarTrabajadoresSinMarcar.
-    this.cargarTrabajadoresSinMarcar();
-  }
-
-  // --- Roster completo: trabajadores que aún no tienen ninguna Asistencia este día (pedido del usuario,
-  // 2026-10-27) ---
-  trabajadoresSinMarcar: Operador[] = [];
-  cargandoRoster = false;
-
-  /*
-  El Panel de Hoy (tabla paginada de arriba) solo muestra a quien YA tiene Asistencia ese día - los
-  trabajadores piden ver SIEMPRE la lista completa de la hacienda, para que ningún reporte deje a nadie
-  afuera. Se arma aparte (no se mezcla con la tabla paginada de asistencias reales, que sigue intacta): el
-  roster completo de la hacienda (obtenerOperadoresCompleto, sin paginar) menos quien ya tiene asistencia ese
-  día (hasta 100, el mismo tope que ya usa el resto de la app para listados de un día - de sobra para la
-  cuadrilla de una sola hacienda). Un trabajador de esta lista entra a la tabla de arriba en cuanto se le
-  agrega una Asistencia real (ver onOperadorAgregado/abrirMarcarAusente) - deja de aparecer aquí solo.
-  */
-  private cargarTrabajadoresSinMarcar(): void {
-    this.cargandoRoster = true;
-    const supervisorId = this.supervisorIdFiltro || undefined;
-    // incluirPropiosPrestados=true (pedido del usuario, 2026-11-03): un trabajador de esta hacienda que YA
-    // tiene Asistencia hoy (aunque "prestado" y gestionado por OTRO Supervisor) no debe aparecer aquí como
-    // pendiente - la tabla principal de arriba es exclusiva a propósito, pero el roster necesita lo contrario.
-    forkJoin({
-      roster: this.asistenciaService.obtenerOperadoresCompleto(supervisorId),
-      asistenciasDelDia: this.asistenciaService.obtenerAsistenciasHoy(this.fechaSeleccionada || undefined, 1, 100, supervisorId, true),
-    }).subscribe({
-      next: ({ roster, asistenciasDelDia }) => {
-        const idsConAsistencia = new Set(asistenciasDelDia.data.map((a) => a.operador_id));
-        this.trabajadoresSinMarcar = roster.filter((op) => !idsConAsistencia.has(op.id));
-        this.cargandoRoster = false;
-        this.cdr.detectChanges();
-      },
-      error: () => {
-        this.cargandoRoster = false;
         this.cdr.detectChanges();
       },
     });
@@ -292,29 +299,30 @@ export class SupervisorPanel implements OnInit {
     this.offlineSyncService.sincronizar();
   }
 
-  // Cierre pendiente de sincronizar (ver cierrePendienteDeSincronizar/OfflineSyncService): el boton de la
-  // plantilla se deshabilita con esto para que no se pueda encolar un segundo cierre del mismo dia/alcance
-  // mientras el primero todavia no viajo al servidor.
-  get cierrePendienteDeSincronizar(): boolean {
-    return this.offlineSyncService.tieneFinalizarDiaPendiente(this.fechaSeleccionada || undefined, this.supervisorIdFiltro || undefined);
-  }
-
   /*
-  Offline-first (pedido del usuario, 2026-10-05): se captura la hora del CLIC antes de intentar la peticion y se
-  manda siempre como hora_salida - si no hay señal, el cierre queda encolado (OfflineSyncService) con esa misma
-  hora, y al sincronizar horas despues el backend la usa para los operadores que quedaron "olvidados" (ver
-  finalizarDia), en vez de la hora en que la peticion recien pudo viajar.
+  "Cerrar Jornada" exige conexion (pedido del usuario, 2026-11-16): ya no se puede encolar sin señal como
+  antes - a diferencia de crear/editar una labor, este cierre depende de saber quien SI y quien NO quedo
+  resuelto en todo el dia, dato que puede haber cambiado mientras el celular estuvo sin señal; mandarlo
+  "a ciegas" (con una foto vieja de hayPendientes) podia cerrar con huecos reales sin que nadie se entere
+  hasta sincronizar, horas despues. Se valida local primero (diaCerrado/hayPendientes, sin round-trip) y
+  despues se manda directo - si falla por red, se avisa y punto, no se encola.
   */
   async ejecutarCierreDiario(): Promise<void> {
 
-    //Guarda defensiva: el boton ya se deshabilita en el HTML cuando el dia esta cerrado,
+    //Guarda defensiva: el boton ya se deshabilita en el HTML cuando el dia esta cerrado o sin conexion,
     //pero validamos aca tambien por si se llega a disparar el click de otra forma.
     if(this.diaCerrado){
       this.notificacionService.advertencia('Esta jornada ya fue cerrada anteriormente.');
       return;
     }
-    if(this.cierrePendienteDeSincronizar){
-      this.notificacionService.advertencia('El cierre de esta jornada ya quedó guardado y está pendiente de sincronizar.');
+    if(!this.offlineSyncService.conectado()){
+      this.notificacionService.advertencia('Necesitas conexión para cerrar jornada.');
+      return;
+    }
+    // Sin excepcion para ningun rol (ni ADMIN cerrando todas las haciendas a la vez) - mismo bloqueo real
+    // que ya aplica el backend (finalizarDia), pero evita el viaje redondo cuando ya se sabe de antemano.
+    if(this.hayPendientes){
+      this.notificacionService.advertencia(`Faltan ${this.totalPendientes} trabajador${this.totalPendientes === 1 ? '' : 'es'} por marcar antes de poder cerrar la jornada.`);
       return;
     }
 
@@ -333,15 +341,6 @@ export class SupervisorPanel implements OnInit {
         this.cargarAsistencias();
       },
       error: (err) => {
-        if (this.offlineSyncService.esFalloDeRed(err)) {
-          this.offlineSyncService
-            .encolarFinalizarDia(horaClick, this.fechaSeleccionada || undefined, this.supervisorIdFiltro || undefined)
-            .then(() => {
-              this.notificacionService.exito('Sin señal: el cierre quedó guardado con la hora de este momento y se enviará solo cuando vuelva la conexión.');
-              this.cdr.detectChanges();
-            });
-          return;
-        }
         this.notificacionService.error(err.error?.message || 'Error procesando el cierre de día.');
       },
     });
@@ -449,6 +448,7 @@ export class SupervisorPanel implements OnInit {
     }
 
     if (this.confirmandoPresenciaIds.has(asis.id)) return;
+    if (!asis.id) return; // Defensa en profundidad: una fila pendiente nunca llega aca (ver el template, O/X deshabilitados).
 
     if (!presente) {
       const confirmado = await this.confirmacionService.preguntar(
@@ -592,7 +592,7 @@ export class SupervisorPanel implements OnInit {
   hacienda a la que atribuirle el reporte - pedido explícito del usuario, 2026-10-02).
   */
   get puedeExportarGeneral(): boolean {
-    if (this.asistenciasHoy.length === 0) return false;
+    if (this.filasRealesHoy.length === 0) return false;
     return this.esAdmin ? this.supervisorIdFiltro !== null : true;
   }
 
@@ -602,14 +602,14 @@ export class SupervisorPanel implements OnInit {
   // agruparPorDia del Historial).
   imprimirGeneral(): void {
     if (!this.puedeExportarGeneral) return;
-    const fecha = this.fechaSeleccionada || this.asistenciasHoy[0]?.fecha;
+    const fecha = this.fechaSeleccionada || this.filasRealesHoy[0]?.fecha;
     if (!fecha) return;
 
     // Un dia OBSERVANDO (la X del Supervisor, "no vino") YA aparece en el reporte, igual que cualquier otro
     // (pedido del usuario, 2026-10-27, reemplaza la exclusion que tenia esto desde el 2026-10-16) - mismo
     // criterio que exportarExcel mas abajo.
     const operadoresUnicos = new Map<number, Operador>();
-    for (const asis of this.asistenciasHoy) {
+    for (const asis of this.filasRealesHoy) {
       if (asis.operador && !operadoresUnicos.has(asis.operador_id)) {
         operadoresUnicos.set(asis.operador_id, asis.operador);
       }
@@ -623,7 +623,7 @@ export class SupervisorPanel implements OnInit {
     const peticiones = Array.from(operadoresUnicos.values()).map((op) =>
       this.registroActividadService.obtenerPorOperador(op.id, fecha, fecha).pipe(
         map((registros): HojaGrupo => {
-          const asis = this.asistenciasHoy.find((a) => a.operador_id === op.id);
+          const asis = this.filasRealesHoy.find((a) => a.operador_id === op.id);
           return {
             operador: op,
             registros,
@@ -650,7 +650,7 @@ export class SupervisorPanel implements OnInit {
 
   exportarExcel(): void {
     if (!this.puedeExportarGeneral || this.exportandoExcel) return;
-    const fecha = this.fechaSeleccionada || this.asistenciasHoy[0]?.fecha;
+    const fecha = this.fechaSeleccionada || this.filasRealesHoy[0]?.fecha;
     if (!fecha) return;
 
     // La hacienda/el responsable del encabezado ya se conocen de entrada acá (al revés que en el Historial,
@@ -675,7 +675,7 @@ export class SupervisorPanel implements OnInit {
     // Mismo motivo que imprimirGeneral: un operador marcado OBSERVANDO (X) YA aparece en el Excel oficial,
     // marcado como ausente (pedido del usuario, 2026-10-27).
     const operadoresUnicos = new Map<number, Operador>();
-    for (const asis of this.asistenciasHoy) {
+    for (const asis of this.filasRealesHoy) {
       if (asis.operador && !operadoresUnicos.has(asis.operador_id)) {
         operadoresUnicos.set(asis.operador_id, asis.operador);
       }

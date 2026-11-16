@@ -52,6 +52,15 @@ test.describe('Panel de Supervisor: fechas pasadas + roster completo + marcar au
     await expect(botonConfirmar).toBeVisible();
     await expect(botonConfirmar).toBeDisabled(); // todavía no se elige a nadie ni se llena la hora.
 
+    /*
+    Búsqueda por el código EXACTO de este trabajador, no por el texto genérico "E2E Trabajador" (bug real
+    encontrado en vivo, 2026-11-16): este botón busca entre TODOS los Operadores rol=OPERADOR del sistema,
+    sin acotar por Supervisor (ver abrirAgregarUsuario) - con más de un spec corriendo en la misma BD
+    compartida, puede haber más de un Operador que matchee ese texto genérico, y ".first()" podía
+    seleccionar al de OTRO spec en vez del de este test, agregándolo como "prestado" por error.
+    */
+    await page.fill('input[name="busqueda_operador"]', `OP${sufijo}`);
+    await expect(page.locator('.autocomplete-opcion')).toHaveCount(1);
     await page.locator('.autocomplete-opcion', { hasText: 'E2E Trabajador' }).first().click();
     await page.fill('input[name="hora_ingreso_hh"]', '7');
     await page.fill('input[name="hora_ingreso_mm"]', '15');
@@ -68,8 +77,8 @@ test.describe('Panel de Supervisor: fechas pasadas + roster completo + marcar au
     await expect(fila.locator('td').nth(1)).toHaveText(ayerISO);
     await expect(fila.locator('.time-badge').first()).toBeVisible(); // Ingreso: ya no queda en "-".
 
-    // Ya tiene Asistencia ese día -> sale de "Trabajadores que aún no marcan" (roster completo).
-    await expect(page.locator('.card-title', { hasText: 'Trabajadores que aún no marcan' })).not.toBeVisible();
+    // Ya tiene Asistencia ese día -> ya no queda ninguna fila pendiente para este trabajador (tabla fusionada).
+    await expect(page.locator('tbody tr.fila-pendiente', { hasText: 'E2E Trabajador' })).not.toBeVisible();
   });
 
   test('roster completo: marcar ausente agrega hora manual + actividades vía Panel de labores, y la X real aparece en el Excel', async ({ page, request }) => {
@@ -87,13 +96,15 @@ test.describe('Panel de Supervisor: fechas pasadas + roster completo + marcar au
 
     await page.goto('/asistencia/supervisor');
 
-    // El trabajador recién creado nunca marcó entrada hoy -> aparece en el roster completo, no en la tabla
-    // paginada de arriba (pedido del usuario, 2026-10-27: el reporte no debe dejar a nadie afuera).
-    const tarjetaRoster = page.locator('.card', { has: page.locator('.card-title', { hasText: 'Trabajadores que aún no marcan' }) });
-    await expect(tarjetaRoster.locator('tr', { hasText: 'E2E Trabajador' })).toBeVisible();
-    await expect(page.locator('tr', { hasText: 'E2E Trabajador' }).locator('.btn-warning')).toHaveCount(1); // solo la fila del roster, no la paginada.
+    // El trabajador recién creado nunca marcó entrada hoy -> aparece como fila PENDIENTE en la misma tabla
+    // (pedido del usuario, 2026-11-16: tabla única fusionada, ya no una sección aparte - el reporte sigue
+    // sin dejar a nadie afuera).
+    const filaPendiente = page.locator('tbody tr.fila-pendiente', { hasText: 'E2E Trabajador' });
+    await expect(filaPendiente).toBeVisible();
+    await expect(filaPendiente.locator('button:has-text("O")')).toBeDisabled(); // O/X: solo si ya inició sesión.
+    await expect(filaPendiente.locator('button:has-text("X")')).toBeDisabled();
 
-    await tarjetaRoster.locator('button:has-text("✗ Marcar ausente")').click();
+    await filaPendiente.locator('button:has-text("✗ Marcar ausente")').click();
 
     // Se abre "Agregar Usuario" con el operador ya fijo (sin buscar nada) - siempre pide hora manual.
     await expect(page.locator('.agregar-usuario-card')).toBeVisible();
@@ -122,9 +133,9 @@ test.describe('Panel de Supervisor: fechas pasadas + roster completo + marcar au
     await page.click('.panel-labores-cerrar');
     await expect(panelLabores).not.toBeVisible();
 
-    // Ahora sí es una fila real en la tabla paginada, con sus actividades - toca la X real (confirmarPresencia
-    // false -> OBSERVANDO). Ya no está en el roster (ya tiene Asistencia).
-    await expect(page.locator('.card-title', { hasText: 'Trabajadores que aún no marcan' })).not.toBeVisible();
+    // Ahora sí es una fila real en la misma tabla, con sus actividades - toca la X real (confirmarPresencia
+    // false -> OBSERVANDO). Ya no queda pendiente (ya tiene Asistencia).
+    await expect(page.locator('tbody tr.fila-pendiente', { hasText: 'E2E Trabajador' })).not.toBeVisible();
     const filaReal = page.locator('tbody tr', { hasText: 'E2E Trabajador' });
     await expect(filaReal).toBeVisible();
     await expect(filaReal).toContainText(catalogo.equipoNombre.split(' ').pop()!); // código del equipo en "Actividades".

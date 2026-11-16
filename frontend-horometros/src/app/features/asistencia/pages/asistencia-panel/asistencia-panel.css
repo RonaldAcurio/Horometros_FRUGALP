@@ -154,6 +154,77 @@ dedo que forzar varios campos angostos en la misma fila.
   box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
 }
 
+/* Checklist de Supervisor del Historial (pedido del usuario, 2026-11-16) - mismo look que los demas
+.input-control, pero con un panel flotante debajo en vez de las opciones nativas de un <select>. */
+.supervisor-filtro {
+  position: relative;
+}
+
+.supervisor-filtro-boton {
+  cursor: pointer;
+  text-align: left;
+  min-width: 12rem;
+}
+
+/* Invisible, a pantalla completa: solo para capturar el click "afuera" y cerrar el panel (ver html) - no se
+pinta nada encima (a diferencia de .modal-backdrop, pensado para un modal real, no para un dropdown liviano). */
+.supervisor-filtro-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+}
+
+.supervisor-filtro-flecha {
+  float: right;
+  color: #6b7768;
+}
+
+.supervisor-filtro-panel {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  z-index: 20;
+  background: #ffffff;
+  border: 1px solid #dbe6d3;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  padding: 0.5rem;
+  width: 16rem;
+}
+
+.supervisor-filtro-lista {
+  max-height: 14rem;
+  overflow-y: auto;
+  margin-top: 0.5rem;
+}
+
+.supervisor-filtro-opcion {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  border-radius: 0.375rem;
+}
+
+.supervisor-filtro-opcion:hover {
+  background: #f0fdf4;
+}
+
+.autocomplete-vacio {
+  padding: 0.75rem;
+  font-size: 0.85rem;
+  color: #6b7768;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .supervisor-filtro-panel {
+    width: 100%;
+  }
+}
+
 /* Badges de Estado */
 .status-badge {
   padding: 0.35rem 0.75rem;

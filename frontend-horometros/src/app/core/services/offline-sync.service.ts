@@ -13,7 +13,6 @@ import {
   OperacionEditarLabor,
   OperacionEliminarLabor,
   OperacionSalidaOlvidada,
-  OperacionFinalizarDia,
   OperacionSalidaConCodigo,
   OperacionPendiente,
 } from '../models/offline.model';
@@ -25,12 +24,15 @@ const CLAVE_CACHE_ACTIVIDADES = 'frugalp_cache_actividades';
 /*
 Offline-first de las acciones que cierran una jornada (ver CLAUDE.md, diseño acordado: manual/periódico, no
 background sync automático - iOS no lo permite de forma confiable de todas formas). Cuando el trabajador crea o
-finaliza una labor, se autocierra (salida_olvidada), marca su SALIDA por Token (salida_con_codigo) o un
-Supervisor cierra el día (finalizar_dia) sin señal, la operación se guarda acá (Preferences - sobrevive cierres
-de la app, a diferencia de localStorage en Android) con la hora del CLIC ya capturada, y se reintenta sola apenas
-vuelve la conexión (escuchando @capacitor/network) o cuando se toca "Sincronizar ahora". Consumidores:
-mi-jornada.ts (crear_labor/finalizar_labor/salida_olvidada/salida_con_codigo) y supervisor-panel.ts
-(finalizar_dia).
+finaliza una labor, se autocierra (salida_olvidada) o marca su SALIDA por Token (salida_con_codigo) sin señal,
+la operación se guarda acá (Preferences - sobrevive cierres de la app, a diferencia de localStorage en Android)
+con la hora del CLIC ya capturada, y se reintenta sola apenas vuelve la conexión (escuchando @capacitor/network)
+o cuando se toca "Sincronizar ahora". Consumidor: mi-jornada.ts (crear_labor/finalizar_labor/salida_olvidada/
+salida_con_codigo).
+
+"Cerrar Jornada" del Supervisor (supervisor-panel.ts) YA NO se encola acá (pedido del usuario, 2026-11-16):
+a diferencia de estas, depende de saber quién quedó sin marcar en TODO el día - un dato que pudo cambiar
+mientras el celular estuvo sin señal, así que exige conexión en el momento en vez de reintentar a ciegas.
 */
 @Injectable({ providedIn: 'root' })
 export class OfflineSyncService {
@@ -277,20 +279,6 @@ export class OfflineSyncService {
     await this.guardar();
   }
 
-  // Mismo criterio que arriba: evita que el Supervisor encole dos cierres del mismo día/alcance por tocar el
-  // botón más de una vez mientras el primero sigue sin sincronizar.
-  tieneFinalizarDiaPendiente(fecha?: string, supervisorId?: number): boolean {
-    return this.cola().some(
-      (op) => op.tipo === 'finalizar_dia' && op.fecha === fecha && op.supervisorId === supervisorId
-    );
-  }
-
-  async encolarFinalizarDia(horaCierre: string, fecha?: string, supervisorId?: number): Promise<void> {
-    const op: OperacionFinalizarDia = { tipo: 'finalizar_dia', fecha, supervisorId, horaCierre, creadoEn: new Date().toISOString() };
-    this.cola.update((c) => [...c, op]);
-    await this.guardar();
-  }
-
   async descartar(op: OperacionPendiente): Promise<void> {
     this.cola.update((c) => c.filter((o) => o !== op));
     await this.guardar();
@@ -322,10 +310,8 @@ export class OfflineSyncService {
             await firstValueFrom(this.registroActividadService.eliminar(op.id));
           } else if (op.tipo === 'salida_olvidada') {
             await firstValueFrom(this.asistenciaService.marcarSalidaOlvidada(op.horaSalida));
-          } else if (op.tipo === 'salida_con_codigo') {
-            await firstValueFrom(this.asistenciaService.marcarConMiCodigo(op.tokenHacienda, undefined, undefined, undefined, op.horaSalida));
           } else {
-            await firstValueFrom(this.asistenciaService.finalizarDia(op.fecha, op.supervisorId, op.horaCierre));
+            await firstValueFrom(this.asistenciaService.marcarConMiCodigo(op.tokenHacienda, undefined, undefined, undefined, op.horaSalida));
           }
           this.cola.update((c) => c.filter((o) => o !== op));
           await this.guardar();

@@ -28,8 +28,18 @@
         [(ngModel)]="fechaSeleccionada"
         (change)="onCambioFecha()"
       />
-      <button class="btn btn-warning" (click)="ejecutarCierreDiario()" [disabled]="diaCerrado || cierrePendienteDeSincronizar">
-        {{ diaCerrado ? '🔒 Jornada Cerrada' : cierrePendienteDeSincronizar ? '⏳ Cierre sin sincronizar' : '🔒 Cerrar Jornada' }}
+      <button
+        class="btn btn-warning"
+        (click)="ejecutarCierreDiario()"
+        [disabled]="diaCerrado || !offlineSyncService.conectado() || hayPendientes"
+        [title]="hayPendientes ? 'Faltan ' + totalPendientes + ' trabajador(es) por marcar' : !offlineSyncService.conectado() ? 'Necesitas conexión para cerrar jornada' : ''"
+      >
+        {{
+          diaCerrado ? '🔒 Jornada Cerrada'
+          : !offlineSyncService.conectado() ? '📡 Sin conexión'
+          : hayPendientes ? '⚠️ Faltan ' + totalPendientes + ' por marcar'
+          : '🔒 Cerrar Jornada'
+        }}
       </button>
       <!-- Solo ADMIN, y solo con una hacienda puntual elegida y ya cerrada (ver puedeDeshacerCierre) - deshace
       un cierre hecho por error (pedido real del usuario, 2026-10-02). -->
@@ -50,7 +60,7 @@
   del clic y se sincroniza solo cuando vuelva la conexión, o al tocar "Sincronizar ahora". -->
   @if (offlineSyncService.cola().length > 0) {
     <div class="alert-pendientes">
-      🔄 {{ cierrePendienteDeSincronizar ? 'El cierre de esta jornada está' : 'Hay cambios' }} pendiente{{ cierrePendienteDeSincronizar ? '' : 's' }} de sincronizar.
+      🔄 Hay cambios pendientes de sincronizar.
       <button
         type="button"
         class="btn-link-sincronizar"
@@ -110,6 +120,12 @@
     <div class="card-header flex justify-between items-center">
       <h5 class="card-title">
         📊 Registro de Asistencia {{ fechaSeleccionada ? 'del ' + fechaSeleccionada : 'de Hoy' }}
+        <!-- Fusionada (pedido del usuario, 2026-11-16): esta tabla ahora incluye SIEMPRE a todo el roster del
+        alcance, tenga o no Asistencia todavia - "Trabajadores que aun no marcan" ya no es una seccion aparte,
+        es la fila con "✗ Marcar ausente" de abajo. Este aviso solo recuerda cuantas de esas quedan. -->
+        @if (hayPendientes) {
+          <span class="badge-status status-revision">⚠️ {{ totalPendientes }} sin marcar</span>
+        }
       </h5>
       <!-- "+ Agregar Usuario" (pedido del usuario, 2026-10-20): mete a la lista de hoy a un trabajador que
       no llegó a marcar por cualquier motivo - ver AgregarUsuarioModal. Busca siempre entre los Operadores
@@ -142,143 +158,177 @@
           </tr>
         </thead>
         <tbody>
-          @for (asis of asistenciasHoy; track asis) {
-            <tr>
-              <td>
-                <div class="flex items-center gap-1">
-                  <!-- ➕ (pedido del usuario, 2026-10-20): abre el Panel de Actividades de este trabajador
-                  (ver PanelLaboresModal). Sigue visible aunque el trabajador ya haya finalizado su jornada
-                  (pedido del usuario, 2026-10-21): el backend deja a ADMIN/SUPERVISOR seguir agregando/
-                  editando/eliminando labores mientras el DIA no haya cerrado (ver puedeForzarComoSupervisor,
-                  registro_actividad.controller.ts). También sigue visible si el trabajador quedó OBSERVANDO
-                  (pedido del usuario, 2026-10-27: O/X ahora es solo un contador para cerrar la jornada, ya
-                  no bloquea agregar actividades) - solo se oculta si el día ya cerró con "Cerrar Jornada". -->
-                  @if (!diaCerrado) {
-                    <button
-                      type="button"
-                      class="btn btn-secondary btn-sm"
-                      title="Ver/agregar labores de este trabajador"
-                      (click)="abrirPanelLabores(asis)"
-                    >
-                      ➕
-                    </button>
-                  }
-                  <strong class="nombre-operador">{{
-                    asis.operador?.nombre_completo || 'N/A'
-                  }}</strong>
-                </div>
-              </td>
-              <td>{{ asis.fecha }}</td>
-              <td>
-                <span class="time-badge">{{ asis.hora_ingreso | date: 'HH:mm:ss' : '-0500' }}</span>
-              </td>
-              <td>
-                @if (asis.hora_salida) {
-                  <span class="time-badge">{{
-                    asis.hora_salida | date: 'HH:mm:ss' : '-0500'
-                  }}</span>
-                }
-                @if (!asis.hora_salida) {
-                  <span class="text-muted-sm">En Turno</span>
-                }
-              </td>
-              <td>
-                @if (asis.actividades && asis.actividades.length > 0) {
-                  <span class="text-emerald-400 font-medium">
-                    @for (act of asis.actividades; track act; let last = $last) {
-                      <span> {{ act.codigo_megued }}{{ last ? '' : ', ' }} </span>
+          @for (fila of filasHoy; track trackFila(fila)) {
+            @if (fila.pendiente) {
+              <!-- Fila pendiente (pedido del usuario, 2026-11-16): el Operador todavia no tiene ninguna
+              Asistencia hoy - "como si hubiera iniciado sesion" graficamente (misma tabla, mismas columnas),
+              pero SOLO "Marcar ausente" esta habilitado. O/X se habilitan recien cuando de verdad inicio
+              sesion (ver abrirMarcarAusente/onOperadorAgregado: la fila pasa a ser real sola, sin moverse de
+              tabla). -->
+              <tr class="fila-pendiente">
+                <td>
+                  <strong class="nombre-operador">{{ fila.operador?.nombre_completo || 'N/A' }}</strong>
+                </td>
+                <td colspan="5" class="text-muted-sm">Sin marcar</td>
+                <td>
+                  <span class="badge-status status-revision">SIN MARCAR</span>
+                </td>
+                <td>
+                  <div class="flex gap-1">
+                    <button class="btn btn-sm btn-secondary" disabled title="Aún no inició sesión">O</button>
+                    <button class="btn btn-sm btn-secondary" disabled title="Aún no inició sesión">X</button>
+                  </div>
+                </td>
+                <td class="text-muted-sm">—</td>
+                <td>
+                  <button
+                    class="btn btn-warning btn-sm"
+                    [disabled]="diaCerrado"
+                    [title]="diaCerrado ? 'La jornada ya está cerrada' : 'Marcar como ausente'"
+                    (click)="abrirMarcarAusente(fila.operador)"
+                  >
+                    ✗ Marcar ausente
+                  </button>
+                </td>
+              </tr>
+            } @else {
+              <tr>
+                <td>
+                  <div class="flex items-center gap-1">
+                    <!-- ➕ (pedido del usuario, 2026-10-20): abre el Panel de Actividades de este trabajador
+                    (ver PanelLaboresModal). Sigue visible aunque el trabajador ya haya finalizado su jornada
+                    (pedido del usuario, 2026-10-21): el backend deja a ADMIN/SUPERVISOR seguir agregando/
+                    editando/eliminando labores mientras el DIA no haya cerrado (ver puedeForzarComoSupervisor,
+                    registro_actividad.controller.ts). También sigue visible si el trabajador quedó OBSERVANDO
+                    (pedido del usuario, 2026-10-27: O/X ahora es solo un contador para cerrar la jornada, ya
+                    no bloquea agregar actividades) - solo se oculta si el día ya cerró con "Cerrar Jornada". -->
+                    @if (!diaCerrado) {
+                      <button
+                        type="button"
+                        class="btn btn-secondary btn-sm"
+                        title="Ver/agregar labores de este trabajador"
+                        (click)="abrirPanelLabores(fila)"
+                      >
+                        ➕
+                      </button>
                     }
+                    <strong class="nombre-operador">{{
+                      fila.operador?.nombre_completo || 'N/A'
+                    }}</strong>
+                  </div>
+                </td>
+                <td>{{ fila.fecha }}</td>
+                <td>
+                  <span class="time-badge">{{ fila.hora_ingreso | date: 'HH:mm:ss' : '-0500' }}</span>
+                </td>
+                <td>
+                  @if (fila.hora_salida) {
+                    <span class="time-badge">{{
+                      fila.hora_salida | date: 'HH:mm:ss' : '-0500'
+                    }}</span>
+                  }
+                  @if (!fila.hora_salida) {
+                    <span class="text-muted-sm">En Turno</span>
+                  }
+                </td>
+                <td>
+                  @if (fila.actividades && fila.actividades.length > 0) {
+                    <span class="text-emerald-400 font-medium">
+                      @for (act of fila.actividades; track act; let last = $last) {
+                        <span> {{ act.codigo_megued }}{{ last ? '' : ', ' }} </span>
+                      }
+                    </span>
+                  }
+                  @if (!fila.actividades || fila.actividades.length === 0) {
+                    <span class="text-muted-sm">Sin registrar</span>
+                  }
+                </td>
+                <td>
+                  <app-visor-foto
+                    [asistenciaId]="fila.id"
+                    [tieneFoto]="!!fila.tiene_foto"
+                  ></app-visor-foto>
+                </td>
+                <td>
+                  <span
+                    [ngClass]="{
+                      'badge-status status-jornada': fila.estado === 'EN_JORNADA',
+                      'badge-status status-finalizado': fila.estado === 'FINALIZADO',
+                      'badge-status status-revision':
+                        fila.estado === 'PENDIENTE_REVISION' || fila.estado === 'OBSERVANDO',
+                      'badge-status status-olvidada': fila.estado === 'SALIDA_OLVIDADA',
+                    }"
+                  >
+                    {{ fila.estado }}
                   </span>
-                }
-                @if (!asis.actividades || asis.actividades.length === 0) {
-                  <span class="text-muted-sm">Sin registrar</span>
-                }
-              </td>
-              <td>
-                <app-visor-foto
-                  [asistenciaId]="asis.id"
-                  [tieneFoto]="!!asis.tiene_foto"
-                ></app-visor-foto>
-              </td>
-              <td>
-                <span
-                  [ngClass]="{
-                    'badge-status status-jornada': asis.estado === 'EN_JORNADA',
-                    'badge-status status-finalizado': asis.estado === 'FINALIZADO',
-                    'badge-status status-revision':
-                      asis.estado === 'PENDIENTE_REVISION' || asis.estado === 'OBSERVANDO',
-                    'badge-status status-olvidada': asis.estado === 'SALIDA_OLVIDADA',
-                  }"
-                >
-                  {{ asis.estado }}
-                </span>
-              </td>
-              <td>
-                <div class="flex gap-1">
-                  <button
-                    class="btn btn-sm"
-                    [ngClass]="
-                      asis.confirmado_por_supervisor === true ? 'btn-primary' : 'btn-secondary'
-                    "
-                    (click)="confirmarPresencia(asis, true)"
-                    [disabled]="diaCerrado || confirmandoPresenciaIds.has(asis.id)"
-                    title="Confirmar que sí vino"
-                  >
-                    O
-                  </button>
-                  <button
-                    class="btn btn-sm"
-                    [ngClass]="
-                      asis.confirmado_por_supervisor === false ? 'btn-warning' : 'btn-secondary'
-                    "
-                    (click)="confirmarPresencia(asis, false)"
-                    [disabled]="diaCerrado || confirmandoPresenciaIds.has(asis.id)"
-                    title="Marcar que NO vino"
-                  >
-                    X
-                  </button>
-                </div>
-              </td>
-              <td>
-                <button
-                  class="btn btn-secondary btn-sm"
-                  (click)="abrirObservacion(asis)"
-                  [disabled]="diaCerrado"
-                >
-                  {{
-                    diaCerrado ? '🔒 Cerrado' : asis.observaciones ? '📝 Ver/Editar' : '➕ Agregar'
-                  }}
-                </button>
-              </td>
-              <td>
-                <!-- Ver/Imprimir ya no se oculta para OBSERVANDO (pedido del usuario, 2026-10-27: O/X es
-                solo un contador, y como ahora SÍ puede tener actividades agregadas con el "+", tiene sentido
-                poder verlas/imprimirlas igual que cualquier otro trabajador - reemplaza la exclusión del
-                2026-10-16). -->
-                <div class="flex gap-1">
+                </td>
+                <td>
+                  <div class="flex gap-1">
+                    <button
+                      class="btn btn-sm"
+                      [ngClass]="
+                        fila.confirmado_por_supervisor === true ? 'btn-primary' : 'btn-secondary'
+                      "
+                      (click)="confirmarPresencia(fila, true)"
+                      [disabled]="diaCerrado || confirmandoPresenciaIds.has(fila.id)"
+                      title="Confirmar que sí vino"
+                    >
+                      O
+                    </button>
+                    <button
+                      class="btn btn-sm"
+                      [ngClass]="
+                        fila.confirmado_por_supervisor === false ? 'btn-warning' : 'btn-secondary'
+                      "
+                      (click)="confirmarPresencia(fila, false)"
+                      [disabled]="diaCerrado || confirmandoPresenciaIds.has(fila.id)"
+                      title="Marcar que NO vino"
+                    >
+                      X
+                    </button>
+                  </div>
+                </td>
+                <td>
                   <button
                     class="btn btn-secondary btn-sm"
-                    [disabled]="cargandoReporteImpresion"
-                    (click)="verHojaFila(asis)"
+                    (click)="abrirObservacion(fila)"
+                    [disabled]="diaCerrado"
                   >
-                    👁️ Ver
+                    {{
+                      diaCerrado ? '🔒 Cerrado' : fila.observaciones ? '📝 Ver/Editar' : '➕ Agregar'
+                    }}
                   </button>
-                  <button
-                    class="btn btn-secondary btn-sm"
-                    [disabled]="cargandoReporteImpresion"
-                    (click)="imprimirHojaFila(asis)"
-                  >
-                    🖨️ Imprimir
-                  </button>
-                </div>
-              </td>
-            </tr>
+                </td>
+                <td>
+                  <!-- Ver/Imprimir ya no se oculta para OBSERVANDO (pedido del usuario, 2026-10-27: O/X es
+                  solo un contador, y como ahora SÍ puede tener actividades agregadas con el "+", tiene sentido
+                  poder verlas/imprimirlas igual que cualquier otro trabajador - reemplaza la exclusión del
+                  2026-10-16). -->
+                  <div class="flex gap-1">
+                    <button
+                      class="btn btn-secondary btn-sm"
+                      [disabled]="cargandoReporteImpresion"
+                      (click)="verHojaFila(fila)"
+                    >
+                      👁️ Ver
+                    </button>
+                    <button
+                      class="btn btn-secondary btn-sm"
+                      [disabled]="cargandoReporteImpresion"
+                      (click)="imprimirHojaFila(fila)"
+                    >
+                      🖨️ Imprimir
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            }
           }
           @if (cargandoAsistencias) {
             <tr>
               <td colspan="10" class="table-empty">⏳ Cargando...</td>
             </tr>
-          } @else if (asistenciasHoy.length === 0) {
+          } @else if (filasHoy.length === 0) {
             <tr>
               <td colspan="10" class="table-empty">No hay marcaciones registradas.</td>
             </tr>
@@ -286,7 +336,7 @@
         </tbody>
       </table>
     </div>
-    @if (asistenciasHoy.length > 0) {
+    @if (filasHoy.length > 0) {
       <div class="pagination-bar">
         <span>Página {{ paginaHoy }} de {{ totalPaginasHoy }} ({{ totalHoy }} registros)</span>
         <div class="flex gap-2">
@@ -336,51 +386,6 @@
       </div>
     }
   </div>
-
-  <!-- Roster completo: quién de la hacienda TODAVÍA no tiene asistencia este día (pedido del usuario,
-  2026-10-27) - no se mezcla con la tabla paginada de arriba (esa sigue siendo solo asistencias reales), es
-  una lista aparte para que ningún trabajador quede fuera del reporte. Tocar X los marca ausentes - primero
-  pide la hora de ingreso (nadie la disparó automático, nunca usaron el Token/QR) y después deja agregarles
-  las actividades, igual que a cualquier otro trabajador (ver abrirMarcarAusente). -->
-  @if (trabajadoresSinMarcar.length > 0) {
-    <div class="card mt-section">
-      <div class="card-header">
-        <h5 class="card-title">
-          🕗 Trabajadores que aún no marcan {{ fechaSeleccionada ? 'el ' + fechaSeleccionada : 'hoy' }}
-          ({{ trabajadoresSinMarcar.length }})
-        </h5>
-      </div>
-      <div class="table-responsive">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Operador</th>
-              <th>Código</th>
-              <th>Acción</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (op of trabajadoresSinMarcar; track op.id) {
-              <tr>
-                <td class="nombre-operador">{{ op.nombre_completo }}</td>
-                <td>{{ op.codigo_megued }}</td>
-                <td>
-                  <button
-                    class="btn btn-warning btn-sm"
-                    [disabled]="diaCerrado"
-                    [title]="diaCerrado ? 'La jornada ya está cerrada' : 'Marcar como ausente'"
-                    (click)="abrirMarcarAusente(op)"
-                  >
-                    ✗ Marcar ausente
-                  </button>
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
-  }
 
   <app-hoja-actividades-modal #hojaModal></app-hoja-actividades-modal>
   <app-panel-labores-modal #panelLaboresModal></app-panel-labores-modal>

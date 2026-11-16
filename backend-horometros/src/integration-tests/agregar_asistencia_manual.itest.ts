@@ -473,6 +473,206 @@ describe('Trabajador "prestado" via "+ Agregar Usuario" (hacienda_prestamo_id)',
     });
 });
 
+/*
+"Faltan por marcar" (pedido del usuario, 2026-11-16): antes finalizarDia solo revisaba Asistencias YA
+EXISTENTES sin confirmar O/X - un Operador del roster que nunca llego a tener NINGUNA Asistencia pasaba
+desapercibido. Este bloque prueba el chequeo nuevo: resuelve el roster del alcance (home via supervisor_id,
+o TODOS los operadores con Supervisor asignado cuando ADMIN cierra sin filtro) y bloquea si alguno no tiene
+ninguna Asistencia ese dia - sin excepcion para ningun rol.
+*/
+describe('finalizarDia: "Faltan por marcar" (roster sin ninguna Asistencia hoy)', () => {
+    let tokenSup1: string;
+    let tokenSup2: string;
+    let tokenAdmin: string;
+    let sup1Id: number;
+    let sup2Id: number;
+    let operadorAId: number;
+    let operadorBId: number;
+    let operadorSinSupervisorId: number;
+
+    beforeEach(async () => {
+        await limpiarBaseDeDatosTest();
+
+        const haciendaSup1 = await Hacienda.create({ nombre: 'Hacienda Uno' });
+        const haciendaSup2 = await Hacienda.create({ nombre: 'Hacienda Dos' });
+
+        const sup1 = await crearUsuarioDePrueba({
+            usuario: 'sup1', clave: 'claveprueba123', cargo: 'SUPERVISOR', hacienda_id: haciendaSup1.id,
+        });
+        sup1Id = sup1.id;
+        const sup2 = await crearUsuarioDePrueba({
+            usuario: 'sup2', clave: 'claveprueba123', cargo: 'SUPERVISOR', hacienda_id: haciendaSup2.id,
+        });
+        sup2Id = sup2.id;
+        await crearUsuarioDePrueba({ usuario: 'admin1', clave: 'claveprueba123', cargo: 'ADMIN' });
+
+        // Operador A: de sup1, SI va a marcar y confirmarse. Operador B: de sup1, NUNCA marca - el hueco real.
+        // rol OPERADOR en B a proposito: el test de prestamo necesita que sup2 (otro Supervisor) la pueda
+        // agregar - mismo criterio ya usado por el fixture de Kevin en el describe de prestamo de arriba.
+        operadorAId = (await Operador.create({
+            nombre_completo: 'Antonio Alvarez', codigo_megued: 'OP-A', supervisor_id: sup1Id,
+        })).id;
+        operadorBId = (await Operador.create({
+            nombre_completo: 'Beatriz Benitez', codigo_megued: 'OP-B', rol: 'OPERADOR', supervisor_id: sup1Id,
+        })).id;
+        // Operador sin ningun Supervisor asignado - no es responsabilidad de nadie, no debe bloquear a nadie.
+        operadorSinSupervisorId = (await Operador.create({
+            nombre_completo: 'Sin Supervisor Asignado', codigo_megued: 'OP-SIN-SUP', supervisor_id: null,
+        })).id;
+
+        tokenSup1 = (await request(app).post('/api/auth/login').send({ usuario: 'sup1', clave: 'claveprueba123' })).body.token;
+        tokenSup2 = (await request(app).post('/api/auth/login').send({ usuario: 'sup2', clave: 'claveprueba123' })).body.token;
+        tokenAdmin = (await request(app).post('/api/auth/login').send({ usuario: 'admin1', clave: 'claveprueba123' })).body.token;
+    });
+
+    it('bloquea a un SUPERVISOR nombrando a quien no tiene ninguna Asistencia, aunque otro de su gente ya este confirmado', async () => {
+        const altaA = await request(app).post('/api/asistencia/agregar-manual').set('Authorization', `Bearer ${tokenSup1}`).send({ operador_id: operadorAId });
+        await request(app).put(`/api/asistencia/${altaA.body.asistencia.id}/confirmar`).set('Authorization', `Bearer ${tokenSup1}`).send({ presente: true });
+
+        const res = await request(app).post('/api/asistencia/finalizar-dia').set('Authorization', `Bearer ${tokenSup1}`).send({});
+
+        expect(res.status).toBe(400);
+        expect(res.body.message).toContain('Beatriz Benitez');
+        expect(res.body.faltan_por_marcar).toEqual(['Beatriz Benitez']);
+    });
+
+    it('tras agregar manualmente al que faltaba (equivalente a "Marcar ausente") y confirmarlo, el cierre SI procede', async () => {
+        const altaA = await request(app).post('/api/asistencia/agregar-manual').set('Authorization', `Bearer ${tokenSup1}`).send({ operador_id: operadorAId });
+        await request(app).put(`/api/asistencia/${altaA.body.asistencia.id}/confirmar`).set('Authorization', `Bearer ${tokenSup1}`).send({ presente: true });
+
+        const altaB = await request(app).post('/api/asistencia/agregar-manual').set('Authorization', `Bearer ${tokenSup1}`).send({ operador_id: operadorBId });
+        const bloqueadoPorConfirmar = await request(app).post('/api/asistencia/finalizar-dia').set('Authorization', `Bearer ${tokenSup1}`).send({});
+        expect(bloqueadoPorConfirmar.status).toBe(400);
+        expect(bloqueadoPorConfirmar.body.message).toContain('Falta confirmar');
+
+        await request(app).put(`/api/asistencia/${altaB.body.asistencia.id}/confirmar`).set('Authorization', `Bearer ${tokenSup1}`).send({ presente: true });
+        const res = await request(app).post('/api/asistencia/finalizar-dia').set('Authorization', `Bearer ${tokenSup1}`).send({});
+
+        expect(res.status).toBe(200);
+    });
+
+    it('ADMIN cerrando TODAS las haciendas a la vez tambien queda bloqueado si falta alguien de OTRO Supervisor, sin override', async () => {
+        // sup2 no tiene operadores en este test, asi que su unico "faltante" en juego es el de sup1 (B).
+        const altaA = await request(app).post('/api/asistencia/agregar-manual').set('Authorization', `Bearer ${tokenSup1}`).send({ operador_id: operadorAId });
+        await request(app).put(`/api/asistencia/${altaA.body.asistencia.id}/confirmar`).set('Authorization', `Bearer ${tokenSup1}`).send({ presente: true });
+
+        const res = await request(app).post('/api/asistencia/finalizar-dia').set('Authorization', `Bearer ${tokenAdmin}`).send({});
+
+        expect(res.status).toBe(400);
+        expect(res.body.message).toContain('Beatriz Benitez');
+    });
+
+    it('un Operador sin Supervisor asignado nunca bloquea el cierre (no es responsabilidad de nadie)', async () => {
+        const altaA = await request(app).post('/api/asistencia/agregar-manual').set('Authorization', `Bearer ${tokenSup1}`).send({ operador_id: operadorAId });
+        await request(app).put(`/api/asistencia/${altaA.body.asistencia.id}/confirmar`).set('Authorization', `Bearer ${tokenSup1}`).send({ presente: true });
+        const altaB = await request(app).post('/api/asistencia/agregar-manual').set('Authorization', `Bearer ${tokenSup1}`).send({ operador_id: operadorBId });
+        await request(app).put(`/api/asistencia/${altaB.body.asistencia.id}/confirmar`).set('Authorization', `Bearer ${tokenSup1}`).send({ presente: true });
+
+        const res = await request(app).post('/api/asistencia/finalizar-dia').set('Authorization', `Bearer ${tokenSup1}`).send({});
+
+        expect(res.status).toBe(200);
+        expect(operadorSinSupervisorId).toBeGreaterThan(0); // solo confirma que existe y no interfirio arriba.
+    });
+
+    it('un Operador PRESTADO a otra hacienda hoy no cuenta como "falta por marcar" para su Supervisor de casa', async () => {
+        // sup2 toma prestado a Beatriz (de sup1) - ya tiene Asistencia (bajo la hacienda de sup2), asi que no
+        // deberia seguir contando como pendiente para sup1, aunque siga sin confirmar desde la perspectiva de sup2.
+        await request(app).post('/api/asistencia/agregar-manual').set('Authorization', `Bearer ${tokenSup2}`).send({ operador_id: operadorBId });
+
+        const altaA = await request(app).post('/api/asistencia/agregar-manual').set('Authorization', `Bearer ${tokenSup1}`).send({ operador_id: operadorAId });
+        await request(app).put(`/api/asistencia/${altaA.body.asistencia.id}/confirmar`).set('Authorization', `Bearer ${tokenSup1}`).send({ presente: true });
+
+        const res = await request(app).post('/api/asistencia/finalizar-dia').set('Authorization', `Bearer ${tokenSup1}`).send({});
+
+        expect(res.status).toBe(200);
+    });
+});
+
+/*
+incluir_pendientes (pedido del usuario, 2026-11-16): fusiona en 'data' de GET /asistencia/hoy a los
+Operadores del roster sin NINGUNA Asistencia hoy, ordenados alfabeticamente junto con los reales - la base
+de la tabla unica que reemplaza a "Trabajadores que aun no marcan".
+*/
+describe('GET /api/asistencia/hoy?incluir_pendientes=true (fusion real + roster pendiente)', () => {
+    let tokenSup: string;
+    let tokenOtroSup: string;
+    let supId: number;
+
+    beforeEach(async () => {
+        await limpiarBaseDeDatosTest();
+
+        const hacienda = await Hacienda.create({ nombre: 'Hacienda Fusion' });
+        const haciendaOtra = await Hacienda.create({ nombre: 'Hacienda Fusion Otra' });
+
+        const sup = await crearUsuarioDePrueba({
+            usuario: 'supfusion', clave: 'claveprueba123', cargo: 'SUPERVISOR', hacienda_id: hacienda.id,
+        });
+        supId = sup.id;
+        await crearUsuarioDePrueba({
+            usuario: 'supfusionotro', clave: 'claveprueba123', cargo: 'SUPERVISOR', hacienda_id: haciendaOtra.id,
+        });
+
+        tokenSup = (await request(app).post('/api/auth/login').send({ usuario: 'supfusion', clave: 'claveprueba123' })).body.token;
+        tokenOtroSup = (await request(app).post('/api/auth/login').send({ usuario: 'supfusionotro', clave: 'claveprueba123' })).body.token;
+    });
+
+    it('fusiona reales y pendientes en UNA sola lista, ordenada alfabeticamente (no agrupados por tipo)', async () => {
+        // A proposito, los nombres intercalan alfabeticamente entre real y pendiente para probar que el
+        // orden final es por nombre, no "primero todos los reales, despues todos los pendientes".
+        const beltran = await Operador.create({ nombre_completo: 'Beltran Perez', codigo_megued: 'OP-BE', supervisor_id: supId });
+        await Operador.create({ nombre_completo: 'Alvarez Diaz', codigo_megued: 'OP-AL', supervisor_id: supId });
+        await Operador.create({ nombre_completo: 'Zamora Ruiz', codigo_megued: 'OP-ZA', supervisor_id: supId });
+        await request(app).post('/api/asistencia/agregar-manual').set('Authorization', `Bearer ${tokenSup}`).send({ operador_id: beltran.id });
+
+        const res = await request(app).get('/api/asistencia/hoy?incluir_pendientes=true').set('Authorization', `Bearer ${tokenSup}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.total).toBe(3);
+        expect(res.body.totalPendientes).toBe(2); // Alvarez + Zamora - lo que usa el frontend para deshabilitar "Cerrar Jornada" sin round-trip.
+        const nombres = res.body.data.map((it: { pendiente: boolean; operador?: { nombre_completo: string }; operador_id?: number }) =>
+            it.pendiente ? it.operador?.nombre_completo : beltran.nombre_completo);
+        expect(nombres).toEqual(['Alvarez Diaz', 'Beltran Perez', 'Zamora Ruiz']);
+        expect(res.body.data.map((it: { pendiente: boolean }) => it.pendiente)).toEqual([true, false, true]);
+    });
+
+    it('la paginacion corta sobre la union completa (real+pendiente), no solo sobre las reales', async () => {
+        const beltran = await Operador.create({ nombre_completo: 'Beltran Perez', codigo_megued: 'OP-BE', supervisor_id: supId });
+        await Operador.create({ nombre_completo: 'Alvarez Diaz', codigo_megued: 'OP-AL', supervisor_id: supId });
+        await Operador.create({ nombre_completo: 'Zamora Ruiz', codigo_megued: 'OP-ZA', supervisor_id: supId });
+        await request(app).post('/api/asistencia/agregar-manual').set('Authorization', `Bearer ${tokenSup}`).send({ operador_id: beltran.id });
+
+        const pagina1 = await request(app).get('/api/asistencia/hoy?incluir_pendientes=true&limite=2&pagina=1').set('Authorization', `Bearer ${tokenSup}`);
+        expect(pagina1.body.total).toBe(3);
+        expect(pagina1.body.totalPaginas).toBe(2);
+        expect(pagina1.body.data).toHaveLength(2);
+        expect(pagina1.body.data[0].pendiente).toBe(true); // Alvarez
+
+        const pagina2 = await request(app).get('/api/asistencia/hoy?incluir_pendientes=true&limite=2&pagina=2').set('Authorization', `Bearer ${tokenSup}`);
+        expect(pagina2.body.data).toHaveLength(1);
+        expect(pagina2.body.data[0].operador?.nombre_completo).toBe('Zamora Ruiz'); // Zamora
+    });
+
+    it('un Operador prestado a OTRA hacienda hoy no aparece como pendiente para su Supervisor de casa', async () => {
+        const prestado = await Operador.create({ nombre_completo: 'Prestado Perez', codigo_megued: 'OP-PR', rol: 'OPERADOR', supervisor_id: supId });
+        await request(app).post('/api/asistencia/agregar-manual').set('Authorization', `Bearer ${tokenOtroSup}`).send({ operador_id: prestado.id });
+
+        const res = await request(app).get('/api/asistencia/hoy?incluir_pendientes=true').set('Authorization', `Bearer ${tokenSup}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.total).toBe(0);
+    });
+
+    it('sin "incluir_pendientes", el comportamiento de siempre no cambia (solo reales, sin fusion)', async () => {
+        await Operador.create({ nombre_completo: 'Nunca Marca', codigo_megued: 'OP-NM', supervisor_id: supId });
+
+        const res = await request(app).get('/api/asistencia/hoy').set('Authorization', `Bearer ${tokenSup}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.total).toBe(0);
+        expect(res.body.data).toEqual([]);
+    });
+});
+
 afterAll(async () => {
     await sequelize.close();
 });

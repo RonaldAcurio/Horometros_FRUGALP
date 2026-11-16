@@ -39,15 +39,15 @@ describe('AsistenciaPanel', () => {
 
   /*
   "Exportar a Excel" sin elegir Hacienda/Supervisor (pedido del usuario, 2026-10-23): dejarlos en
-  "Todos"/"Todas" (haciendaIdFiltro/supervisorIdFiltro en null) ya no debe deshabilitar el botón - solo
-  el mismo día en Desde/Hasta sigue siendo obligatorio.
+  "Todos"/"Todas" (haciendaIdFiltro en null, supervisoresIdsFiltro vacío) ya no debe deshabilitar el botón -
+  solo el mismo día en Desde/Hasta sigue siendo obligatorio.
   */
   describe('puedeExportarExcel', () => {
     it('ya no exige Hacienda ni Supervisor puntuales, solo el mismo día', () => {
       component.fechaInicioFiltro = '2026-10-23';
       component.fechaFinFiltro = '2026-10-23';
       component.haciendaIdFiltro = null;
-      component.supervisorIdFiltro = null;
+      component.supervisoresIdsFiltro = [];
 
       expect(component.puedeExportarExcel).toBe(true);
     });
@@ -61,7 +61,7 @@ describe('AsistenciaPanel', () => {
   });
 
   // Filtro por Supervisor del Directorio de Operadores (pedido del usuario, 2026-11-02): separado del
-  // supervisorIdFiltro del Historial (ver describe de arriba) - no debe interferir entre pestañas.
+  // supervisoresIdsFiltro del Historial (ver describe de arriba) - no debe interferir entre pestañas.
   describe('Directorio: filtro por Supervisor', () => {
     it('onCambioSupervisorDirectorio() vuelve a la página 1 y manda supervisor_id al backend', () => {
       component.supervisorIdFiltroDirectorio = 42;
@@ -155,7 +155,7 @@ describe('AsistenciaPanel', () => {
       component.fechaInicioFiltro = '2026-10-23';
       component.fechaFinFiltro = '2026-10-23';
       component.haciendaIdFiltro = null;
-      component.supervisorIdFiltro = null;
+      component.supervisoresIdsFiltro = [];
       component.haciendas = [
         { id: 10, nombre: 'Andes', token_actual: null, token_expira_en: null },
         { id: 20, nombre: 'Zapote', token_actual: null, token_expira_en: null },
@@ -217,6 +217,143 @@ describe('AsistenciaPanel', () => {
 
       expect(generarSpy).toHaveBeenCalledTimes(1);
       expect(generarSpy.mock.calls[0][0]).toHaveLength(2);
+    });
+  });
+
+  /*
+  Checklist de Supervisor del Historial (pedido del usuario, 2026-11-16): reemplaza al <select> de uno solo
+  que había antes - exportarExcelDiario() ahora separa en 3 casos según cuántos id's trae
+  supervisoresIdsFiltro (0, 1 o varios), y ya no hace falta elegir también la Hacienda a mano para acotrar a
+  un solo Supervisor (se deriva de supervisor.hacienda_id directo).
+  */
+  describe('Historial: checklist de Supervisor', () => {
+    const operadorDeAndes: Operador = {
+      id: 1, codigo_megued: 'OP-1', nombre_completo: 'Trabajador Andes',
+      supervisor: { hacienda_id: 10, hacienda: { nombre: 'Andes' } },
+    };
+    const operadorDeZapote: Operador = {
+      id: 2, codigo_megued: 'OP-2', nombre_completo: 'Trabajador Zapote',
+      supervisor: { hacienda_id: 20, hacienda: { nombre: 'Zapote' } },
+    };
+
+    const registroDe = (operador: Operador, estado: Asistencia['estado'] = 'FINALIZADO'): Asistencia =>
+      ({ id: operador.id, operador_id: operador.id, fecha: '2026-11-16', hora_ingreso: '2026-11-16T07:00:00.000Z', estado, operador }) as Asistencia;
+
+    beforeEach(() => {
+      component.fechaInicioFiltro = '2026-11-16';
+      component.fechaFinFiltro = '2026-11-16';
+      component.haciendaIdFiltro = null;
+      component.supervisoresIdsFiltro = [];
+      component.supervisorBusquedaFiltro = '';
+      component.haciendas = [
+        { id: 10, nombre: 'Andes', token_actual: null, token_expira_en: null },
+        { id: 20, nombre: 'Zapote', token_actual: null, token_expira_en: null },
+      ];
+      component.supervisores = [
+        { id: 100, nombre_completo: 'Sup Andes', usuario: 'sup.andes', cargo: 'SUPERVISOR', activo: true, hacienda_id: 10 },
+        { id: 200, nombre_completo: 'Sup Zapote', usuario: 'sup.zapote', cargo: 'SUPERVISOR', activo: true, hacienda_id: 20 },
+      ];
+    });
+
+    it('toggleSupervisorFiltro agrega y quita id\'s; limpiarFiltroSupervisores vacía todo', () => {
+      component.toggleSupervisorFiltro(100);
+      expect(component.supervisoresIdsFiltro).toEqual([100]);
+
+      component.toggleSupervisorFiltro(200);
+      expect(component.supervisoresIdsFiltro).toEqual([100, 200]);
+
+      component.toggleSupervisorFiltro(100);
+      expect(component.supervisoresIdsFiltro).toEqual([200]);
+
+      component.limpiarFiltroSupervisores();
+      expect(component.supervisoresIdsFiltro).toEqual([]);
+    });
+
+    it('supervisoresParaChecklist se acota por la Hacienda elegida y por el texto buscado', () => {
+      expect(component.supervisoresParaChecklist.map((s) => s.id)).toEqual([100, 200]);
+
+      component.haciendaIdFiltro = 10;
+      expect(component.supervisoresParaChecklist.map((s) => s.id)).toEqual([100]);
+
+      component.haciendaIdFiltro = null;
+      component.supervisorBusquedaFiltro = 'zapote';
+      expect(component.supervisoresParaChecklist.map((s) => s.id)).toEqual([200]);
+    });
+
+    it('textoFiltroSupervisores: "Todos", el nombre si es uno solo, o el conteo si son varios', () => {
+      expect(component.textoFiltroSupervisores).toBe('Todos');
+
+      component.supervisoresIdsFiltro = [100];
+      expect(component.textoFiltroSupervisores).toBe('Sup Andes');
+
+      component.supervisoresIdsFiltro = [100, 200];
+      expect(component.textoFiltroSupervisores).toBe('2 supervisores');
+    });
+
+    it('onCambioHaciendaFiltroHistorial destilda a quien ya no pertenezca a la Hacienda elegida', () => {
+      component.supervisoresIdsFiltro = [100, 200];
+      component.haciendaIdFiltro = 10;
+
+      component.onCambioHaciendaFiltroHistorial();
+
+      expect(component.supervisoresIdsFiltro).toEqual([100]);
+    });
+
+    it('buscarHistorial() manda varios "supervisor_id" en la query cuando hay 2+ elegidos', () => {
+      component.supervisoresIdsFiltro = [100, 200];
+
+      component.buscarHistorial();
+
+      const peticion = httpMock.expectOne((r) => r.urlWithParams.includes('/historial'));
+      const idsEnviados = peticion.request.params.getAll('supervisor_id');
+      expect(idsEnviados).toEqual(['100', '200']);
+      peticion.flush({ data: [], total: 0, pagina: 1, totalPaginas: 1 });
+    });
+
+    it('exportarExcelDiario() con exactamente 1 Supervisor: una sola hoja, deriva la Hacienda sin que esté elegida', () => {
+      const generarSpy = vi.spyOn(exportarExcelService, 'generarYDescargar').mockResolvedValue(undefined);
+      component.supervisoresIdsFiltro = [100]; // Sup Andes - sin elegir Hacienda en el filtro.
+
+      component.exportarExcelDiario();
+
+      const peticionHistorial = httpMock.expectOne(
+        (r) => r.urlWithParams.includes('/historial') && r.urlWithParams.includes('supervisor_id=100') && !r.urlWithParams.includes('hacienda_id'),
+      );
+      peticionHistorial.flush({ data: [registroDe(operadorDeAndes)], total: 1, pagina: 1, totalPaginas: 1 });
+
+      httpMock.expectOne((r) => r.urlWithParams.includes('por-operador') && r.urlWithParams.includes('operador_id=1')).flush([]);
+
+      return fixture.whenStable().then(() => {
+        expect(generarSpy).toHaveBeenCalledTimes(1);
+        const [, fecha, nombreHacienda, nombreSupervisor] = generarSpy.mock.calls[0];
+        expect(fecha).toBe('2026-11-16');
+        expect(nombreHacienda).toBe('Andes');
+        expect(nombreSupervisor).toBe('Sup Andes');
+      });
+    });
+
+    it('exportarExcelDiario() con 2 Supervisores elegidos: una hoja por cada uno, acotado solo a esos', async () => {
+      const generarSpy = vi.spyOn(exportarExcelService, 'generarYDescargarTodasLasHaciendas').mockResolvedValue(undefined);
+      component.supervisoresIdsFiltro = [100, 200];
+
+      component.exportarExcelDiario();
+
+      const peticionHistorial = httpMock.expectOne(
+        (r) => r.urlWithParams.includes('/historial') && r.urlWithParams.includes('supervisor_id=100') && r.urlWithParams.includes('supervisor_id=200'),
+      );
+      peticionHistorial.flush({
+        data: [registroDe(operadorDeAndes), registroDe(operadorDeZapote)],
+        total: 2, pagina: 1, totalPaginas: 1,
+      });
+
+      httpMock.expectOne((r) => r.urlWithParams.includes('por-operador') && r.urlWithParams.includes('operador_id=1')).flush([]);
+      httpMock.expectOne((r) => r.urlWithParams.includes('por-operador') && r.urlWithParams.includes('operador_id=2')).flush([]);
+
+      await fixture.whenStable();
+
+      expect(generarSpy).toHaveBeenCalledTimes(1);
+      const [porHacienda] = generarSpy.mock.calls[0];
+      expect(porHacienda.map((g) => g.nombreHacienda).sort()).toEqual(['Andes', 'Zapote']);
     });
   });
 });
