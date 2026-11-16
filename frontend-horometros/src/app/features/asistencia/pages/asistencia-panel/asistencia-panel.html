@@ -345,19 +345,50 @@
           <label class="filter-label">Hasta:</label>
           <input type="date" class="date-input" [(ngModel)]="fechaFinFiltro" />
           <label class="filter-label">Hacienda:</label>
-          <select class="input-control" [(ngModel)]="haciendaIdFiltro">
+          <select class="input-control" [(ngModel)]="haciendaIdFiltro" (ngModelChange)="onCambioHaciendaFiltroHistorial()">
             <option [ngValue]="null">Todas</option>
             @for (h of haciendas; track h) {
               <option [ngValue]="h.id">{{ h.nombre }}</option>
             }
           </select>
           <label class="filter-label">Supervisor:</label>
-          <select class="input-control" [(ngModel)]="supervisorIdFiltro">
-            <option [ngValue]="null">Todos</option>
-            @for (s of supervisores; track s) {
-              <option [ngValue]="s.id">{{ s.nombre_completo }}</option>
+          <div class="supervisor-filtro">
+            <button
+              type="button"
+              class="input-control supervisor-filtro-boton"
+              (click)="mostrarChecklistSupervisores = !mostrarChecklistSupervisores"
+            >
+              {{ textoFiltroSupervisores }} <span class="supervisor-filtro-flecha">▾</span>
+            </button>
+            @if (mostrarChecklistSupervisores) {
+              <!-- Capa invisible a pantalla completa: cerrar el panel al tocar afuera, para que no se quede
+              flotando sobre el resto de los filtros/el botón "Buscar" (bug real, encontrado en vivo). -->
+              <div class="supervisor-filtro-backdrop" (click)="mostrarChecklistSupervisores = false"></div>
+              <div class="supervisor-filtro-panel">
+                <input
+                  type="text"
+                  class="input-control"
+                  placeholder="🔍 Buscar supervisor..."
+                  [(ngModel)]="supervisorBusquedaFiltro"
+                />
+                <div class="supervisor-filtro-lista">
+                  <label class="supervisor-filtro-opcion">
+                    <input type="checkbox" [checked]="supervisoresIdsFiltro.length === 0" (change)="limpiarFiltroSupervisores()" />
+                    Todos
+                  </label>
+                  @for (s of supervisoresParaChecklist; track s.id) {
+                    <label class="supervisor-filtro-opcion">
+                      <input type="checkbox" [checked]="supervisoresIdsFiltro.includes(s.id)" (change)="toggleSupervisorFiltro(s.id)" />
+                      {{ s.nombre_completo }}
+                    </label>
+                  }
+                  @if (supervisoresParaChecklist.length === 0) {
+                    <div class="autocomplete-vacio">Sin resultados.</div>
+                  }
+                </div>
+              </div>
             }
-          </select>
+          </div>
         </div>
         <button class="btn btn-primary btn-sm" (click)="buscarHistorial()">🔍 Buscar</button>
       </div>

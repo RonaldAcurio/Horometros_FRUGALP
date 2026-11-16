@@ -1867,12 +1867,13 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
         */
         const incluirPropiosPrestados = req.query['incluir_propios_prestados'] === 'true';
         let idsDelAlcance: number[] | null = null;
+        let candidatos: Asistencia[] = [];
         if(filtrarPorSupervisor){
             const haciendaDelAlcance = (await Usuario.findByPk(supervisorIdAlcance, { attributes: ['hacienda_id'] }))?.hacienda_id ?? null;
-            const candidatos = await Asistencia.findAll({
+            candidatos = await Asistencia.findAll({
                 where: { fecha: hoy },
-                attributes: ['id', 'hacienda_prestamo_id'],
-                include: [{ model: Operador, as: 'operador', attributes: ['supervisor_id'], required: true, paranoid: false }],
+                attributes: ['id', 'operador_id', 'hacienda_prestamo_id'],
+                include: [{ model: Operador, as: 'operador', attributes: ['supervisor_id', 'nombre_completo'], required: true, paranoid: false }],
             });
             idsDelAlcance = candidatos
                 .filter((a) => {
@@ -1883,6 +1884,85 @@ export const obtenerAsistenciaHoy = async(req:Request, res:Response):Promise<voi
                         : esDeCasa;
                 })
                 .map((a) => a.id);
+        }
+
+        /*
+        incluir_pendientes (pedido del usuario, 2026-11-16): fusiona en 'data' a los Operadores del roster
+        de este Supervisor que TODAVIA no tienen NINGUNA Asistencia hoy (ni propia ni prestada a otro lado -
+        "cero filas" es lo unico que importa aca, igual que el chequeo "Faltan por marcar" de finalizarDia) -
+        antes vivian en una tabla aparte ("Trabajadores que aun no marcan"), calculada sola por el frontend sin
+        paginar (tope duro de 100). Solo aplica con un Supervisor puntual resuelto (filtrarPorSupervisor) - el
+        Panel de Supervisor siempre pide esto con un alcance concreto, nunca con el "todas las haciendas" de
+        ADMIN sin filtro.
+
+        La pagina se arma sobre la UNION ordenada alfabeticamente (real + pendiente, mismo criterio locale
+        'es' que ya usa el Excel/Historial) - no solo sobre 'asistencias' como antes - para que 'limite'/
+        'offset' corten sobre la lista completa que ve el Supervisor, no solo sobre las reales. El costo
+        pesado (includes de actividades/equipo/hacienda) solo corre sobre los IDs reales que caen en ESTA
+        pagina (resueltos primero via el manifiesto liviano de abajo), nunca sobre todo el dia.
+        */
+        const incluirPendientes = filtrarPorSupervisor && req.query['incluir_pendientes'] === 'true';
+
+        if(incluirPendientes){
+            const idsConAsistenciaHoy = new Set(candidatos.map((a) => a.operador_id));
+            const operadoresDelAlcance = await Operador.findAll({
+                where: { supervisor_id: supervisorIdAlcance },
+                attributes: ['id', 'nombre_completo', 'codigo_megued'],
+            });
+            const pendientes = operadoresDelAlcance.filter((op) => !idsConAsistenciaHoy.has(op.id));
+
+            type ItemManifiesto = { tipo: 'real'; id: number; nombre: string } | { tipo: 'pendiente'; operadorId: number; nombre: string };
+            const manifiesto: ItemManifiesto[] = [
+                ...candidatos
+                    .filter((a) => idsDelAlcance!.includes(a.id))
+                    .map((a): ItemManifiesto => ({ tipo: 'real', id: a.id, nombre: a.operador?.nombre_completo ?? '' })),
+                ...pendientes.map((op): ItemManifiesto => ({ tipo: 'pendiente', operadorId: op.id, nombre: op.nombre_completo })),
+            ].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+
+            const total = manifiesto.length;
+            const paginaDeManifiesto = manifiesto.slice(offset, offset + limitePagina);
+            const idsRealesEnPagina = paginaDeManifiesto.filter((it): it is ItemManifiesto & { tipo: 'real' } => it.tipo === 'real').map((it) => it.id);
+            const idsPendientesEnPagina = paginaDeManifiesto.filter((it): it is ItemManifiesto & { tipo: 'pendiente' } => it.tipo === 'pendiente').map((it) => it.operadorId);
+
+            const [asistenciasDePagina, operadoresPendientesDePagina] = await Promise.all([
+                idsRealesEnPagina.length > 0 ? Asistencia.findAll({
+                    where: { id: { [Op.in]: idsRealesEnPagina } },
+                    attributes: ATRIBUTOS_SIN_FOTO,
+                    include: [
+                        {
+                            model: Operador, as:'operador', required: false, paranoid: false,
+                            include: [{
+                                model: Usuario, as: 'supervisor', attributes: ['hacienda_id'],
+                                include: [{ model: Hacienda, as: 'hacienda', attributes: ['nombre'] }],
+                            }],
+                        },
+                        { model: Actividad, as:'actividad', paranoid: false},
+                        { model: Actividad, as:'actividades', paranoid: false},
+                        { model: Hacienda, as: 'haciendaPrestamo', attributes: ['nombre'], paranoid: false },
+                    ],
+                }) : Promise.resolve([]),
+                idsPendientesEnPagina.length > 0 ? Operador.findAll({
+                    where: { id: { [Op.in]: idsPendientesEnPagina } },
+                    attributes: ['id', 'nombre_completo', 'codigo_megued'],
+                }) : Promise.resolve([]),
+            ]);
+            const asistenciasPorId = new Map(asistenciasDePagina.map((a) => [a.id, a]));
+            const operadoresPorId = new Map(operadoresPendientesDePagina.map((op) => [op.id, op]));
+
+            const data = paginaDeManifiesto.map((item) => item.tipo === 'real'
+                ? { ...asistenciasPorId.get(item.id)!.toJSON(), pendiente: false }
+                : { pendiente: true, operador_id: item.operadorId, operador: operadoresPorId.get(item.operadorId) });
+
+            const diaCerrado = await calcularDiaCerrado(hoy, supervisorIdAlcance);
+            res.json({
+                data,
+                total,
+                pagina: paginaActual,
+                totalPaginas: Math.ceil(total / limitePagina) || 1,
+                diaCerrado,
+                totalPendientes: pendientes.length,
+            });
+            return;
         }
 
         const { rows:asistencias, count:total } = await Asistencia.findAndCountAll({
@@ -2020,6 +2100,47 @@ export const finalizarDia = async(req:Request, res:Response):Promise<void> => {
                 ? r.hacienda_prestamo_id === haciendaDelCierre
                 : r.operador?.supervisor_id === supervisorIdAlcance)
             : candidatosDelDia;
+
+        /*
+        Faltan por marcar (pedido del usuario, 2026-11-16): antes "Cerrar Jornada" solo revisaba Asistencias
+        YA EXISTENTES (sinConfirmar, mas abajo) - un Operador del alcance que nunca llego a tener NINGUNA
+        Asistencia ese dia (nadie le toco "Marcar ausente") pasaba completamente desapercibido, dejando huecos
+        que el ASISTENTE tenia que arreglar a mano despues. Este chequeo nuevo exige que TODO el roster del
+        alcance tenga al menos una fila ese dia - sin excepcion/override para ningun rol (ni ADMIN cerrando
+        TODAS las haciendas a la vez), pedido explicito del usuario.
+
+        'operadoresDelAlcance': mismo alcance que ya usa obtenerOperadores para un SUPERVISOR real
+        (supervisor_id = su propio id); sin un Supervisor puntual (ADMIN cerrando todo), son TODOS los
+        Operadores con un Supervisor asignado (uno sin asignar no es responsabilidad de nadie hoy). paranoid
+        por defecto (sin 'paranoid:false') a proposito: un Operador eliminado (soft-delete) ya no cuenta - la
+        forma de destrabar un cierre por un dato sucio es corregirlo/eliminarlo en Directorio, no una via de
+        escape nueva (decision explicita del usuario).
+
+        'idsConAsistenciaHoy' usa 'candidatosDelDia' (TODAS las Asistencias de la fecha, sin acotar) en vez de
+        'registroDelDia' (ya acotado al alcance exclusivo): un Operador de casa prestado hoy a OTRA hacienda
+        YA tiene una Asistencia (bajo esa otra hacienda) - no debe bloquear a su Supervisor de casa, que ya no
+        es responsable de el ese dia (mismo criterio de "no vuelve a aparecer donde ya no esta" que ya aplica
+        hoy al prestamo). Un Operador prestado A esta hacienda desde otra no esta en 'operadoresDelAlcance'
+        (su Supervisor de casa es otro) - su confirmacion O/X sigue cubierta por 'sinConfirmar' mas abajo.
+        */
+        const whereRosterAlcance = supervisorIdAlcance !== null
+            ? { supervisor_id: supervisorIdAlcance }
+            : { supervisor_id: { [Op.ne]: null } };
+        const operadoresDelAlcance = await Operador.findAll({
+            where: whereRosterAlcance,
+            attributes: ['id', 'nombre_completo'],
+        });
+        const idsConAsistenciaHoy = new Set(candidatosDelDia.map((r) => r.operador_id));
+        const faltanPorMarcar = operadoresDelAlcance.filter((op) => !idsConAsistenciaHoy.has(op.id));
+        if(faltanPorMarcar.length > 0){
+            const nombres = faltanPorMarcar.map((op) => op.nombre_completo);
+            res.status(400).json({
+                message: `Faltan por marcar: ${nombres.join(', ')}.`,
+                faltan_por_marcar: nombres,
+            });
+            return;
+        }
+
         if(registroDelDia.length === 0 ){
             res.status(404).json({
                 message:`No hay marcaciones registradas para el ${fechaProcesar}.`
@@ -2335,10 +2456,10 @@ propiedad de solo lectura (getter sobre la URL), reasignarla tira TypeError en v
 */
 const construirHistorial = async (filtros: {
     fechaInicio?: string | undefined; fechaFin?: string | undefined; operadorId?: number | undefined;
-    haciendaId?: number | undefined; supervisorId?: number | undefined;
+    haciendaId?: number | undefined; supervisorIds?: number[] | undefined;
     pagina: number; limite: number;
 }) => {
-    const { fechaInicio, fechaFin, operadorId, haciendaId, supervisorId, pagina, limite } = filtros;
+    const { fechaInicio, fechaFin, operadorId, haciendaId, supervisorIds, pagina, limite } = filtros;
     const whereCondition:any = {};
 
     // Filtro por rango de fecha
@@ -2387,13 +2508,13 @@ const construirHistorial = async (filtros: {
     Filtro opcional por hacienda o por supervisor: el Operador no tiene hacienda_id propio (vive del
     Supervisor al que pertenece de forma permanente, ver CLAUDE.md), asi que "hacienda" se filtra via el
     include anidado operador -> supervisor -> hacienda_id, y "supervisor" directo sobre
-    operador.supervisor_id (lo usa el panel de ADMIN para ver solo lo que hizo un Supervisor puntual, sin
-    tener que saber a que hacienda pertenece). `required: true` en 'operador' cuando hay CUALQUIERA de los
-    dos filtros convierte el include en INNER JOIN (si no, Sequelize lo deja LEFT JOIN y el where anidado no
-    filtra nada).
+    operador.supervisor_id (lo usa el panel de ADMIN para ver solo lo que hizo uno o varios Supervisores
+    puntuales, sin tener que saber a que hacienda pertenecen - checklist del Historial, pedido del
+    usuario 2026-11-16). `required: true` en 'operador' cuando hay CUALQUIERA de los dos filtros convierte
+    el include en INNER JOIN (si no, Sequelize lo deja LEFT JOIN y el where anidado no filtra nada).
     */
     const filtrarPorHacienda = haciendaId !== undefined;
-    const filtrarPorSupervisor = supervisorId !== undefined;
+    const filtrarPorSupervisor = supervisorIds !== undefined && supervisorIds.length > 0;
     const { rows:historial, count:total } = await Asistencia.findAndCountAll({
         where: whereCondition,
         attributes:ATRIBUTOS_SIN_FOTO,
@@ -2407,7 +2528,8 @@ const construirHistorial = async (filtros: {
                 model: Operador, as: 'operador',
                 required: filtrarPorHacienda || filtrarPorSupervisor,
                 paranoid: false,
-                ...(filtrarPorSupervisor ? { where: { supervisor_id: supervisorId } } : {}),
+                // Un solo id o varios (Op.in funciona igual de bien con un arreglo de 1) - checklist del Historial.
+                ...(filtrarPorSupervisor ? { where: { supervisor_id: { [Op.in]: supervisorIds } } } : {}),
                 /*
                 attributes:['hacienda_id'] (antes []): la hoja imprimible (Ver/Imprimir, asistencia-panel.ts)
                 necesita mostrar en QUE hacienda se hizo la jornada en vez del codigo_megued (que ya se
@@ -2484,12 +2606,17 @@ const construirHistorial = async (filtros: {
 export const obtenerHistorial = async(req:Request, res:Response):Promise<void> => {
     try{
         const { fecha_inicio, fecha_fin, operador_id, hacienda_id, supervisor_id } = req.query;
+        // supervisor_id puede venir repetido en la query (?supervisor_id=1&supervisor_id=2, checklist del
+        // Historial) - Express lo entrega como arreglo en ese caso, y como string suelto con un solo valor.
+        const supervisorIds = supervisor_id === undefined || supervisor_id === ''
+            ? undefined
+            : (Array.isArray(supervisor_id) ? supervisor_id : [supervisor_id]).map(Number).filter((n) => !Number.isNaN(n));
         const resultado = await construirHistorial({
             fechaInicio: fecha_inicio ? String(fecha_inicio) : undefined,
             fechaFin: fecha_fin ? String(fecha_fin) : undefined,
             operadorId: operador_id ? Number(operador_id) : undefined,
             haciendaId: (hacienda_id !== undefined && hacienda_id !== '') ? Number(hacienda_id) : undefined,
-            supervisorId: (supervisor_id !== undefined && supervisor_id !== '') ? Number(supervisor_id) : undefined,
+            supervisorIds: supervisorIds && supervisorIds.length > 0 ? supervisorIds : undefined,
             pagina: Number(req.query['pagina']) || 1,
             limite: Number(req.query['limite']) || 30,
         });

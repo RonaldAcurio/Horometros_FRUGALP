@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, of, catchError, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { Operador, Asistencia, Actividad, RespuestaPaginada } from '../models/asistencia.model';
+import { Operador, Asistencia, Actividad, RespuestaPaginada, FilaAsistenciaOPendiente } from '../models/asistencia.model';
 
 @Injectable({
     providedIn: 'root'
@@ -47,21 +47,6 @@ export class AsistenciaService {
             catchError(err => {
                 console.warn('Error al obtener operadores paginados:', err);
                 return of({ data: [], total: 0, pagina, totalPaginas: 1 });
-            })
-        );
-    }
-
-    // GET -> /api/asistencia/operadores sin pagina/limite - el backend (ver obtenerOperadores) devuelve el
-    // roster COMPLETO sin paginar cuando no se le manda ninguno de los dos. Lo usa el roster completo del
-    // Panel de Supervisor (pedido del usuario, 2026-10-27): para saber quién de toda la hacienda todavía no
-    // tiene asistencia ese día, hace falta la lista entera, no una página.
-    obtenerOperadoresCompleto(supervisorId?: number): Observable<Operador[]> {
-        let params = new HttpParams();
-        if (supervisorId) params = params.set('supervisor_id', supervisorId);
-        return this.http.get<Operador[]>(`${this.baseUrl}/operadores`, { params }).pipe(
-            catchError(err => {
-                console.warn('Error al obtener el roster completo de operadores:', err);
-                return of([]);
             })
         );
     }
@@ -217,22 +202,24 @@ export class AsistenciaService {
     // Paginado: al Supervisor tampoco le llega de golpe todo el dia de una sola vez.
     // supervisorId opcional: lo usa el panel de ADMIN (ve TODAS las haciendas mezcladas aqui) para acotar a lo
     // que hizo un Supervisor puntual.
-    // incluirPropiosPrestados opcional (pedido del usuario, 2026-11-03): por defecto esta tabla es EXCLUSIVA
-    // (un trabajador "prestado" a otro Supervisor ya no aparece aqui, ver asistencia.controller.ts) - el
-    // roster "Trabajadores que aun no marcan" (cargarTrabajadoresSinMarcar) necesita lo contrario: saber que
-    // YA tiene Asistencia aunque la gestione otro Supervisor, para no mostrarlo como pendiente.
+    // incluirPendientes opcional (pedido del usuario, 2026-11-16): fusiona en 'data' a los Operadores del
+    // roster de ESE Supervisor que todavia no tienen ninguna Asistencia hoy (antes vivian en la tabla aparte
+    // "Trabajadores que aun no marcan", sin paginar) - 'data' pasa a ser FilaAsistenciaOPendiente[] (cada item
+    // trae 'pendiente' para distinguir una fila real de una pendiente) y 'totalPendientes' dice cuantas de esas
+    // hay en TODO el dia (no solo la pagina visible), para poder deshabilitar "Cerrar Jornada" sin tener que
+    // recorrer todas las paginas. Solo tiene efecto con un Supervisor puntual resuelto (ver el backend).
     obtenerAsistenciasHoy(
         fecha?: string,
         pagina: number = 1,
         limite: number = 30,
         supervisorId?: number,
-        incluirPropiosPrestados?: boolean
-    ): Observable<{ data: Asistencia[]; total: number; pagina: number; totalPaginas: number; diaCerrado: boolean }> {
+        incluirPendientes?: boolean
+    ): Observable<{ data: FilaAsistenciaOPendiente[]; total: number; pagina: number; totalPaginas: number; diaCerrado: boolean; totalPendientes?: number }> {
         let params = `?pagina=${pagina}&limite=${limite}`;
         if(fecha) params += `&fecha=${fecha}`;
         if(supervisorId) params += `&supervisor_id=${supervisorId}`;
-        if(incluirPropiosPrestados) params += `&incluir_propios_prestados=true`;
-        return this.http.get<{ data: Asistencia[]; total: number; pagina: number; totalPaginas: number; diaCerrado: boolean }>(
+        if(incluirPendientes) params += `&incluir_pendientes=true`;
+        return this.http.get<{ data: FilaAsistenciaOPendiente[]; total: number; pagina: number; totalPaginas: number; diaCerrado: boolean; totalPendientes?: number }>(
             `${this.baseUrl}/hoy${params}`
         );
     }
@@ -240,16 +227,19 @@ export class AsistenciaService {
     //GET -> /api/asistencia/historial?fecha_inicio=YYYY-MM-DD&fecha_fin=YYYY-MM-DD
     // operadorId opcional: lo usa el modal "Historial de Asistencia" de la Ficha (Directorio de Operadores) para
     // traer solo las jornadas de ESE operador, reutilizando el mismo endpoint/filtro que ya soporta el backend.
-    // supervisorId opcional: filtra solo lo que hizo ese Supervisor (via operador.supervisor_id), lo usa el
-    // Historial cuando lo ve un ADMIN.
-    obtenerHistorial(fechaInicio?: string, fechaFin?: string, pagina:number=1, limite:number=30, haciendaId?: number, operadorId?: number, supervisorId?: number
+    // supervisorIds opcional (checklist, pedido del usuario 2026-11-16): filtra solo lo que hicieron esos
+    // Supervisores (via operador.supervisor_id), lo usa el Historial cuando lo ve un ADMIN/ASISTENTE - manda
+    // 'supervisor_id' repetido en la query (uno por cada id), el backend acepta 0, 1 o varios por igual.
+    obtenerHistorial(fechaInicio?: string, fechaFin?: string, pagina:number=1, limite:number=30, haciendaId?: number, operadorId?: number, supervisorIds?: number[]
     ): Observable<{data:Asistencia[]; total:number; pagina:number; totalPaginas:number}>{
         let params = new HttpParams().set('pagina', pagina).set('limite', limite);
         if(fechaInicio) params = params.set('fecha_inicio', fechaInicio);
         if(fechaFin) params = params.set('fecha_fin', fechaFin);
         if(haciendaId) params = params.set('hacienda_id', haciendaId);
         if(operadorId) params = params.set('operador_id', operadorId);
-        if(supervisorId) params = params.set('supervisor_id', supervisorId);
+        if(supervisorIds){
+            for(const id of supervisorIds) params = params.append('supervisor_id', id);
+        }
 
         return this.http.get<{data:Asistencia[]; total:number; pagina:number; totalPaginas:number}>(
             `${this.baseUrl}/historial`, { params });
