@@ -137,23 +137,27 @@ export class ExportarExcelService {
     const VERDE_MEDIO: FillPattern = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6E0B4' } };
     const MORADO_CLARO: FillPattern = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE4DFEC' } };
 
-    /*
-    Todo el reporte se guarda como TEXTO (pedido del usuario, 2026-11-16): antes el Nª (A), la Fecha (B) y
-    las horas (N) quedaban con tipos mezclados segun la fila - numero/fecha real de Excel en unas, texto en
-    otras - lo que complicaba comparar o pegar estos datos contra otra planilla. 'numFmt = "@"' fuerza a
-    Excel a tratar CADA celda como texto puro sin importar si el valor "se ve" como numero o fecha - los
-    valores en si tambien se pasan ya como string desde el llamador (ver `String(numero)`/`fechaTexto`/
-    `String(horas)` mas abajo), nunca como `number`/`Date` nativos.
-    */
     const celda = (coord: string, valor: unknown, opciones: { fill?: FillPattern; bold?: boolean; size?: number } = {}) => {
       const c = ws.getCell(coord);
       c.value = valor as CellValue;
       c.font = { ...FUENTE_BASE, bold: !!opciones.bold, size: opciones.size ?? FUENTE_BASE.size };
       c.alignment = CENTRADO;
       c.border = BORDES_TODOS;
-      c.numFmt = '@';
       if (opciones.fill) c.fill = opciones.fill;
       return c;
+    };
+
+    /*
+    Correccion (pedido del usuario, 2026-11-18, revirtiendo el "todo como texto" del 2026-11-16): lo que SI
+    es un numero (codigos puramente numericos, horas, Nª) tiene que guardarse como numero de verdad - no
+    como texto - para que Excel no lo marque con el triangulo de advertencia "numero guardado como texto" y
+    para que ordene numericamente (1, 2, 10) en vez de alfabeticamente (1, 10, 2). Un codigo con letras
+    (ej. "PDA-5877", "TR53") sigue siendo texto - nunca se fuerza a numero si no lo es de verdad.
+    */
+    const comoNumeroSiAplica = (valor: string): number | string => {
+      if (valor === '') return '';
+      const n = Number(valor);
+      return Number.isFinite(n) ? n : valor;
     };
 
     /*
@@ -226,16 +230,16 @@ export class ExportarExcelService {
       const registros: (RegistroActividad | null)[] = bloque.registros.length > 0 ? bloque.registros : [null];
 
       for (const reg of registros) {
-        // Siempre texto (ver numFmt='@' de celda arriba) - antes quedaba como `number` cuando si habia
-        // horas y como string vacio cuando no, dos tipos de dato distintos en la misma columna.
+        // Numero real cuando si hay horas, celda vacia DE VERDAD (null, no '') cuando no - asi nunca
+        // queda un string vacio compartiendo columna con un numero.
         const horas = reg?.hora_fin
-          ? String(this.redondearHoras((new Date(reg.hora_fin).getTime() - new Date(reg.hora_inicio).getTime()) / 3600000))
-          : '';
-        celda(`E${filaActual}`, reg?.actividad?.codigo_megued || '');
+          ? this.redondearHoras((new Date(reg.hora_fin).getTime() - new Date(reg.hora_inicio).getTime()) / 3600000)
+          : null;
+        celda(`E${filaActual}`, comoNumeroSiAplica(reg?.actividad?.codigo_megued || ''));
         celda(`F${filaActual}`, reg?.actividad?.description || '');
         celda(`G${filaActual}`, 'AP06', { fill: AZUL_CLARO });
         celda(`H${filaActual}`, 'M&Reparacion');
-        celda(`I${filaActual}`, reg?.equipo?.codigo_megued || '');
+        celda(`I${filaActual}`, comoNumeroSiAplica(reg?.equipo?.codigo_megued || ''));
         celda(`J${filaActual}`, reg?.equipo?.nombre_equipo || '');
         celda(`K${filaActual}`, 'FIJOS DEL TALLER', { fill: VERDE_CLARO });
         celda(`L${filaActual}`, 'FIJOS DEL TALLER', { fill: VERDE_MEDIO });
@@ -245,13 +249,13 @@ export class ExportarExcelService {
       }
       const filaFin = filaActual - 1;
 
-      celda(`A${filaInicio}`, String(numero));
-      // DD/MM/YYYY como texto plano (pedido del usuario, 2026-10-19 + 2026-11-16: mismo formato que ya usa
-      // el resto de la app, pero ya no como fecha real de Excel - un numero serial con formato de fecha
-      // sigue sin ser texto, aunque se vea igual). 'fecha' llega como 'YYYY-MM-DD' puro.
-      const [anioFecha, mesFecha, diaFecha] = fecha.split('-');
-      celda(`B${filaInicio}`, `${diaFecha}/${mesFecha}/${anioFecha}`);
-      celda(`C${filaInicio}`, bloque.operador.codigo_megued);
+      celda(`A${filaInicio}`, numero);
+      celda(`B${filaInicio}`, new Date(`${fecha}T00:00:00Z`));
+      // DD/MM/YYYY (pedido del usuario, 2026-10-19) - mismo formato que ya usa el resto de la app
+      // (ver el pipe 'dd/MM/yyyy HH:mm' en asistencia-panel.html/admin-panel.html). Antes 'm/d/yy'
+      // (M/D/YY) confundía a los trabajadores, que leen fecha en formato DD/MM/YYYY.
+      ws.getCell(`B${filaInicio}`).numFmt = 'dd/mm/yyyy';
+      celda(`C${filaInicio}`, comoNumeroSiAplica(bloque.operador.codigo_megued));
       celda(`D${filaInicio}`, bloque.operador.nombre_completo, { bold: true });
       celda(`O${filaInicio}`, ''); // Observacion: vacia a proposito, para que la editen despues.
       if (filaFin > filaInicio) {

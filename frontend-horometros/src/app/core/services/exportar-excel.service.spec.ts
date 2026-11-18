@@ -142,12 +142,12 @@ describe('ExportarExcelService', () => {
   });
 
   /*
-  Todo el reporte como texto (pedido del usuario, 2026-11-16): antes el Nª (A), la Fecha (B) y las horas (N)
-  quedaban con tipos mezclados - numero/fecha real de Excel/texto segun la fila - complicando comparar o
-  pegar estos datos contra otra planilla. Cada celda ahora es un string con formato '@' (texto), sin importar
-  si el valor "se ve" como numero o fecha.
+  Lo que SI es un número se guarda como número real (corrección, pedido del usuario, 2026-11-18, revirtiendo
+  el "todo como texto" del 2026-11-16 - eso hacía que Excel marcara con el triángulo de advertencia "número
+  guardado como texto" cualquier código/hora puramente numérico, y rompía el orden numérico al ordenar). Un
+  código con letras (ej. "OP-1") sigue siendo texto - nunca se fuerza a número si no lo es de verdad.
   */
-  describe('formato de celdas (construirHojaHacienda): todo como texto', () => {
+  describe('formato de celdas (construirHojaHacienda): números reales donde corresponde', () => {
     const construir = (bloques: { operador: Operador; registros: RegistroActividad[] }[]) => {
       const wb = new Workbook();
       (service as unknown as {
@@ -163,37 +163,47 @@ describe('ExportarExcelService', () => {
       id: 1, asistencia_id: 1, equipo_id: 1, actividad_id: 1, hora_inicio: horaInicio, hora_fin: horaFin,
     });
 
-    it('Nª (A) y Fecha (B) son texto plano, no numero/fecha real de Excel', () => {
+    it('Nª (A) es un número real, y ordena numéricamente (1, 2 ... 10, no 1, 10, 2)', () => {
       const ws = construir([{ operador: operador(1, 'A'), registros: [] }]);
-
-      expect(ws.getCell('A8').numFmt).toBe('@');
-      expect(typeof ws.getCell('A8').value).toBe('string');
-      expect(ws.getCell('A8').value).toBe('1');
-
-      expect(ws.getCell('B8').numFmt).toBe('@');
-      expect(typeof ws.getCell('B8').value).toBe('string');
-      expect(ws.getCell('B8').value).toBe('23/10/2026');
+      expect(ws.getCell('A8').value).toBe(1);
+      expect(typeof ws.getCell('A8').value).toBe('number');
     });
 
-    it('Tarea/Hrs (N) es texto incluso cuando SI hay horas calculadas (antes quedaba como number)', () => {
+    it('Fecha (B) sigue siendo una fecha real de Excel con formato dd/mm/yyyy', () => {
+      const ws = construir([{ operador: operador(1, 'A'), registros: [] }]);
+      expect(ws.getCell('B8').value).toEqual(new Date('2026-10-23T00:00:00Z'));
+      expect(ws.getCell('B8').numFmt).toBe('dd/mm/yyyy');
+    });
+
+    it('Cod. (C) puramente numérico se guarda como número, no como texto', () => {
+      const operadorCodigoNumerico = { ...operador(1, 'A'), codigo_megued: '2005' };
+      const ws = construir([{ operador: operadorCodigoNumerico, registros: [] }]);
+      expect(ws.getCell('C8').value).toBe(2005);
+      expect(typeof ws.getCell('C8').value).toBe('number');
+    });
+
+    it('Cod. (C) con letras se queda como texto (no se fuerza a número)', () => {
+      const ws = construir([{ operador: operador(1, 'A'), registros: [] }]); // codigo_megued: 'OP-1'
+      expect(ws.getCell('C8').value).toBe('OP-1');
+      expect(typeof ws.getCell('C8').value).toBe('string');
+    });
+
+    it('Tarea/Hrs (N) es un número real cuando SI hay horas calculadas', () => {
       const ws = construir([{
         operador: operador(1, 'A'),
         registros: [registro('2026-10-23T08:00:00.000Z', '2026-10-23T09:30:00.000Z')],
       }]);
-
-      expect(ws.getCell('N8').numFmt).toBe('@');
-      expect(typeof ws.getCell('N8').value).toBe('string');
-      expect(ws.getCell('N8').value).toBe('1.5'); // 1h30min redondeado a la media hora mas cercana.
+      expect(ws.getCell('N8').value).toBe(1.5); // 1h30min redondeado a la media hora mas cercana.
+      expect(typeof ws.getCell('N8').value).toBe('number');
     });
 
-    it('Tarea/Hrs (N) sigue siendo texto (vacio) cuando NO hay horas - mismo tipo en ambos casos', () => {
+    it('Tarea/Hrs (N) queda vacía (no texto vacío) cuando NO hay horas', () => {
       const ws = construir([{
         operador: operador(1, 'A'),
         registros: [registro('2026-10-23T08:00:00.000Z', null)],
       }]);
-
-      expect(ws.getCell('N8').numFmt).toBe('@');
-      expect(ws.getCell('N8').value).toBe('');
+      expect(ws.getCell('N8').value).toBeFalsy();
+      expect(typeof ws.getCell('N8').value).not.toBe('number');
     });
   });
 });
